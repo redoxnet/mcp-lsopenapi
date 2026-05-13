@@ -89,6 +89,17 @@ Workspace `.vscode/mcp.json`:
 }
 ```
 
+### Getting an API key
+
+You need an LS증권 OpenAPI **`AppKey`** and **`AppSecretKey`** to use this server. Steps:
+
+1. **Open an LS증권 brokerage account.** Real-trading accounts open via the LS mobile app or a branch office; paper-trading (모의투자) accounts open through the dedicated paper-trading channel.
+2. **Register at the OpenAPI site.** Sign up at [openapi.ls-sec.co.kr](https://openapi.ls-sec.co.kr) and link your brokerage account.
+3. **Register an app.** My Page → "앱 관리" / "OpenAPI 신청" — enter an app name, a callback URL, accept the terms; the site issues your `AppKey` and `AppSecretKey`.
+4. **Paper-trading keys ≠ real-trading keys.** A key issued for one environment cannot call the other. Make sure `LS_MARKET` matches the environment the key was issued for.
+
+> Keys can be re-checked or re-issued from My Page. **If you suspect a key was exposed, revoke and re-issue it immediately.** LS may deactivate keys after extended inactivity, so check periodically that your setup still works.
+
 ### Environment variables
 
 | Name | Required | Description |
