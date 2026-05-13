@@ -1,0 +1,39 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  release:
+    if: startsWith(github.event.head_commit.message, 'Release v')
+    runs-on: windows-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Extract version
+        id: version
+        shell: bash
+        run: |
+          MESSAGE="${{ github.event.head_commit.message }}"
+          VERSION=$(echo "$MESSAGE" | sed -n 's/.*Release v\([0-9]*\.[0-9]*\.[0-9]*\([-+][0-9A-Za-z.-]*\)*\).*/\1/p')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Extract current version section from RELEASENOTES
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          # Extract from "## vX.Y.Z" to the next "## v" heading (exclusive).
+          sed -n "/^## v${VERSION}/,/^## v/{ /^## v${VERSION}/p; /^## v/!p; }" RELEASENOTES.md > RELEASE_BODY.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          body_path: RELEASE_BODY.md
+          generate_release_notes: false
