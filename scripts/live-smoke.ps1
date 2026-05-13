@@ -227,7 +227,8 @@ try {
             'ls_get_multi_quote' {
                 Write-Host ("    ✅ {0} quote(s) returned" -f $parsed.count) -ForegroundColor Green
                 foreach ($q in $parsed.quotes) {
-                    Write-Host ("       {0,-20} {1,12:N0}  ({2,+6:N2}%)  best ask/bid {3,10:N0} / {4,10:N0}" -f $q.name, $q.price, $q.change_percent, $q.best_ask, $q.best_bid)
+                    $pct = '{0,7:+0.00;-0.00; 0.00}' -f [double]$q.change_percent
+                    Write-Host ("       {0,-20} {1,12:N0}  ({2}%)  best ask/bid {3,10:N0} / {4,10:N0}" -f $q.name, $q.price, $pct, $q.best_ask, $q.best_bid)
                 }
             }
             'ls_get_chart' {
