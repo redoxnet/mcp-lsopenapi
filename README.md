@@ -4,6 +4,8 @@
 
 # mcp-lsopenapi
 
+[![NuGet — Core](https://img.shields.io/nuget/v/RedoxNet.LsOpenApi.Core?label=RedoxNet.LsOpenApi.Core)](https://www.nuget.org/packages/RedoxNet.LsOpenApi.Core/)
+
 **LS증권 OpenAPI**용 MCP 서버 — AI 도우미가 한국 주식 시세, 차트, 지표를 자연어로 조회할 수 있게 합니다.
 
 > v1.0은 **국내주식 read-only 시세 데이터** 범위입니다. 실시간 시세(WebSocket), 계좌/잔고, 주문은 후속 릴리스에 포함될 예정입니다.

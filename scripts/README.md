@@ -115,13 +115,15 @@ The package version comes from `<Version>` in each `.csproj`. The MSBuild `Verif
 
 ## Release commit conventions
 
-`.github/workflows/release.yml` triggers on `git push` to `main` when the head commit message starts with one of:
+`.github/workflows/release.yml` triggers on `git push` to `main` when the head commit message starts with one of `Release `, `Core v`, or `Mcp v`. Recommended form (matches FieldCure repo convention):
 
 | Commit message | Produces | Tag(s) |
 |---|---|---|
 | `Release v0.1.0` | one combined GitHub Release with both packages' notes joined | `v0.1.0` |
-| `Core v0.1.1` | Core-only GitHub Release | `lsopenapi.core-v0.1.1` |
-| `Mcp v0.2.0` | Mcp-only GitHub Release | `mcp.lsopenapi-v0.2.0` |
-| `Core v0.1.1 Mcp v0.2.0` (same commit) | two separate Releases, one each | both of the above |
+| `Release Core v0.1.1` | Core-only GitHub Release | `lsopenapi.core-v0.1.1` |
+| `Release Mcp v0.2.0` | Mcp-only GitHub Release | `mcp.lsopenapi-v0.2.0` |
+| `Release Core v0.1.1 Mcp v0.2.0` (same commit) | two separate Releases, one each | both of the above |
+
+Short forms (`Core v0.1.1`, `Mcp v0.2.0`) are also accepted by the workflow, but the `Release …` prefix is preferred for grep-ability in `git log --grep="^Release "`.
 
 The release workflow does **not** push to NuGet — that stays manual via the publish scripts above. Push the package(s) to nuget.org AFTER the GitHub Release lands, so the tag and the published nupkg are consistent.
