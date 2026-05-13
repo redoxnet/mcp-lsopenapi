@@ -79,12 +79,13 @@ public class GetEtfInfoToolFixtureTests
         root.GetProperty("upper_limit_price").GetInt64().Should().Be(4755);
         root.GetProperty("lower_limit_price").GetInt64().Should().Be(2565);
 
-        // NAV / tracking block
+        // NAV / divergence block
         root.GetProperty("nav").GetDouble().Should().Be(0.0);
-        root.GetProperty("tracking_basis").GetDouble().Should().Be(0.0);
         root.GetProperty("divergence_percent").GetDouble().Should().Be(0.0);
-        root.GetProperty("exchange_divergence_percent").GetDouble().Should().BeApproximately(7.17, 0.01);
+        root.GetProperty("foreign_ownership_percent").GetDouble().Should().BeApproximately(7.17, 0.01);
         root.GetProperty("spread_percent").GetDouble().Should().BeApproximately(0.14, 0.01);
+        root.TryGetProperty("tracking_basis", out _).Should().BeFalse("kasis is too noisy on the virtual server to surface as a curated field");
+        root.TryGetProperty("exchange_divergence_percent", out _).Should().BeFalse("renamed to foreign_ownership_percent to reflect actual semantics");
 
         // 52-week / year range
         root.GetProperty("high_52w").GetInt64().Should().Be(3750);
@@ -153,5 +154,36 @@ public class GetEtfInfoToolFixtureTests
 
         root.GetProperty("futures").ValueKind.Should().Be(JsonValueKind.Null);
         root.GetProperty("nav").GetDouble().Should().BeApproximately(29950.0, 0.01);
+    }
+
+    [Fact]
+    public async Task GetEtfInfo_KodexLikePayload_SurfacesForeignOwnershipNotDivergence()
+    {
+        // Reproduces the 2026-05-13 KODEX 200 E2E observation: cocrate is the
+        // real NAV divergence (~0.01%) while exhratio is foreign ownership (~23%).
+        // Earlier drafts mis-labeled exhratio as "exchange_divergence_percent".
+        string body = """
+        {
+          "rsp_cd": "00000",
+          "t1901OutBlock": {
+            "hname": "KODEX 200", "shcode": "069500",
+            "price": 122655, "sign": "2", "change": 3555, "diff": "002.98",
+            "nav": "122737.70", "navsign": "2", "navchange": "3708.75", "navdiff": "003.12",
+            "jnilnav": "119028.95",
+            "kasis": "0", "cocrate": "0.01", "exhratio": "023.40", "spread": "000.07",
+            "etftotcap": 7654321, "listing": 100000,
+            "futcode": "", "futname": "", "futprice": ""
+          }
+        }
+        """;
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(body));
+
+        string result = await GetEtfInfoTool.GetEtfInfo(client, "069500");
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        root.GetProperty("divergence_percent").GetDouble().Should().BeApproximately(0.01, 0.001);
+        root.GetProperty("foreign_ownership_percent").GetDouble().Should().BeApproximately(23.40, 0.01);
+        root.TryGetProperty("tracking_basis", out _).Should().BeFalse();
+        root.TryGetProperty("exchange_divergence_percent", out _).Should().BeFalse();
     }
 }

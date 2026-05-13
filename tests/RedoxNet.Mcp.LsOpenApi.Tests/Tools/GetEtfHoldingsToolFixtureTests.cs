@@ -152,4 +152,28 @@ public class GetEtfHoldingsToolFixtureTests
         root.TryGetProperty("error", out _).Should().BeTrue();
         root.GetProperty("details").GetProperty("rsp_cd").GetString().Should().Be("IGW00501");
     }
+
+    [Fact]
+    public async Task GetEtfHoldings_ForeignAssetEtf_SuccessButBlockMissing_HintsUserClearly()
+    {
+        // Reproduces the 2026-05-13 TIGER 미국S&P500 E2E observation: LS
+        // returns rsp_cd "00000" but the OutBlock is absent for ETFs that
+        // hold foreign assets. The tool must produce a user-friendly hint,
+        // not the raw LS-internal "t1904OutBlock was missing" string.
+        string body = """
+        {
+          "rsp_cd": "00000",
+          "rsp_msg": "정상적으로 조회가 완료되었습니다."
+        }
+        """;
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(body));
+
+        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "360750");
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        string error = root.GetProperty("error").GetString()!;
+        error.Should().Contain("PDF");
+        error.Should().Contain("foreign assets");
+        root.GetProperty("details").GetProperty("shcode").GetString().Should().Be("360750");
+    }
 }

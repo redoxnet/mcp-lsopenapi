@@ -55,7 +55,9 @@ public static class GetEtfHoldingsTool
             JsonElement? holdingsBlock = response.GetBlock("t1904OutBlock1");
 
             if (summaryBlock is null)
-                return McpJson.Error("t1904OutBlock was missing from the response.");
+                return McpJson.Error(
+                    "ETF PDF (구성종목) data is not available for this shcode via t1904. LS does not publish PDF for many ETFs that hold foreign assets (e.g. TIGER 미국S&P500, KODEX 미국나스닥100) or for non-ETF instruments. Check the ETF issuer's official PDF page, or confirm the shcode is a domestic ETF.",
+                    new { shcode, rsp_cd = response.RspCode, rsp_msg = response.RspMessage });
 
             JsonElement s = summaryBlock.Value;
 

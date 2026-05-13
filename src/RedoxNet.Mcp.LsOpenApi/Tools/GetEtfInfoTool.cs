@@ -131,9 +131,8 @@ public static class GetEtfInfoTool
                 nav_change = b.ReadDouble("navchange"),
                 nav_change_percent = b.ReadDouble("navdiff"),
                 previous_nav = b.ReadDouble("jnilnav"),
-                tracking_basis = b.ReadDouble("kasis"),
                 divergence_percent = b.ReadDouble("cocrate"),
-                exchange_divergence_percent = b.ReadDouble("exhratio"),
+                foreign_ownership_percent = b.ReadDouble("exhratio"),
                 spread_percent = b.ReadDouble("spread"),
 
                 total_assets = b.ReadLong("etftotcap"),
