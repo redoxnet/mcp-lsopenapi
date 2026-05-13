@@ -51,3 +51,51 @@ pwsh scripts/live-smoke.ps1 -Shcode 000660 -ToolName ls_get_stock_info
 | `LsTrException` with 404 | Endpoint path mismatch — re-check `TrCatalog.json` against the testbed |
 | `LsTrException` with 429 | Rate limit hit; very rare in smoke tests |
 | Tool returns `{"error": "..."}` with `rsp_cd != "00000"` | LS-side business error (e.g. invalid shcode, no permission for this TR) |
+
+## `publish-nuget.ps1`
+
+Packs both NuGet packages (`RedoxNet.LsOpenApi.Core` and `RedoxNet.Mcp.LsOpenApi`) in Release mode and pushes them to nuget.org. Re-runs are safe — `--skip-duplicate` lets the script noop on versions that are already published.
+
+### Setup
+
+Set the API key once, in your user environment:
+
+```powershell
+[Environment]::SetEnvironmentVariable('NUGET_API_KEY_REDOXNET', 'oy2xxxx...', 'User')
+```
+
+Then open a fresh PowerShell session so `$env:NUGET_API_KEY_REDOXNET` is populated.
+
+### Run
+
+```powershell
+pwsh scripts/publish-nuget.ps1              # pack + push
+pwsh scripts/publish-nuget.ps1 -SkipPush    # pack only, inspect artifacts/
+pwsh scripts/publish-nuget.ps1 -NuGetApiKey 'oy2xxxx...'   # one-off override
+```
+
+### What it does
+
+1. Wipes `artifacts/` (gitignored).
+2. `dotnet clean` + `dotnet pack -c Release` for both projects.
+3. `dotnet nuget push --skip-duplicate` for each `*.nupkg` against `api.nuget.org`.
+
+### Versioning
+
+The package version comes from `<Version>` in each `.csproj`. The MSBuild `VerifyServerJsonVersion` target (defined in `RedoxNet.Mcp.LsOpenApi.csproj`) fails the pack if `.mcp/server.json` drifts from `<Version>`, so bump both atomically — typically also `TrCatalog.json`'s `version` field — before running this script.
+
+### What success looks like
+
+```
+=== Pushing to nuget.org ===
+  Using API key ****abcd
+  Pushing RedoxNet.LsOpenApi.Core.0.1.0-alpha.2.nupkg ...
+  Pushing RedoxNet.Mcp.LsOpenApi.0.1.0-alpha.2.nupkg ...
+  All packages pushed.
+```
+
+### Notes
+
+- The API key is read from `$env:NUGET_API_KEY_REDOXNET` (project-scoped). The script masks it as `****<last-4>` in the log line.
+- No code signing step — packages ship unsigned.
+- `-SkipDuplicate` means a repeated push of an already-published version is silently skipped (HTTP 409 is treated as success), so re-running after a partial failure is safe.
