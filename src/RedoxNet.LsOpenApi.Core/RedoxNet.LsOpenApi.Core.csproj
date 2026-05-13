@@ -13,7 +13,8 @@
 
     <Version>0.1.0-alpha.1</Version>
     <PackageId>RedoxNet.LsOpenApi.Core</PackageId>
-    <Authors>RedoxNet contributors</Authors>
+    <Authors>diluculo</Authors>
+    <Company>RedoxNet</Company>
     <Description>SDK for LS증권 OpenAPI: HTTP client, OAuth2 client_credentials, TR catalog, indicators.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/redoxnet/mcp-lsopenapi</PackageProjectUrl>
