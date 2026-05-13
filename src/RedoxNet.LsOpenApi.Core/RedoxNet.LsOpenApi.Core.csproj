@@ -11,9 +11,9 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 
-    <Version>0.1.0-alpha.3</Version>
+    <Version>0.1.0</Version>
     <PackageId>RedoxNet.LsOpenApi.Core</PackageId>
-    <Authors>diluculo</Authors>
+    <Authors>Jong Hyun Kim</Authors>
     <Company>RedoxNet</Company>
     <Description>SDK for LS증권 OpenAPI: HTTP client, OAuth2 client_credentials, TR catalog, indicators.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
@@ -22,6 +22,8 @@
     <RepositoryType>git</RepositoryType>
     <PackageTags>ls;ls-securities;ls-증권;openapi;korean-stock;stock;sdk</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Copyright>Copyright (c) 2026 RedoxNet</Copyright>
+    <PackageReleaseNotes>v0.1.0: Initial public SDK release — OAuth2 client_credentials token issuer with SQLite WAL cache, 13-TR seed catalog (시세/차트/ETF/종목조회), Polly-retried HTTP client with per-TR rate limiting, indicator service (SMA/EMA/RSI/MACD/Bollinger) and chart context builder with tristate bullish_alignment. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Core.md for full notes.</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>

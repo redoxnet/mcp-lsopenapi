@@ -52,9 +52,15 @@ pwsh scripts/live-smoke.ps1 -Shcode 000660 -ToolName ls_get_stock_info
 | `LsTrException` with 429 | Rate limit hit; very rare in smoke tests |
 | Tool returns `{"error": "..."}` with `rsp_cd != "00000"` | LS-side business error (e.g. invalid shcode, no permission for this TR) |
 
-## `publish-nuget.ps1`
+## NuGet publishing scripts
 
-Packs both NuGet packages (`RedoxNet.LsOpenApi.Core` and `RedoxNet.Mcp.LsOpenApi`) in Release mode and pushes them to nuget.org. Re-runs are safe — `--skip-duplicate` lets the script noop on versions that are already published.
+Three publish scripts share `nuget-common.ps1` (the actual pack + push logic). Re-runs are safe — `--skip-duplicate` makes already-published versions a silent no-op.
+
+| Script | Packages |
+|---|---|
+| `publish-core.ps1` | `RedoxNet.LsOpenApi.Core` only |
+| `publish-mcp.ps1` | `RedoxNet.Mcp.LsOpenApi` only |
+| `publish-nuget.ps1` | Both, in dependency order (Core first) |
 
 ### Setup
 
@@ -69,33 +75,53 @@ Then open a fresh PowerShell session so `$env:NUGET_API_KEY_REDOXNET` is populat
 ### Run
 
 ```powershell
-pwsh scripts/publish-nuget.ps1              # pack + push
-pwsh scripts/publish-nuget.ps1 -SkipPush    # pack only, inspect artifacts/
-pwsh scripts/publish-nuget.ps1 -NuGetApiKey 'oy2xxxx...'   # one-off override
+# Combined release — most common
+pwsh scripts/publish-nuget.ps1
+
+# Per-package — when only one package version bumped
+pwsh scripts/publish-core.ps1
+pwsh scripts/publish-mcp.ps1
+
+# Local pack only (inspect artifacts/, no push)
+pwsh scripts/publish-nuget.ps1 -SkipPush
+
+# One-off API key override (e.g. CI)
+pwsh scripts/publish-nuget.ps1 -NuGetApiKey 'oy2xxxx...'
 ```
 
-### What it does
+### Dependency order matters
 
-1. Wipes `artifacts/` (gitignored).
-2. `dotnet clean` + `dotnet pack -c Release` for both projects.
-3. `dotnet nuget push --skip-duplicate` for each `*.nupkg` against `api.nuget.org`.
+`RedoxNet.Mcp.LsOpenApi` declares a NuGet dependency on `RedoxNet.LsOpenApi.Core`. If you bump both at the same time, **publish Core first** (or use `publish-nuget.ps1` which does it for you) so Core is indexed on nuget.org before consumers restore Mcp.
 
 ### Versioning
 
-The package version comes from `<Version>` in each `.csproj`. The MSBuild `VerifyServerJsonVersion` target (defined in `RedoxNet.Mcp.LsOpenApi.csproj`) fails the pack if `.mcp/server.json` drifts from `<Version>`, so bump both atomically — typically also `TrCatalog.json`'s `version` field — before running this script.
+The package version comes from `<Version>` in each `.csproj`. The MSBuild `VerifyServerJsonVersion` target (defined in `RedoxNet.Mcp.LsOpenApi.csproj`) fails the pack if `.mcp/server.json` drifts from `<Version>`, so bump both atomically — typically also `TrCatalog.json`'s `version` field — before running these scripts.
 
 ### What success looks like
 
 ```
 === Pushing to nuget.org ===
   Using API key ****abcd
-  Pushing RedoxNet.LsOpenApi.Core.0.1.0-alpha.2.nupkg ...
-  Pushing RedoxNet.Mcp.LsOpenApi.0.1.0-alpha.2.nupkg ...
+  Pushing RedoxNet.LsOpenApi.Core.0.1.0.nupkg ...
+  Pushing RedoxNet.Mcp.LsOpenApi.0.1.0.nupkg ...
   All packages pushed.
 ```
 
 ### Notes
 
-- The API key is read from `$env:NUGET_API_KEY_REDOXNET` (project-scoped). The script masks it as `****<last-4>` in the log line.
-- No code signing step — packages ship unsigned.
-- `-SkipDuplicate` means a repeated push of an already-published version is silently skipped (HTTP 409 is treated as success), so re-running after a partial failure is safe.
+- The API key is read from `$env:NUGET_API_KEY_REDOXNET` (project-scoped). All three scripts mask it as `****<last-4>` in the log line.
+- No code signing step — RedoxNet packages ship unsigned.
+- `--skip-duplicate` means a repeated push of an already-published version is silently skipped (HTTP 409 is treated as success), so re-running after a partial failure is safe.
+
+## Release commit conventions
+
+`.github/workflows/release.yml` triggers on `git push` to `main` when the head commit message starts with one of:
+
+| Commit message | Produces | Tag(s) |
+|---|---|---|
+| `Release v0.1.0` | one combined GitHub Release with both packages' notes joined | `v0.1.0` |
+| `Core v0.1.1` | Core-only GitHub Release | `lsopenapi.core-v0.1.1` |
+| `Mcp v0.2.0` | Mcp-only GitHub Release | `mcp.lsopenapi-v0.2.0` |
+| `Core v0.1.1 Mcp v0.2.0` (same commit) | two separate Releases, one each | both of the above |
+
+The release workflow does **not** push to NuGet — that stays manual via the publish scripts above. Push the package(s) to nuget.org AFTER the GitHub Release lands, so the tag and the published nupkg are consistent.

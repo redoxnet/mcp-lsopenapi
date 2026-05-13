@@ -245,7 +245,7 @@ dotnet run --project src/RedoxNet.Mcp.LsOpenApi --framework net8.0
 - ✅ M3 — TR 실행(`LsApiClient.CallTrAsync`): Polly 재시도, TR별 레이트 리미터, 헤더 + body 두 가지 페이징 모드.
 - ✅ M4 — 메타 도구 3개(`ls_search_tr`, `ls_describe_tr`, `ls_call_tr`)를 노출하는 stdio MCP 서버.
 - ✅ M5 — 의미 도구 7개: `ls_get_quote`, `ls_get_multi_quote`, `ls_get_stock_info`, `ls_get_chart` (+ 지표, 컨텍스트 메타데이터, 다중 시간프레임, `include_chart`로 Plotly v5 spec), `ls_search_stock`, **`ls_get_etf_info`, `ls_get_etf_holdings`**.
-- ✅ LS 모의투자 서버에서 라이브 검증 완료 (v0.1.0-alpha.3).
+- ✅ LS 모의투자 서버에서 라이브 검증 완료 (v0.1.0).
 - ⏳ 다음 릴리스 — 실시간(WebSocket), 계좌/잔고, 주문.
 
 ## License

@@ -6,7 +6,7 @@ on:
 
 jobs:
   release:
-    if: startsWith(github.event.head_commit.message, 'Release v')
+    if: startsWith(github.event.head_commit.message, 'Release ') || startsWith(github.event.head_commit.message, 'Core v') || startsWith(github.event.head_commit.message, 'Mcp v')
     runs-on: windows-latest
 
     permissions:
@@ -15,25 +15,82 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Extract version
-        id: version
+      - name: Create releases
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
-          MESSAGE="${{ github.event.head_commit.message }}"
-          VERSION=$(echo "$MESSAGE" | sed -n 's/.*Release v\([0-9]*\.[0-9]*\.[0-9]*\([-+][0-9A-Za-z.-]*\)*\).*/\1/p')
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          MESSAGE=$(printf '%s\n' "$COMMIT_MESSAGE" | head -n 1)
 
-      - name: Extract current version section from RELEASENOTES
-        shell: bash
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          # Extract from "## vX.Y.Z" to the next "## v" heading (exclusive).
-          sed -n "/^## v${VERSION}/,/^## v/{ /^## v${VERSION}/p; /^## v/!p; }" RELEASENOTES.md > RELEASE_BODY.md
+          # Maps a user-visible short name (used in commit messages) to:
+          #   <slug>|<release-title>|<release-notes-file>
+          normalize_name() {
+            case "$1" in
+              Core|LsOpenApi.Core|RedoxNet.LsOpenApi.Core)
+                echo "LsOpenApi.Core|RedoxNet.LsOpenApi.Core|RELEASENOTES.Core.md"
+                ;;
+              Mcp|Mcp.LsOpenApi|RedoxNet.Mcp.LsOpenApi)
+                echo "Mcp.LsOpenApi|RedoxNet.Mcp.LsOpenApi|RELEASENOTES.Mcp.md"
+                ;;
+              *)
+                return 1
+                ;;
+            esac
+          }
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.version.outputs.version }}
-          name: v${{ steps.version.outputs.version }}
-          body_path: RELEASE_BODY.md
-          generate_release_notes: false
+          if echo "$MESSAGE" | grep -qE '^Release v[0-9]'; then
+            # Combined release — `Release vX.Y.Z` produces a single `vX.Y.Z`
+            # tag whose body concatenates both packages' notes.
+            VERSION=$(echo "$MESSAGE" | sed -n 's/Release v\([0-9]*\.[0-9]*\.[0-9]*\([-+][0-9A-Za-z.-]*\)*\).*/\1/p')
+            TAG="v${VERSION}"
+
+            {
+              echo "# RedoxNet.LsOpenApi.Core"
+              echo ""
+              cat RELEASENOTES.Core.md
+              echo ""
+              echo "---"
+              echo ""
+              echo "# RedoxNet.Mcp.LsOpenApi"
+              echo ""
+              cat RELEASENOTES.Mcp.md
+            } > RELEASE_BODY.md
+
+            gh release create "$TAG" \
+              --title "v${VERSION}" \
+              --notes-file RELEASE_BODY.md
+          else
+            # Per-package release(s) — `Core vX.Y.Z` or `Mcp vA.B.C` (or both
+            # space-separated in the same commit message). Each pair produces
+            # its own tag `<slug-lower>-vX.Y.Z` and uses the matching notes
+            # file.
+            PAIRS=$(echo "$MESSAGE" | grep -oE '(Core|Mcp|LsOpenApi\.Core|Mcp\.LsOpenApi|RedoxNet\.LsOpenApi\.Core|RedoxNet\.Mcp\.LsOpenApi)\s+v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?')
+
+            echo "$PAIRS" | while IFS= read -r pair; do
+              [ -z "$pair" ] && continue
+
+              RAW_NAME=$(echo "$pair" | awk '{print $1}')
+              VERSION=$(echo "$pair" | sed 's/.*v//')
+
+              if ! META=$(normalize_name "$RAW_NAME"); then
+                echo "::warning::Unknown package name '$RAW_NAME', skipping"
+                continue
+              fi
+
+              SLUG=$(echo "$META" | cut -d'|' -f1)
+              TITLE=$(echo "$META" | cut -d'|' -f2)
+              NOTES_FILE=$(echo "$META" | cut -d'|' -f3)
+              TAG="$(echo "$SLUG" | tr '[:upper:]' '[:lower:]')-v${VERSION}"
+
+              if [ ! -f "$NOTES_FILE" ]; then
+                echo "::warning::$NOTES_FILE not found, skipping $RAW_NAME"
+                continue
+              fi
+
+              echo "Creating release: $TITLE v$VERSION (tag: $TAG)"
+              gh release create "$TAG" \
+                --title "$TITLE v${VERSION}" \
+                --notes-file "$NOTES_FILE"
+            done
+          fi
