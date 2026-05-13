@@ -4,8 +4,8 @@
 
 # mcp-lsopenapi
 
-[![NuGet — Mcp](https://img.shields.io/nuget/v/RedoxNet.Mcp.LsOpenApi?label=RedoxNet.Mcp.LsOpenApi)](https://www.nuget.org/packages/RedoxNet.Mcp.LsOpenApi/)
-[![NuGet — Core](https://img.shields.io/nuget/v/RedoxNet.LsOpenApi.Core?label=RedoxNet.LsOpenApi.Core)](https://www.nuget.org/packages/RedoxNet.LsOpenApi.Core/)
+[![NuGet Mcp](https://img.shields.io/nuget/v/RedoxNet.Mcp.LsOpenApi?label=Mcp)](https://www.nuget.org/packages/RedoxNet.Mcp.LsOpenApi/)
+[![NuGet Core](https://img.shields.io/nuget/v/RedoxNet.LsOpenApi.Core?label=Core)](https://www.nuget.org/packages/RedoxNet.LsOpenApi.Core/)
 [![CI](https://github.com/redoxnet/mcp-lsopenapi/actions/workflows/ci.yml/badge.svg)](https://github.com/redoxnet/mcp-lsopenapi/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
