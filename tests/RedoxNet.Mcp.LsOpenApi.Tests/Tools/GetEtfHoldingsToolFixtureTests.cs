@@ -154,12 +154,13 @@ public class GetEtfHoldingsToolFixtureTests
     }
 
     [Fact]
-    public async Task GetEtfHoldings_ForeignAssetEtf_SuccessButBlockMissing_HintsUserClearly()
+    public async Task GetEtfHoldings_SuccessButBlockMissing_HintsUserClearly()
     {
-        // Reproduces the 2026-05-13 TIGER 미국S&P500 E2E observation: LS
-        // returns rsp_cd "00000" but the OutBlock is absent for ETFs that
-        // hold foreign assets. The tool must produce a user-friendly hint,
-        // not the raw LS-internal "t1904OutBlock was missing" string.
+        // Reproduces the 2026-05-13 E2E observation across TIGER 미국S&P500
+        // (360750, foreign assets) and TIGER 바이오TOP10 (364970, domestic
+        // bio basket): LS returns rsp_cd "00000" with no OutBlock at all.
+        // Tool must produce a multi-cause hint that the LLM can self-
+        // diagnose against, and pass rsp_cd/rsp_msg through in `details`.
         string body = """
         {
           "rsp_cd": "00000",
@@ -168,12 +169,14 @@ public class GetEtfHoldingsToolFixtureTests
         """;
         var (client, _) = TestClientFactory.Create((_, _) => Ok(body));
 
-        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "360750");
+        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "364970");
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         string error = root.GetProperty("error").GetString()!;
         error.Should().Contain("PDF");
-        error.Should().Contain("foreign assets");
-        root.GetProperty("details").GetProperty("shcode").GetString().Should().Be("360750");
+        error.Should().Contain("ls_call_tr");
+        JsonElement details = root.GetProperty("details");
+        details.GetProperty("shcode").GetString().Should().Be("364970");
+        details.GetProperty("rsp_cd").GetString().Should().Be("00000");
     }
 }

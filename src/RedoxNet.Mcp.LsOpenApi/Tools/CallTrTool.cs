@@ -38,7 +38,7 @@ public static class CallTrTool
         TrCatalog catalog,
         [Description("TR code, e.g. 't1101'. Use ls_search_tr / ls_describe_tr to discover.")]
         string tr_cd,
-        [Description("JSON object matching the TR's InBlock schema. Send just the inner block.")]
+        [Description("InBlock payload as a JSON object (e.g. {\"shcode\":\"005930\"}). A JSON-encoded string representing the same object is also accepted as a fallback for clients that stringify object parameters.")]
         JsonElement in_block,
         [Description("Optional continuation key copied from a prior response's tr_cont_key.")]
         string? cont_key = null,
@@ -53,19 +53,50 @@ public static class CallTrTool
                 $"TR '{tr_cd}' is not in the catalog.",
                 new { hint = "Use ls_search_tr to discover available TR codes." });
 
-        if (in_block.ValueKind != JsonValueKind.Object)
-            return McpJson.Error("in_block must be a JSON object.");
-
-        JsonObject inBlockObject;
+        // Accept both shapes:
+        //   1. The LLM sends a real JSON object → JsonElement arrives as Object kind.
+        //   2. The LLM (or some MCP-client combos) JSON-stringifies the object first
+        //      → JsonElement arrives as String kind, e.g. "{\"shcode\":\"069500\"}".
+        // The MCP C# SDK 1.2 generates an ambiguous schema for JsonElement parameters,
+        // so different clients pick different serializations. Be permissive on input.
+        JsonObject? inBlockObject = null;
+        string parseFailure = "";
         try
         {
-            inBlockObject = JsonNode.Parse(in_block.GetRawText())?.AsObject()
-                ?? throw new InvalidOperationException("in_block parsed as null.");
+            if (in_block.ValueKind == JsonValueKind.Object)
+            {
+                inBlockObject = JsonNode.Parse(in_block.GetRawText())?.AsObject();
+            }
+            else if (in_block.ValueKind == JsonValueKind.String)
+            {
+                string? raw = in_block.GetString();
+                if (!string.IsNullOrWhiteSpace(raw))
+                {
+                    JsonNode? parsed = JsonNode.Parse(raw);
+                    inBlockObject = parsed as JsonObject;
+                    if (inBlockObject is null)
+                        parseFailure = "in_block string parsed to a non-object JSON value.";
+                }
+            }
+            else if (in_block.ValueKind == JsonValueKind.Undefined || in_block.ValueKind == JsonValueKind.Null)
+            {
+                parseFailure = "in_block is missing.";
+            }
+            else
+            {
+                parseFailure = $"in_block must be a JSON object; got {in_block.ValueKind}.";
+            }
         }
-        catch (Exception ex)
+        catch (JsonException ex)
         {
-            return McpJson.Error("Failed to read in_block.", new { reason = ex.Message });
+            return McpJson.Error("Failed to parse in_block as JSON.", new { reason = ex.Message });
         }
+
+        if (inBlockObject is null)
+            return McpJson.Error(
+                string.IsNullOrEmpty(parseFailure)
+                    ? "in_block must be a JSON object (or a JSON-encoded string representing one)."
+                    : parseFailure);
 
         try
         {

@@ -56,7 +56,7 @@ public static class GetEtfHoldingsTool
 
             if (summaryBlock is null)
                 return McpJson.Error(
-                    "ETF PDF (구성종목) data is not available for this shcode via t1904. LS does not publish PDF for many ETFs that hold foreign assets (e.g. TIGER 미국S&P500, KODEX 미국나스닥100) or for non-ETF instruments. Check the ETF issuer's official PDF page, or confirm the shcode is a domestic ETF.",
+                    "LS returned success (rsp_cd=00000) but no t1904OutBlock — PDF (구성종목) data is unavailable for this shcode. Common causes: (1) the LS virtual server has spotty PDF coverage for certain ETFs, (2) intraday PDF publication lag, (3) the shcode is not a Korean ETF that publishes PDF via t1904. Inspect the raw response with `ls_call_tr` (tr_cd='t1904', in_block={shcode}) to debug, or check the ETF issuer's official PDF page.",
                     new { shcode, rsp_cd = response.RspCode, rsp_msg = response.RspMessage });
 
             JsonElement s = summaryBlock.Value;
