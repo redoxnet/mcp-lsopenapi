@@ -11,7 +11,7 @@
 
 MCP server for **LS증권 OpenAPI** — exposes Korean stock market data as MCP tools so AI assistants can query quotes, charts, and indicators in natural language.
 
-> v1.0 is **read-only Korean stock market data**. Realtime feeds, accounts/balances, and orders are scheduled for later releases.
+> v0.1.x is **read-only Korean stock market data**. Realtime feeds, accounts/balances, and orders are scheduled for later releases.
 
 ## Disclaimer
 
@@ -29,12 +29,54 @@ When using the API, please comply with the LS OpenAPI [terms of service](https:/
 | `RedoxNet.Mcp.LsOpenApi` | dotnet tool | MCP server over stdio. |
 | `RedoxNet.LsOpenApi.Core.Catalog.Builder` | Dev tool | Scrapes the LS docs site to (re)generate the embedded TR catalog. Not shipped. |
 
-## Quick start (when published to NuGet)
+## Quick start
+
+`dnx` fetches the latest published version from NuGet on every launch — no separate install step. Wire it into your MCP host:
+
+### Claude Desktop / Claude Code
+
+`claude_desktop_config.json` (Claude Desktop) or `.mcp.json` at your workspace root (Claude Code):
 
 ```jsonc
 {
   "mcpServers": {
     "lsopenapi": {
+      "command": "dnx",
+      "args": ["RedoxNet.Mcp.LsOpenApi", "--yes"],
+      "env": {
+        "LS_APPKEY": "...",
+        "LS_APPSECRETKEY": "...",
+        "LS_MARKET": "virtual"
+      }
+    }
+  }
+}
+```
+
+### Codex CLI
+
+`%USERPROFILE%\.codex\config.toml` (Windows) or `~/.codex/config.toml` (macOS / Linux):
+
+```toml
+[mcp_servers.lsopenapi]
+command = "dnx"
+args = ["RedoxNet.Mcp.LsOpenApi", "--yes"]
+
+[mcp_servers.lsopenapi.env]
+LS_APPKEY = "..."
+LS_APPSECRETKEY = "..."
+LS_MARKET = "virtual"
+```
+
+### VS Code (`mcp.json`)
+
+Workspace `.vscode/mcp.json`:
+
+```jsonc
+{
+  "servers": {
+    "lsopenapi": {
+      "type": "stdio",
       "command": "dnx",
       "args": ["RedoxNet.Mcp.LsOpenApi", "--yes"],
       "env": {

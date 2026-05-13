@@ -11,7 +11,7 @@
 
 **LS증권 OpenAPI**용 MCP 서버 — AI 도우미가 한국 주식 시세, 차트, 지표를 자연어로 조회할 수 있게 합니다.
 
-> v1.0은 **국내주식 read-only 시세 데이터** 범위입니다. 실시간 시세(WebSocket), 계좌/잔고, 주문은 후속 릴리스에 포함될 예정입니다.
+> v0.1.x 는 **국내주식 read-only 시세 데이터** 범위입니다. 실시간 시세(WebSocket), 계좌/잔고, 주문은 후속 릴리스에 포함될 예정입니다.
 
 ## 면책 조항
 
@@ -29,12 +29,54 @@ API 사용 시 LS증권 OpenAPI [이용약관](https://openapi.ls-sec.co.kr/howt
 | `RedoxNet.Mcp.LsOpenApi` | dotnet tool | stdio 기반 MCP 서버. |
 | `RedoxNet.LsOpenApi.Core.Catalog.Builder` | 개발 도구 | LS 문서 사이트를 스크래핑하여 내장 TR 카탈로그를 재생성. 배포되지 않습니다. |
 
-## 빠른 시작 (NuGet 공개 후)
+## 빠른 시작
+
+서버 자체는 별도 설치 없이 `dnx` 가 매번 NuGet 에서 최신 버전을 받아 실행합니다. 호스트 설정 예시:
+
+### Claude Desktop / Claude Code
+
+`claude_desktop_config.json` (Claude Desktop) 또는 워크스페이스 루트의 `.mcp.json` (Claude Code):
 
 ```jsonc
 {
   "mcpServers": {
     "lsopenapi": {
+      "command": "dnx",
+      "args": ["RedoxNet.Mcp.LsOpenApi", "--yes"],
+      "env": {
+        "LS_APPKEY": "...",
+        "LS_APPSECRETKEY": "...",
+        "LS_MARKET": "virtual"
+      }
+    }
+  }
+}
+```
+
+### Codex CLI
+
+`%USERPROFILE%\.codex\config.toml` (Windows) 또는 `~/.codex/config.toml` (macOS / Linux):
+
+```toml
+[mcp_servers.lsopenapi]
+command = "dnx"
+args = ["RedoxNet.Mcp.LsOpenApi", "--yes"]
+
+[mcp_servers.lsopenapi.env]
+LS_APPKEY = "..."
+LS_APPSECRETKEY = "..."
+LS_MARKET = "virtual"
+```
+
+### VS Code (`mcp.json`)
+
+워크스페이스 `.vscode/mcp.json`:
+
+```jsonc
+{
+  "servers": {
+    "lsopenapi": {
+      "type": "stdio",
       "command": "dnx",
       "args": ["RedoxNet.Mcp.LsOpenApi", "--yes"],
       "env": {
