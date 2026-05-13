@@ -89,18 +89,32 @@ Workspace `.vscode/mcp.json`:
 }
 ```
 
-### Getting an API key
+## Getting an API Key
 
-You need an LS증권 OpenAPI **`AppKey`** and **`AppSecretKey`** to use this server. Steps:
+You need an **AppKey** and **AppSecretKey** pair issued by LS Securities to use this MCP server.
 
-1. **Open an LS증권 brokerage account.** Real-trading accounts open via the LS mobile app or a branch office; paper-trading (모의투자) accounts open through the dedicated paper-trading channel.
-2. **Register at the OpenAPI site.** Sign up at [openapi.ls-sec.co.kr](https://openapi.ls-sec.co.kr) and link your brokerage account.
-3. **Register an app.** My Page → "앱 관리" / "OpenAPI 신청" — enter an app name, a callback URL, accept the terms; the site issues your `AppKey` and `AppSecretKey`.
-4. **Paper-trading keys ≠ real-trading keys.** A key issued for one environment cannot call the other. Make sure `LS_MARKET` matches the environment the key was issued for.
+### Prerequisites
 
-> Keys can be re-checked or re-issued from My Page. **If you suspect a key was exposed, revoke and re-issue it immediately.** LS may deactivate keys after extended inactivity, so check periodically that your setup still works.
+- **LS Securities account** — Open via mobile app, online, or branch office. Additional permissions (overseas equities, derivatives, etc.) may require separate applications.
+- LS Securities home-trading ID.
 
-### Environment variables
+### Issuance Steps
+
+1. Log in to the [LS OpenAPI Portal](https://openapi.ls-sec.co.kr/) with your LS Securities ID.
+2. Navigate to **OpenAPI 신청 (OpenAPI Application)** → agree to the terms → submit application.
+3. After approval, find your **AppKey** and **AppSecretKey** under **MY > API Key 관리 (API Key Management)**.
+   - The **AppSecretKey is shown only once** at issuance — store it in a password manager (1Password, Bitwarden, etc.) immediately.
+4. New users are encouraged to start with the **paper trading environment** (`LS_MARKET=virtual`). Live trading (`real`) may require additional registration.
+
+### Security Notes
+
+- Never commit the AppSecretKey to git or share it in chat transcripts. Store it in GitHub Secrets for CI workflows, or in your machine's environment variables for local use.
+- If you suspect a leak, **regenerate the key** on the LS OpenAPI portal immediately to invalidate the old one.
+- Access tokens issued by the OAuth endpoint are valid for 24 hours; this package refreshes them automatically.
+
+For more details from LS, see the [official usage guide](https://openapi.ls-sec.co.kr/howto-use) (Korean only).
+
+## Environment variables
 
 | Name | Required | Description |
 | --- | --- | --- |
@@ -115,7 +129,7 @@ Tokens are cached at:
 
 The cache is a SQLite database (WAL mode). Cache keys are `SHA256(appkey):market`, so the raw app key never lives on disk. Tokens auto-refresh 5 minutes before expiry.
 
-### Credential handling policy
+## Credential handling policy
 
 This server accepts `LS_APPKEY` / `LS_APPSECRETKEY` **only through environment variables**. By design, **no credential is ever requested through chat, tool arguments, or MCP elicitation** — any path the model could observe. The expectation is that the host (Claude Desktop, AssistStudio, etc.) reads the secrets from the OS environment or its own credential store and injects them into the child process.
 
