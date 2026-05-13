@@ -104,6 +104,14 @@ public sealed class TrCatalog
             .ToList();
     }
 
+    /// <summary>
+    /// Ranks a TR against a search term. Higher score = stronger match.
+    /// Weights (descending): exact TR code, TR code substring, name, category,
+    /// description, then any field name/description match.
+    /// </summary>
+    /// <param name="tr">TR metadata to score.</param>
+    /// <param name="needle">Search term (case-insensitive).</param>
+    /// <returns>Non-negative score; zero means no match.</returns>
     static int ScoreMatch(TrMeta tr, string needle)
     {
         int score = 0;
@@ -140,6 +148,10 @@ public sealed class TrCatalog
         return score;
     }
 
+    /// <summary>Case-insensitive null-safe substring check used by the scorer.</summary>
+    /// <param name="haystack">String to search within. May be <see langword="null"/>.</param>
+    /// <param name="needle">Substring to find.</param>
+    /// <returns><see langword="true"/> when <paramref name="haystack"/> contains <paramref name="needle"/>.</returns>
     static bool Contains(string? haystack, string needle)
         => !string.IsNullOrEmpty(haystack)
            && haystack.Contains(needle, StringComparison.OrdinalIgnoreCase);
@@ -182,6 +194,13 @@ public sealed class TrCatalog
         return new TrCatalog(file);
     }
 
+    /// <summary>
+    /// Loads the catalog from the embedded resource shipped with this assembly.
+    /// Invoked exactly once by <see cref="Default"/> via a thread-safe
+    /// <see cref="Lazy{T}"/>.
+    /// </summary>
+    /// <returns>The default catalog.</returns>
+    /// <exception cref="InvalidOperationException">When the embedded resource isn't present in the assembly.</exception>
     static TrCatalog LoadEmbedded()
     {
         Assembly assembly = typeof(TrCatalog).Assembly;

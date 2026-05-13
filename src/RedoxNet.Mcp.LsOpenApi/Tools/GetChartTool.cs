@@ -189,6 +189,15 @@ public static class GetChartTool
         }
     }
 
+    /// <summary>
+    /// Internal carrier for one timeframe's fully-fetched data
+    /// (raw candles + indicator series + pre-computed context).
+    /// </summary>
+    /// <param name="PeriodType">User-facing period label (<c>day</c>, <c>week</c>, …).</param>
+    /// <param name="TrCode">Underlying TR that fetched the candles.</param>
+    /// <param name="Candles">Ordered candle list (oldest first).</param>
+    /// <param name="Indicators">Indicator series keyed by spec, aligned 1:1 with <paramref name="Candles"/>.</param>
+    /// <param name="Context">Pre-computed analysis block.</param>
     sealed record FrameResult(
         string PeriodType,
         string TrCode,
@@ -196,6 +205,20 @@ public static class GetChartTool
         IReadOnlyDictionary<string, IReadOnlyList<double?>> Indicators,
         ChartContext Context);
 
+    /// <summary>
+    /// Dispatches one timeframe to the appropriate TR fetcher, computes indicators,
+    /// and builds the analysis context. Used in a loop by the multi-timeframe path.
+    /// </summary>
+    /// <param name="apiClient">Injected LS API client.</param>
+    /// <param name="shcode">Target stock code.</param>
+    /// <param name="period">Period label (<c>day</c>/<c>week</c>/<c>month</c>/<c>year</c>/<c>min</c>/<c>tick</c>).</param>
+    /// <param name="count">Number of candles to request.</param>
+    /// <param name="from">Optional start date (yyyyMMdd).</param>
+    /// <param name="to">Optional end date (yyyyMMdd).</param>
+    /// <param name="minuteUnit">Minute interval; ignored unless <paramref name="period"/> is <c>min</c>.</param>
+    /// <param name="specs">Parsed indicator specs.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Populated <see cref="FrameResult"/>.</returns>
     static async Task<FrameResult> BuildFrameAsync(
         LsApiClient apiClient,
         string shcode,
@@ -227,8 +250,17 @@ public static class GetChartTool
         return new FrameResult(period, trCode, candles, indicatorResults, context);
     }
 
+    /// <summary>Number of trailing candles surfaced when <c>summary_only=true</c>.</summary>
     const int SummaryTailCount = 5;
 
+    /// <summary>
+    /// Returns the candle tail used by <c>summary_only</c>. Pass-through when
+    /// the flag is unset or the input is already shorter than
+    /// <see cref="SummaryTailCount"/>.
+    /// </summary>
+    /// <param name="candles">Full candle list.</param>
+    /// <param name="summaryOnly">Whether to keep only the tail.</param>
+    /// <returns>Either the original list or its last <see cref="SummaryTailCount"/> rows.</returns>
     static IReadOnlyList<Candle> SummarizeCandles(IReadOnlyList<Candle> candles, bool summaryOnly)
     {
         if (!summaryOnly || candles.Count <= SummaryTailCount)
@@ -236,6 +268,12 @@ public static class GetChartTool
         return candles.Skip(candles.Count - SummaryTailCount).ToList();
     }
 
+    /// <summary>
+    /// Collapses each indicator series down to its last value, for the
+    /// <c>summary_only</c> path. Preserves the spec keys.
+    /// </summary>
+    /// <param name="series">Indicator series keyed by spec.</param>
+    /// <returns>Dictionary of spec → final scalar (or <see langword="null"/> if the series is empty).</returns>
     static Dictionary<string, double?> SummarizeIndicators(
         IReadOnlyDictionary<string, IReadOnlyList<double?>> series)
     {
@@ -245,6 +283,13 @@ public static class GetChartTool
         return summary;
     }
 
+    /// <summary>
+    /// Renders candles for the JSON tool response, formatting the date per
+    /// period type (intraday → <c>yyyy-MM-ddTHH:mm:ss</c>, daily+ → <c>yyyy-MM-dd</c>).
+    /// </summary>
+    /// <param name="candles">Ordered candle list.</param>
+    /// <param name="periodType">Period label that selects the date format.</param>
+    /// <returns>Lazy sequence of anonymous objects for serialization.</returns>
     static IEnumerable<object> SerializeCandles(IReadOnlyList<Candle> candles, string periodType) =>
         candles.Select(c => new
         {
@@ -259,6 +304,19 @@ public static class GetChartTool
             value = c.Value,
         });
 
+    /// <summary>
+    /// Fetches day/week/month/year candles via TR <c>t8410</c>. Auto-derives a
+    /// generous lookback range when <paramref name="from"/> is unset so
+    /// <c>qrycnt</c> actually bounds the result.
+    /// </summary>
+    /// <param name="apiClient">LS API client.</param>
+    /// <param name="shcode">Stock code.</param>
+    /// <param name="gubun">t8410 period gubun (<c>2</c>=day / <c>3</c>=week / <c>4</c>=month / <c>5</c>=year).</param>
+    /// <param name="count">Number of candles to request.</param>
+    /// <param name="from">Optional explicit start (yyyyMMdd).</param>
+    /// <param name="to">Optional explicit end (yyyyMMdd).</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Ordered candles (oldest first).</returns>
     static async Task<List<Candle>> FetchDailyAsync(
         LsApiClient apiClient,
         string shcode,
@@ -313,6 +371,15 @@ public static class GetChartTool
         return end.AddDays(-daysBack);
     }
 
+    /// <summary>Fetches minute candles via TR <c>t8412</c>.</summary>
+    /// <param name="apiClient">LS API client.</param>
+    /// <param name="shcode">Stock code.</param>
+    /// <param name="minuteUnit">Minute interval (1/3/5/10/15/30/60).</param>
+    /// <param name="count">Candle count.</param>
+    /// <param name="from">Optional start date (yyyyMMdd).</param>
+    /// <param name="to">Optional end date (yyyyMMdd).</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Ordered minute candles.</returns>
     static async Task<List<Candle>> FetchMinuteAsync(
         LsApiClient apiClient,
         string shcode,
@@ -339,6 +406,12 @@ public static class GetChartTool
         return ParseMinuteCandles(response.GetBlock("t8412OutBlock1"));
     }
 
+    /// <summary>Fetches tick-level executions via TR <c>t1301</c> and caps the result locally.</summary>
+    /// <param name="apiClient">LS API client.</param>
+    /// <param name="shcode">Stock code.</param>
+    /// <param name="count">Maximum ticks to return (LS does not honor a count parameter for t1301).</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Ordered tick "candles" (open=high=low=close=trade price).</returns>
     static async Task<List<Candle>> FetchTickAsync(
         LsApiClient apiClient,
         string shcode,
@@ -357,6 +430,13 @@ public static class GetChartTool
         return ParseTickCandles(response.GetBlock("t1301OutBlock1"), count);
     }
 
+    /// <summary>
+    /// Throws <see cref="LsTrException"/> when the response carries a non-success
+    /// <c>rsp_cd</c>. HTTP-level errors are already raised by the API client; this
+    /// covers LS business-level errors that come back with a 200.
+    /// </summary>
+    /// <param name="response">Response to validate.</param>
+    /// <exception cref="LsTrException">When <see cref="LsTrResponse.IsSuccess"/> is false.</exception>
     static void EnsureSuccess(LsTrResponse response)
     {
         if (!response.IsSuccess)
@@ -367,6 +447,9 @@ public static class GetChartTool
                 responseBody: response.RawBody);
     }
 
+    /// <summary>Parses <c>t8410OutBlock1</c> into <see cref="Candle"/>s. Skips rows missing or unparseable dates.</summary>
+    /// <param name="array">The OutBlock1 JSON array, or <see langword="null"/>.</param>
+    /// <returns>Ordered candles; empty when input is null/non-array.</returns>
     static List<Candle> ParseDailyCandles(JsonElement? array)
     {
         var candles = new List<Candle>();
@@ -392,6 +475,9 @@ public static class GetChartTool
         return candles;
     }
 
+    /// <summary>Parses <c>t8412OutBlock1</c> (minute candles) into <see cref="Candle"/>s.</summary>
+    /// <param name="array">The OutBlock1 JSON array.</param>
+    /// <returns>Ordered minute candles; empty when the input is missing/invalid.</returns>
     static List<Candle> ParseMinuteCandles(JsonElement? array)
     {
         var candles = new List<Candle>();
@@ -420,6 +506,14 @@ public static class GetChartTool
         return candles;
     }
 
+    /// <summary>
+    /// Parses <c>t1301OutBlock1</c> (tick executions) into <see cref="Candle"/>s,
+    /// capping at <paramref name="max"/> entries. Each tick becomes a degenerate
+    /// candle where open = high = low = close = trade price.
+    /// </summary>
+    /// <param name="array">The OutBlock1 JSON array.</param>
+    /// <param name="max">Upper bound on the number of ticks to return.</param>
+    /// <returns>Ordered tick "candles".</returns>
     static List<Candle> ParseTickCandles(JsonElement? array, int max)
     {
         var candles = new List<Candle>();

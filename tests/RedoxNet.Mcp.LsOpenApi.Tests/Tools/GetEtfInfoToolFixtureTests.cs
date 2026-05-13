@@ -64,10 +64,10 @@ public class GetEtfInfoToolFixtureTests
 
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
-        // Identification
+        // Identification — listing_shares is raw count (LS reports in 천, tool ×1000)
         root.GetProperty("shcode").GetString().Should().Be("001200");
         root.GetProperty("name").GetString().Should().Be("유진투자증권");
-        root.GetProperty("listing_shares").GetInt64().Should().Be(96866);
+        root.GetProperty("listing_shares").GetInt64().Should().Be(96866L * 1000L);
         root.GetProperty("listing_date").GetString().Should().Be("19870824");
 
         // Price block — verify string-typed numerics are parsed
@@ -79,13 +79,18 @@ public class GetEtfInfoToolFixtureTests
         root.GetProperty("upper_limit_price").GetInt64().Should().Be(4755);
         root.GetProperty("lower_limit_price").GetInt64().Should().Be(2565);
 
-        // NAV / divergence block
+        // NAV / divergence / tracking-error block. The fixture has:
+        //   kasis="0"     → divergence_percent (괴리율) = 0
+        //   cocrate="0"   → tracking_error_percent (추적오차율) = 0
+        //   exhratio=7.17 → foreign_ownership_percent (소진율)
         root.GetProperty("nav").GetDouble().Should().Be(0.0);
         root.GetProperty("divergence_percent").GetDouble().Should().Be(0.0);
+        root.GetProperty("tracking_error_percent").GetDouble().Should().Be(0.0);
         root.GetProperty("foreign_ownership_percent").GetDouble().Should().BeApproximately(7.17, 0.01);
         root.GetProperty("spread_percent").GetDouble().Should().BeApproximately(0.14, 0.01);
-        root.TryGetProperty("tracking_basis", out _).Should().BeFalse("kasis is too noisy on the virtual server to surface as a curated field");
-        root.TryGetProperty("exchange_divergence_percent", out _).Should().BeFalse("renamed to foreign_ownership_percent to reflect actual semantics");
+        root.TryGetProperty("tracking_basis", out _).Should().BeFalse("renamed; the field was misnamed in earlier drafts");
+        root.TryGetProperty("exchange_divergence_percent", out _).Should().BeFalse("renamed to foreign_ownership_percent");
+        root.TryGetProperty("etf_kind", out _).Should().BeFalse("LS marks etf_kind as Filler — always empty, dropped from curated output");
 
         // 52-week / year range
         root.GetProperty("high_52w").GetInt64().Should().Be(3750);
@@ -157,11 +162,13 @@ public class GetEtfInfoToolFixtureTests
     }
 
     [Fact]
-    public async Task GetEtfInfo_KodexLikePayload_SurfacesForeignOwnershipNotDivergence()
+    public async Task GetEtfInfo_KodexLikePayload_RespectsLsKasisCocrateSemantics()
     {
-        // Reproduces the 2026-05-13 KODEX 200 E2E observation: cocrate is the
-        // real NAV divergence (~0.01%) while exhratio is foreign ownership (~23%).
-        // Earlier drafts mis-labeled exhratio as "exchange_divergence_percent".
+        // After the 2026-05-13 LS doc cross-check: kasis = 괴리율 (NAV vs price),
+        // cocrate = 추적오차율 (vs underlying index), exhratio = 외인 소진율.
+        // Earlier drafts had kasis dropped and cocrate mis-labelled as divergence.
+        // This fixture forces every field into a distinct nonzero value so a swap
+        // would be immediately visible in the assertions.
         string body = """
         {
           "rsp_cd": "00000",
@@ -170,8 +177,11 @@ public class GetEtfInfoToolFixtureTests
             "price": 122655, "sign": "2", "change": 3555, "diff": "002.98",
             "nav": "122737.70", "navsign": "2", "navchange": "3708.75", "navdiff": "003.12",
             "jnilnav": "119028.95",
-            "kasis": "0", "cocrate": "0.01", "exhratio": "023.40", "spread": "000.07",
+            "kasis": "0.05", "cocrate": "0.01", "exhratio": "023.40", "spread": "000.07",
             "etftotcap": 7654321, "listing": 100000,
+            "upname2": "KOSPI 200", "upcode2": "001", "upprice2": "382.40",
+            "ty_text": "투자유의",
+            "etf_cp": "실물복제",
             "futcode": "", "futname": "", "futprice": ""
           }
         }
@@ -181,9 +191,19 @@ public class GetEtfInfoToolFixtureTests
         string result = await GetEtfInfoTool.GetEtfInfo(client, "069500");
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
-        root.GetProperty("divergence_percent").GetDouble().Should().BeApproximately(0.01, 0.001);
+        root.GetProperty("divergence_percent").GetDouble().Should().BeApproximately(0.05, 0.001);
+        root.GetProperty("tracking_error_percent").GetDouble().Should().BeApproximately(0.01, 0.001);
         root.GetProperty("foreign_ownership_percent").GetDouble().Should().BeApproximately(23.40, 0.01);
-        root.TryGetProperty("tracking_basis", out _).Should().BeFalse();
-        root.TryGetProperty("exchange_divergence_percent", out _).Should().BeFalse();
+
+        // Reference index sub-object
+        JsonElement refIdx = root.GetProperty("reference_index");
+        refIdx.ValueKind.Should().Be(JsonValueKind.Object);
+        refIdx.GetProperty("name").GetString().Should().Be("KOSPI 200");
+        refIdx.GetProperty("code").GetString().Should().Be("001");
+        refIdx.GetProperty("price").GetDouble().Should().BeApproximately(382.40, 0.01);
+
+        root.GetProperty("investment_caution").GetString().Should().Be("투자유의");
+        root.GetProperty("replication_method").GetString().Should().Be("실물복제");
+        root.TryGetProperty("etf_kind", out _).Should().BeFalse();
     }
 }

@@ -155,6 +155,11 @@ public sealed class LsTokenCache : ITokenStore
         await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Creates the SQLite file, enables WAL mode, creates the <c>tokens</c> table,
+    /// and applies user-only file permissions on POSIX systems. Idempotent and
+    /// thread-safe via a double-checked lock.
+    /// </summary>
     void EnsureInitialized()
     {
         if (_initialized)
@@ -199,6 +204,13 @@ public sealed class LsTokenCache : ITokenStore
         }
     }
 
+    /// <summary>
+    /// Chmod-s the SQLite database file and its WAL/SHM siblings to <c>0600</c>
+    /// on Linux/macOS so other local users on the same machine cannot read cached
+    /// access tokens. No-op on Windows (the user-profile ACL already covers this).
+    /// Errors are logged at warning and swallowed — permission tightening is
+    /// best-effort, not a hard requirement.
+    /// </summary>
     void ApplyUserOnlyPermissions()
     {
         if (!File.Exists(_databasePath))

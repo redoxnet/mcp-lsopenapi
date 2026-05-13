@@ -38,6 +38,10 @@ internal static class PlotlyChartBuilder
     /// <summary>Plotly major version this builder targets.</summary>
     public const string PlotlyVersion = "5";
 
+    /// <summary>
+    /// Round-robin colour palette for moving-average and EMA overlays, in the
+    /// order they are enrolled in <see cref="IndicatorSpec"/>.
+    /// </summary>
     static readonly string[] MaPalette =
     {
         "#F39C12", // orange
@@ -91,6 +95,13 @@ internal static class PlotlyChartBuilder
         };
     }
 
+    /// <summary>
+    /// Builds the categorical x-axis values used by every trace.
+    /// Intraday periods get a full timestamp; daily and above use the date only.
+    /// </summary>
+    /// <param name="candles">Candle list.</param>
+    /// <param name="periodType">Period label.</param>
+    /// <returns>JSON array of date/time strings, one per candle.</returns>
     static JsonArray BuildXAxis(IReadOnlyList<Candle> candles, string periodType)
     {
         string format = periodType is "min" or "tick"
@@ -103,6 +114,13 @@ internal static class PlotlyChartBuilder
         return array;
     }
 
+    /// <summary>
+    /// Builds the OHLC candlestick trace with the Korean rising-red / falling-blue
+    /// fill convention.
+    /// </summary>
+    /// <param name="candles">Candle list.</param>
+    /// <param name="xAxis">Shared x-axis array.</param>
+    /// <returns>Plotly trace JSON object.</returns>
     static JsonObject BuildCandlestick(IReadOnlyList<Candle> candles, JsonArray xAxis)
     {
         var open = new JsonArray();
@@ -140,6 +158,14 @@ internal static class PlotlyChartBuilder
         };
     }
 
+    /// <summary>
+    /// Appends moving-average / Bollinger overlays to the trace list. RSI and
+    /// MACD specs are skipped because they would require their own y-axis subplot.
+    /// </summary>
+    /// <param name="data">Trace list to append into.</param>
+    /// <param name="xAxis">Shared x-axis array.</param>
+    /// <param name="indicators">Indicator series keyed by spec.</param>
+    /// <param name="specs">Parsed specs in user order; drives the palette cycle.</param>
     static void AddOverlays(
         JsonArray data,
         JsonArray xAxis,
@@ -183,6 +209,17 @@ internal static class PlotlyChartBuilder
         }
     }
 
+    /// <summary>
+    /// Builds one line trace from an indicator series. Null values become JSON
+    /// nulls so Plotly draws gaps rather than interpolating across warm-up
+    /// periods.
+    /// </summary>
+    /// <param name="name">Legend label.</param>
+    /// <param name="xAxis">Shared x-axis array.</param>
+    /// <param name="series">Indicator values, aligned with <paramref name="xAxis"/>.</param>
+    /// <param name="color">Hex line color.</param>
+    /// <param name="dash">Optional Plotly dash style (e.g. <c>"dot"</c>); pass <see langword="null"/> for solid.</param>
+    /// <returns>Plotly trace JSON object.</returns>
     static JsonObject BuildLineTrace(string name, JsonArray xAxis, IReadOnlyList<double?> series, string color, string? dash)
     {
         var y = new JsonArray();
@@ -211,6 +248,13 @@ internal static class PlotlyChartBuilder
         };
     }
 
+    /// <summary>
+    /// Builds the volume bar trace on the secondary y-axis. Bar colors mirror
+    /// the candle direction (red if close ≥ open, blue otherwise).
+    /// </summary>
+    /// <param name="candles">Candle list.</param>
+    /// <param name="xAxis">Shared x-axis array.</param>
+    /// <returns>Plotly bar trace JSON object.</returns>
     static JsonObject BuildVolume(IReadOnlyList<Candle> candles, JsonArray xAxis)
     {
         var y = new JsonArray();
@@ -233,6 +277,13 @@ internal static class PlotlyChartBuilder
         };
     }
 
+    /// <summary>
+    /// Builds the Plotly <c>layout</c> object: title, axes (with price on top,
+    /// volume on bottom), legend, hover and margin settings.
+    /// </summary>
+    /// <param name="shcode">Stock code for the title.</param>
+    /// <param name="periodType">Period label; mapped to Korean (일/주/월/분/틱) for display.</param>
+    /// <returns>Plotly layout JSON object.</returns>
     static JsonObject BuildLayout(string shcode, string periodType)
     {
         string periodLabel = periodType switch
@@ -281,6 +332,13 @@ internal static class PlotlyChartBuilder
         };
     }
 
+    /// <summary>
+    /// Returns a deep-enough copy of an x-axis array so each trace can own its
+    /// own array. <see cref="JsonNode"/>s can only have a single parent, so
+    /// re-using the same array across traces would throw.
+    /// </summary>
+    /// <param name="source">Original x-axis (string values).</param>
+    /// <returns>Independent <see cref="JsonArray"/> with the same string values.</returns>
     static JsonArray CloneArray(JsonArray source)
     {
         // JsonNodes can only have a single parent. Each trace's `x` must own

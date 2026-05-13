@@ -136,6 +136,9 @@ public static class SearchStockTool
         }
     }
 
+    /// <summary>Maps the LS market gubun digit to a human label (e.g. <c>"1"</c> → <c>"kospi"</c>).</summary>
+    /// <param name="gubun">Raw gubun value from the LS row.</param>
+    /// <returns>Lowercase market label, or <c>"unknown"</c> when the value isn't recognised.</returns>
     static string MarketLabel(string? gubun) => gubun switch
     {
         "1" => "kospi",

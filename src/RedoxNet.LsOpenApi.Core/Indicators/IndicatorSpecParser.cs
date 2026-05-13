@@ -101,6 +101,15 @@ public static class IndicatorSpecParser
         return true;
     }
 
+    /// <summary>
+    /// Validates the parsed argument list for a given indicator kind. Each kind
+    /// has a fixed arity and positivity contract — invalid combinations produce
+    /// a human-readable error string for the tool response.
+    /// </summary>
+    /// <param name="kind">Indicator kind (e.g. <c>ma</c>, <c>ema</c>, <c>rsi</c>, <c>macd</c>, <c>bb</c>).</param>
+    /// <param name="args">Numeric arguments parsed from the spec.</param>
+    /// <param name="error">When this method returns <see langword="false"/>, contains the failure reason.</param>
+    /// <returns><see langword="true"/> when the args satisfy the kind's contract.</returns>
     static bool ValidateArgs(string kind, List<double> args, out string? error)
     {
         error = null;

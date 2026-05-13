@@ -57,6 +57,12 @@ public static class DescribeTrTool
         return JsonSerializer.Serialize(payload, McpJson.Tool);
     }
 
+    /// <summary>
+    /// Projects a <see cref="TrBlock"/> into an anonymous object whose shape
+    /// matches the public JSON contract of <c>ls_describe_tr</c>.
+    /// </summary>
+    /// <param name="block">Catalog block (InBlock or OutBlock).</param>
+    /// <returns>An anonymous object ready for serialization.</returns>
     static object BlockPayload(TrBlock block) => new
     {
         name = block.Name,

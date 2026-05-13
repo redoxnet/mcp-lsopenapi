@@ -82,5 +82,11 @@ public sealed class IndicatorService
         return result;
     }
 
+    /// <summary>
+    /// Identity helper kept for symmetry with the other dispatchers — Skender
+    /// already produces nullable doubles, so no conversion is needed.
+    /// </summary>
+    /// <param name="source">Indicator series.</param>
+    /// <returns>The same list.</returns>
     static IReadOnlyList<double?> MapNullable(IReadOnlyList<double?> source) => source;
 }

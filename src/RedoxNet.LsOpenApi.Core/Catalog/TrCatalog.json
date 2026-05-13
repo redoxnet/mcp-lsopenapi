@@ -1,5 +1,5 @@
 {
-  "version": "0.1.0-alpha.2+seed",
+  "version": "0.1.0-alpha.3+seed",
   "generated_at_utc": "2026-05-13T00:00:00Z",
   "source": "manual-seed",
   "trs": [
@@ -592,7 +592,7 @@
             { "name": "hname", "type": "char", "description": "한글명" },
             { "name": "shcode", "type": "char", "description": "단축종목코드", "length": 6 },
             { "name": "expcode", "type": "char", "description": "확장종목코드", "length": 12 },
-            { "name": "etfgubun", "type": "char", "description": "ETF 구분", "length": 1 },
+            { "name": "etfgubun", "type": "char", "description": "ETF 구분 (1=ETF, 그 외 일반/ETN — t8430 은 ETN 미구분; ETN 까지 필요 시 t8436 사용)", "length": 1 },
             { "name": "uplmtprice", "type": "long", "description": "상한가" },
             { "name": "dnlmtprice", "type": "long", "description": "하한가" },
             { "name": "jnilclose", "type": "long", "description": "전일종가" },
@@ -635,9 +635,9 @@
             { "name": "memedan", "type": "char", "description": "매매수량단위", "length": 5 },
             { "name": "recprice", "type": "long", "description": "기준가" },
             { "name": "gubun", "type": "char", "description": "시장구분 (1KOSPI 2KOSDAQ)", "length": 1 },
-            { "name": "bu12gubun", "type": "char", "description": "관리/투자유의 구분 코드", "length": 2 },
-            { "name": "spac_gubun", "type": "char", "description": "SPAC(기업인수목적회사) 구분 (Y/N)", "length": 1 },
-            { "name": "filler", "type": "char", "description": "예비 필드 (보통 빈 문자열)" }
+            { "name": "bu12gubun", "type": "char", "description": "증권그룹 코드 (LS 명세 기준 — 관리/투자유의 종목 식별에도 사용됨)", "length": 2 },
+            { "name": "spac_gubun", "type": "char", "description": "기업인수목적회사(SPAC) 여부 (Y/N)", "length": 1 },
+            { "name": "filler", "type": "char", "description": "예비 필드 (LS 명세에 'filler(미사용)' 로 기재)" }
           ]
         }
       ],
@@ -690,16 +690,16 @@
             { "name": "jnilnavsign", "type": "char", "description": "전일 NAV 구분" },
             { "name": "jnilnavchange", "type": "char", "description": "전일 NAV 변화" },
             { "name": "jnilnavdiff", "type": "char", "description": "전일 NAV 등락율" },
-            { "name": "kasis", "type": "char", "description": "추적기준지수값 (LS virtual 서버에서는 종종 '0' 으로 응답)" },
-            { "name": "cocrate", "type": "char", "description": "괴리율 (시장가 vs NAV, %)" },
-            { "name": "exhratio", "type": "char", "description": "외인 한도소진율 (%) — t1101 동일 의미" },
+            { "name": "kasis", "type": "char", "description": "괴리율 (NAV vs 시장가, %) — LS 명세 6.2" },
+            { "name": "cocrate", "type": "char", "description": "추적오차율 (vs 기초지수, %) — LS 명세 6.2" },
+            { "name": "exhratio", "type": "char", "description": "소진율 (외인 한도, %) — LS 명세 6.2" },
             { "name": "spread", "type": "char", "description": "호가 스프레드" },
             { "name": "etftotcap", "type": "long", "description": "ETF 시가총액(단위 LS 명세 기준)" },
-            { "name": "listing", "type": "long", "description": "상장좌수" },
+            { "name": "listing", "type": "long", "description": "상장주식수 (단위: 천주). 원시 주식수는 ×1000" },
             { "name": "leverage", "type": "long", "description": "레버리지 배수 (0 일반, 2 2배, -1 인버스 등)" },
             { "name": "leverage2", "type": "char", "description": "보조 레버리지 문자열" },
             { "name": "taxgubun", "type": "char", "description": "과세구분", "length": 1 },
-            { "name": "etf_kind", "type": "char", "description": "ETF 종목구분 코드" },
+            { "name": "etf_kind", "type": "char", "description": "상품유형 (LS 명세에서 Filler 로 기재 — 항상 빈 값으로 응답)" },
             { "name": "etp_gb", "type": "char", "description": "ETP 구분 (ETF/ETN)" },
             { "name": "etn_kind_cd", "type": "char", "description": "ETN 종목구분 코드" },
             { "name": "etn_elback_yn", "type": "char", "description": "ETN 조기상환 사유 발생 여부", "length": 1 },
@@ -729,8 +729,13 @@
             { "name": "futsign", "type": "char", "description": "선물 전일대비구분", "length": 1 },
             { "name": "futchange", "type": "char", "description": "선물 전일대비" },
             { "name": "futdiff", "type": "char", "description": "선물 등락율" },
-            { "name": "vi_gubun", "type": "char", "description": "VI 발동 구분" },
-            { "name": "payday", "type": "char", "description": "분배락일", "length": 8 },
+            { "name": "upname2", "type": "char", "description": "참고지수명 (ETF 가 추종하는 기초지수, 예: 'KOSPI 200')" },
+            { "name": "upcode2", "type": "char", "description": "참고지수 코드", "length": 3 },
+            { "name": "upprice2", "type": "char", "description": "참고지수 현재가 (LS 명세 7.2)" },
+            { "name": "ty_text", "type": "char", "description": "ETF/ETN 투자유의 안내 텍스트" },
+            { "name": "etf_cp", "type": "char", "description": "복제방법 (예: 실물복제 / 합성)" },
+            { "name": "vi_gubun", "type": "char", "description": "VI 발동/해제 구분" },
+            { "name": "payday", "type": "char", "description": "분배락일 또는 ETN 지급일", "length": 8 },
             { "name": "listdate", "type": "char", "description": "상장일", "length": 8 }
           ]
         }
@@ -749,7 +754,9 @@
           "name": "t1904InBlock",
           "is_array": false,
           "fields": [
-            { "name": "shcode", "type": "char", "description": "단축종목코드 (6자리)", "required": true, "length": 6, "example": "069500" }
+            { "name": "shcode", "type": "char", "description": "ETF 단축종목코드 (6자리)", "required": true, "length": 6, "example": "069500" },
+            { "name": "date", "type": "char", "description": "PDF 적용일자 yyyyMMdd", "required": true, "length": 8, "example": "20230104" },
+            { "name": "sgb", "type": "char", "description": "정렬기준 (1=평가금액, 2=증권수)", "required": true, "length": 1, "example": "1" }
           ]
         }
       ],
@@ -772,9 +779,11 @@
             { "name": "jnilnavsign", "type": "char", "description": "전일 NAV 구분" },
             { "name": "jnilnavchange", "type": "char", "description": "전일 NAV 변화" },
             { "name": "jnilnavdiff", "type": "char", "description": "전일 NAV 등락율" },
-            { "name": "etfnum", "type": "long", "description": "구성종목 수 (현금 제외 가능)" },
-            { "name": "etfcunum", "type": "long", "description": "CU(설정/환매 단위) 좌수" },
-            { "name": "etftotcap", "type": "long", "description": "ETF 시가총액" },
+            { "name": "etfnum", "type": "long", "description": "구성종목 수" },
+            { "name": "etfcunum", "type": "long", "description": "CU 주식수 (설정/환매 단위)" },
+            { "name": "etftotcap", "type": "long", "description": "순자산총액 (단위: 억원)" },
+            { "name": "opcom_nmk", "type": "char", "description": "운용사명 (예: '삼성자산운용(ETF)')" },
+            { "name": "upname", "type": "char", "description": "업종명 (LS testbed 응답에서 일부 바이트가 깨져 들어올 수 있음 — 신뢰하지 말 것)" },
             { "name": "tot_pval", "type": "long", "description": "PDF 평가금액 합계" },
             { "name": "tot_sigatval", "type": "long", "description": "PDF 시가총액 합계" },
             { "name": "cash", "type": "long", "description": "PDF 내 현금성 자산" },
@@ -800,8 +809,8 @@
             { "name": "change", "type": "long", "description": "전일대비" },
             { "name": "diff", "type": "char", "description": "등락율" },
             { "name": "diff2", "type": "char", "description": "보조 등락율" },
-            { "name": "volume", "type": "long", "description": "구성종목 거래량" },
-            { "name": "value", "type": "long", "description": "구성종목 거래대금" },
+            { "name": "volume", "type": "long", "description": "구성종목 누적거래량" },
+            { "name": "value", "type": "long", "description": "구성종목 거래대금 (단위: 백만원)" },
             { "name": "pvalue", "type": "long", "description": "ETF 내 평가금액" },
             { "name": "sigatvalue", "type": "long", "description": "구성종목 시가총액" },
             { "name": "parprice", "type": "long", "description": "액면가" },
@@ -811,6 +820,104 @@
         }
       ],
       "continuation": { "supported": false },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t1902",
+      "name": "ETF 시간별 추이",
+      "category": "주식ETF",
+      "path": "/stock/etf",
+      "description": "ETF 의 분/시간 단위 시계열 — 시점별 가격, NAV, 추적오차, 괴리율, 기초지수값을 반환합니다. 'crate'(추적오차)/'grate'(괴리) 등 t1901/t1904 와 다른 필드명을 사용함에 주의.",
+      "in_blocks": [
+        {
+          "name": "t1902InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "shcode", "type": "char", "description": "단축종목코드 (6자리)", "required": true, "length": 6, "example": "069500" },
+            { "name": "time", "type": "char", "description": "조회 시작 시각 HHmmss. 최초 호출은 빈 문자열, 연속 조회 시 직전 응답의 마지막 time 을 사용", "required": true, "length": 6, "example": "" }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t1902OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "time", "type": "char", "description": "기준 시각" },
+            { "name": "hname", "type": "char", "description": "종목명" },
+            { "name": "upname", "type": "char", "description": "업종지수명 (기초지수)" }
+          ]
+        },
+        {
+          "name": "t1902OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "time", "type": "char", "description": "시각 HHmmss(또는 8자)", "length": 8 },
+            { "name": "price", "type": "long", "description": "현재가" },
+            { "name": "sign", "type": "char", "description": "전일대비구분", "length": 1 },
+            { "name": "change", "type": "long", "description": "전일대비" },
+            { "name": "volume", "type": "long", "description": "누적거래량" },
+            { "name": "nav", "type": "char", "description": "NAV (LS 명세 9.2)" },
+            { "name": "navdiff", "type": "char", "description": "NAV 대비 (시장가-NAV)" },
+            { "name": "navchange", "type": "char", "description": "NAV 전일대비" },
+            { "name": "crate", "type": "char", "description": "추적오차율 (%) — t1901 의 cocrate 와 동일 개념" },
+            { "name": "grate", "type": "char", "description": "괴리율 (%) — t1901 의 kasis 와 동일 개념" },
+            { "name": "jisu", "type": "char", "description": "기초지수값" },
+            { "name": "jichange", "type": "char", "description": "지수 전일대비" },
+            { "name": "jirate", "type": "char", "description": "지수 전일대비율 (%)" }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "in_key_fields": ["time"], "out_key_field_hint": "OutBlock1 마지막 row 의 time" },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t1903",
+      "name": "ETF 일별 추이",
+      "category": "주식ETF",
+      "path": "/stock/etf",
+      "description": "ETF 의 일별 시계열 — 일자별 가격, NAV, 추적오차, 괴리율, 기초지수값. t1902 의 분단위 버전. 필드명 컨벤션 동일 (crate/grate/jisu).",
+      "in_blocks": [
+        {
+          "name": "t1903InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "shcode", "type": "char", "description": "단축종목코드 (6자리)", "required": true, "length": 6, "example": "069500" },
+            { "name": "date", "type": "char", "description": "조회 시작 일자 yyyyMMdd. 최초 호출은 빈 문자열, 연속 조회 시 직전 응답의 마지막 date 를 사용", "required": true, "length": 8, "example": "" }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t1903OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "date", "type": "char", "description": "기준 일자 yyyyMMdd", "length": 8 },
+            { "name": "hname", "type": "char", "description": "종목명" },
+            { "name": "upname", "type": "char", "description": "업종지수명 (기초지수)" }
+          ]
+        },
+        {
+          "name": "t1903OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "date", "type": "char", "description": "일자 yyyyMMdd", "length": 8 },
+            { "name": "price", "type": "long", "description": "현재가(종가)" },
+            { "name": "sign", "type": "char", "description": "전일대비구분", "length": 1 },
+            { "name": "change", "type": "long", "description": "전일대비" },
+            { "name": "volume", "type": "long", "description": "누적거래량" },
+            { "name": "nav", "type": "char", "description": "NAV (LS 명세 9.2)" },
+            { "name": "navdiff", "type": "char", "description": "NAV 대비 (시장가-NAV)" },
+            { "name": "navchange", "type": "char", "description": "NAV 전일대비" },
+            { "name": "crate", "type": "char", "description": "추적오차율 (%) — t1901 의 cocrate 와 동일 개념" },
+            { "name": "grate", "type": "char", "description": "괴리율 (%) — t1901 의 kasis 와 동일 개념" },
+            { "name": "jisu", "type": "char", "description": "기초지수값" },
+            { "name": "jichange", "type": "char", "description": "지수 전일대비" },
+            { "name": "jirate", "type": "char", "description": "지수 전일대비율 (%)" }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "in_key_fields": ["date"], "out_key_field_hint": "OutBlock1 마지막 row 의 date" },
       "rate_limit_per_sec": 1
     }
   ]

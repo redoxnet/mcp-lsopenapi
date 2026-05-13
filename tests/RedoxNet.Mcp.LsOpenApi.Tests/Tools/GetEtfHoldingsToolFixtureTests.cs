@@ -64,11 +64,19 @@ public class GetEtfHoldingsToolFixtureTests
     {
         var (client, handler) = TestClientFactory.Create((_, _) => Ok(TestbedT1904Response));
 
-        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500");
+        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500", date: "20230104");
 
         handler.Requests.Should().HaveCount(1);
         handler.Requests[0].RequestUri!.AbsolutePath.Should().Be("/stock/etf");
         handler.Requests[0].Headers.GetValues("tr_cd").Should().ContainSingle().Which.Should().Be("t1904");
+
+        // LS requires all three InBlock fields; omitting any one causes
+        // rsp_cd=00000 with an empty OutBlock (mis-diagnosed as a "virtual
+        // server has no data" symptom during the 2026-05-13 E2E run).
+        string sent = await handler.Requests[0].Content!.ReadAsStringAsync();
+        sent.Should().Contain("\"shcode\":\"069500\"");
+        sent.Should().Contain("\"date\":\"20230104\"");
+        sent.Should().Contain("\"sgb\":\"1\"");
 
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
@@ -103,6 +111,73 @@ public class GetEtfHoldingsToolFixtureTests
         bond.GetProperty("shcode").GetString().Should().Be("KR103501GC90");
         bond.GetProperty("name").GetString().Should().Be("국고03125-2709(22-8)");
         bond.GetProperty("weight_percent").GetDouble().Should().BeApproximately(19.57, 0.01);
+    }
+
+    [Fact]
+    public async Task GetEtfHoldings_TopN_TruncatesHoldingsArray()
+    {
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(TestbedT1904Response));
+
+        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500", top_n: 1);
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        root.GetProperty("holdings").GetArrayLength().Should().Be(1);
+        root.GetProperty("holdings_returned").GetInt32().Should().Be(1);
+        root.GetProperty("holdings_truncated").GetBoolean().Should().BeTrue();
+        // Summary fields still reflect the full ETF.
+        root.GetProperty("holdings_count").GetInt64().Should().Be(7);
+        // The first row in LS's sort order survives — 005930 (Samsung).
+        root.GetProperty("holdings")[0].GetProperty("shcode").GetString().Should().Be("005930");
+    }
+
+    [Fact]
+    public async Task GetEtfHoldings_TopN_LargerThanList_ReturnsAllUntruncated()
+    {
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(TestbedT1904Response));
+
+        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500", top_n: 100);
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        root.GetProperty("holdings").GetArrayLength().Should().Be(2);
+        root.GetProperty("holdings_returned").GetInt32().Should().Be(2);
+        root.GetProperty("holdings_truncated").GetBoolean().Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetEtfHoldings_TopN_ZeroOrNegative_ReturnsError()
+    {
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(TestbedT1904Response));
+
+        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500", top_n: 0);
+
+        JsonDocument.Parse(result).RootElement.GetProperty("error").GetString()
+            .Should().Contain("top_n");
+    }
+
+    [Fact]
+    public async Task GetEtfHoldings_NoTopN_ReturnsAll_WithFalseTruncatedFlag()
+    {
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(TestbedT1904Response));
+
+        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500");
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        root.GetProperty("holdings").GetArrayLength().Should().Be(2);
+        root.GetProperty("holdings_truncated").GetBoolean().Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetEtfHoldings_DateDefaultsToTodayKst_AndSgbIsHardcodedToOne()
+    {
+        var (client, handler) = TestClientFactory.Create((_, _) => Ok(TestbedT1904Response));
+
+        await GetEtfHoldingsTool.GetEtfHoldings(client, "069500");
+
+        string sent = await handler.Requests[0].Content!.ReadAsStringAsync();
+        string expectedDate = DateTime.UtcNow.AddHours(9).ToString(
+            "yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture);
+        sent.Should().Contain($"\"date\":\"{expectedDate}\"");
+        sent.Should().Contain("\"sgb\":\"1\"");
     }
 
     [Fact]

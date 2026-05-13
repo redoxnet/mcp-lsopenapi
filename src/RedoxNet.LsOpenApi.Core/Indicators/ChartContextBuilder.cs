@@ -133,6 +133,13 @@ public static class ChartContextBuilder
         return new ChartContext(divergence, volume, drawdown, maTrend, alignment);
     }
 
+    /// <summary>
+    /// Returns the average volume over the last <paramref name="window"/> candles,
+    /// or <see langword="null"/> when fewer candles are available.
+    /// </summary>
+    /// <param name="candles">Ordered candle list.</param>
+    /// <param name="window">Number of trailing candles to average.</param>
+    /// <returns>Average volume rounded toward zero, or <see langword="null"/> on insufficient data.</returns>
     static long? AverageVolume(IReadOnlyList<Candle> candles, int window)
     {
         if (candles.Count < window)
@@ -143,6 +150,13 @@ public static class ChartContextBuilder
         return sum / window;
     }
 
+    /// <summary>
+    /// Classifies an indicator series direction over the last <see cref="TrendWindow"/>
+    /// bars as <c>"up"</c>, <c>"down"</c>, or <c>"flat"</c>. Walks past null
+    /// warm-up values to find a usable past anchor.
+    /// </summary>
+    /// <param name="series">Indicator series (aligned 1:1 with candles).</param>
+    /// <returns>Direction label.</returns>
     static string ComputeTrend(IReadOnlyList<double?> series)
     {
         if (series.Count == 0) return "flat";

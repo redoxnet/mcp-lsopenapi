@@ -57,6 +57,12 @@ public static class SearchTrTool
         return JsonSerializer.Serialize(payload, McpJson.Tool);
     }
 
+    /// <summary>
+    /// Renders a one-line summary of a TR's first InBlock for the search hit
+    /// preview — just the required field names, comma-separated.
+    /// </summary>
+    /// <param name="tr">TR metadata.</param>
+    /// <returns>A short string like <c>"shcode, gubun"</c>, or <c>"(none)"</c>.</returns>
     static string BriefInBlock(TrMeta tr)
     {
         if (tr.InBlocks.Count == 0)

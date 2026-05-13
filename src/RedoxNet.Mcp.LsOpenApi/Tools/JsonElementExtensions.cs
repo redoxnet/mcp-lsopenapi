@@ -13,6 +13,14 @@ namespace RedoxNet.Mcp.LsOpenApi.Tools;
 /// </remarks>
 internal static class JsonElementExtensions
 {
+    /// <summary>
+    /// Reads a numeric field as <see cref="long"/>, tolerating LS's habit of
+    /// shipping numeric values as JSON strings on legacy TRs.
+    /// </summary>
+    /// <param name="element">The JSON object to read from.</param>
+    /// <param name="property">Property name (case-sensitive).</param>
+    /// <param name="fallback">Value returned when the property is missing or unparseable.</param>
+    /// <returns>The parsed long, or <paramref name="fallback"/>.</returns>
     public static long ReadLong(this JsonElement element, string property, long fallback = 0)
     {
         if (!element.TryGetProperty(property, out JsonElement value))
@@ -28,6 +36,14 @@ internal static class JsonElementExtensions
         };
     }
 
+    /// <summary>
+    /// Reads a numeric field as <see cref="double"/>, handling JSON strings as
+    /// fallback (LS frequently uses fixed-width zero-padded numerics on legacy TRs).
+    /// </summary>
+    /// <param name="element">The JSON object to read from.</param>
+    /// <param name="property">Property name.</param>
+    /// <param name="fallback">Value returned when the property is missing or unparseable.</param>
+    /// <returns>The parsed double, or <paramref name="fallback"/>.</returns>
     public static double ReadDouble(this JsonElement element, string property, double fallback = 0)
     {
         if (!element.TryGetProperty(property, out JsonElement value))
@@ -41,6 +57,13 @@ internal static class JsonElementExtensions
         };
     }
 
+    /// <summary>
+    /// Reads a string field, coercing numeric and boolean kinds into a string
+    /// representation when LS happens to ship them that way.
+    /// </summary>
+    /// <param name="element">The JSON object to read from.</param>
+    /// <param name="property">Property name.</param>
+    /// <returns>The string value, or <see langword="null"/> when the property is absent or an unsupported kind.</returns>
     public static string? ReadString(this JsonElement element, string property)
     {
         if (!element.TryGetProperty(property, out JsonElement value))

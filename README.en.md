@@ -246,7 +246,7 @@ dotnet run --project src/RedoxNet.Mcp.LsOpenApi --framework net8.0
 - ✅ M3 — TR execution (`LsApiClient.CallTrAsync`) with Polly retries, per-TR rate limiter, header + body continuation modes.
 - ✅ M4 — MCP stdio server with 3 meta tools (`ls_search_tr`, `ls_describe_tr`, `ls_call_tr`).
 - ✅ M5 — 7 semantic tools: `ls_get_quote`, `ls_get_multi_quote`, `ls_get_stock_info`, `ls_get_chart` (+ indicators, context metadata, multi-timeframe, Plotly v5 spec via `include_chart`), `ls_search_stock`, **`ls_get_etf_info`, `ls_get_etf_holdings`**.
-- ✅ Live verified against the LS virtual server (v0.1.0-alpha.1).
+- ✅ Live verified against the LS virtual server (v0.1.0-alpha.3).
 - ⏳ Next release — Realtime (WebSocket), accounts/balances, orders.
 
 ## License

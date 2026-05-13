@@ -212,6 +212,14 @@ public sealed class LsApiClient
         }
     }
 
+    /// <summary>
+    /// Builds the Polly retry policy used for every TR call: 3 retries with
+    /// 200·2^(n-1) ms back-off, on transient network exceptions or transient
+    /// LS-side HTTP statuses (408/429/502/503/504). The per-call <c>TrCode</c>
+    /// is threaded through Polly's context so retry log lines name the TR.
+    /// </summary>
+    /// <param name="logger">Logger used by the retry callback.</param>
+    /// <returns>An <see cref="AsyncRetryPolicy{HttpResponseMessage}"/>.</returns>
     static AsyncRetryPolicy<HttpResponseMessage> BuildRetryPolicy(ILogger logger) =>
         Policy<HttpResponseMessage>
             .Handle<HttpRequestException>()
@@ -243,6 +251,10 @@ public sealed class LsApiClient
                     }
                 });
 
+    /// <summary>Truncates a string with an ellipsis suffix for log lines.</summary>
+    /// <param name="s">Input string.</param>
+    /// <param name="max">Maximum length before truncation.</param>
+    /// <returns>The original string or its prefix followed by <c>"…"</c>.</returns>
     static string Truncate(string s, int max) =>
         s.Length <= max ? s : s[..max] + "…";
 }

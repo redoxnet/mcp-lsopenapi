@@ -4,7 +4,6 @@
     <File Path="docs/ADR-001-credential-management.md" />
     <File Path="docs/LS-TR-INVENTORY.md" />
     <File Path="docs/TR-CATALOG.md" />
-    <File Path="docs/TOOLS.md" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/RedoxNet.LsOpenApi.Core/RedoxNet.LsOpenApi.Core.csproj" />
