@@ -1,6 +1,8 @@
 <Solution>
   <Folder Name="/docs/">
     <File Path="README.md" />
+    <File Path="README.en.md" />
+    <File Path="RELEASENOTES.md" />
     <File Path="docs/ADR-001-credential-management.md" />
     <File Path="docs/LS-TR-INVENTORY.md" />
     <File Path="docs/TR-CATALOG.md" />
