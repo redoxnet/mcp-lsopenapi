@@ -154,13 +154,37 @@ public class GetEtfHoldingsToolFixtureTests
     }
 
     [Fact]
-    public async Task GetEtfHoldings_SuccessButBlockMissing_HintsUserClearly()
+    public async Task GetEtfHoldings_LsReportsNoData_SurfacesRspMsgInHeadline()
     {
-        // Reproduces the 2026-05-13 E2E observation across TIGER 미국S&P500
-        // (360750, foreign assets) and TIGER 바이오TOP10 (364970, domestic
-        // bio basket): LS returns rsp_cd "00000" with no OutBlock at all.
-        // Tool must produce a multi-cause hint that the LLM can self-
-        // diagnose against, and pass rsp_cd/rsp_msg through in `details`.
+        // Reproduces the 2026-05-13 raw observation captured via ls_call_tr:
+        // for KODEX 200 (069500) on the LS virtual server, the API responds
+        // with rsp_cd=00000 and rsp_msg="해당자료가 없습니다" and no OutBlock.
+        // The tool's headline error must lift that LS-side phrase up so the
+        // LLM doesn't have to dig into `details` to find it.
+        string body = """
+        {
+          "rsp_cd": "00000",
+          "rsp_msg": "해당자료가 없습니다."
+        }
+        """;
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(body));
+
+        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500");
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        string error = root.GetProperty("error").GetString()!;
+        error.Should().Contain("해당자료가 없습니다");
+        error.Should().Contain("069500");
+        JsonElement details = root.GetProperty("details");
+        details.GetProperty("rsp_cd").GetString().Should().Be("00000");
+        details.GetProperty("rsp_msg").GetString().Should().Be("해당자료가 없습니다.");
+    }
+
+    [Fact]
+    public async Task GetEtfHoldings_SuccessButBlockMissingWithUnknownLsMessage_FallsBackToGenericHint()
+    {
+        // If LS ever surfaces a different rsp_msg, the tool should still
+        // produce an actionable hint and quote the LS message verbatim.
         string body = """
         {
           "rsp_cd": "00000",
@@ -173,10 +197,7 @@ public class GetEtfHoldingsToolFixtureTests
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         string error = root.GetProperty("error").GetString()!;
-        error.Should().Contain("PDF");
+        error.Should().Contain("정상적으로 조회가 완료되었습니다");
         error.Should().Contain("ls_call_tr");
-        JsonElement details = root.GetProperty("details");
-        details.GetProperty("shcode").GetString().Should().Be("364970");
-        details.GetProperty("rsp_cd").GetString().Should().Be("00000");
     }
 }

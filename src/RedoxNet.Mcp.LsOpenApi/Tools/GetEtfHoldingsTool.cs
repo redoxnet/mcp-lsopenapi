@@ -55,9 +55,17 @@ public static class GetEtfHoldingsTool
             JsonElement? holdingsBlock = response.GetBlock("t1904OutBlock1");
 
             if (summaryBlock is null)
+            {
+                string lsMessage = response.RspMessage ?? "";
+                string headline = lsMessage.Contains("해당자료가 없습니다")
+                    ? $"LS reports '해당자료가 없습니다' (no PDF data available) for shcode {shcode}. This is common on the LS virtual server, which has limited PDF coverage even for liquid ETFs (e.g. KODEX 200 069500). Try the same call against LS_MARKET=real, or check the ETF issuer's official PDF page (samsungfund.com / tigeretf.com / etc.)."
+                    : !string.IsNullOrWhiteSpace(lsMessage)
+                        ? $"LS returned no PDF block. LS message: '{lsMessage}'. Inspect the raw response with ls_call_tr (tr_cd='t1904')."
+                        : "LS returned success (rsp_cd=00000) but no t1904OutBlock and no rsp_msg detail. Inspect the raw response with ls_call_tr (tr_cd='t1904').";
                 return McpJson.Error(
-                    "LS returned success (rsp_cd=00000) but no t1904OutBlock — PDF (구성종목) data is unavailable for this shcode. Common causes: (1) the LS virtual server has spotty PDF coverage for certain ETFs, (2) intraday PDF publication lag, (3) the shcode is not a Korean ETF that publishes PDF via t1904. Inspect the raw response with `ls_call_tr` (tr_cd='t1904', in_block={shcode}) to debug, or check the ETF issuer's official PDF page.",
+                    headline,
                     new { shcode, rsp_cd = response.RspCode, rsp_msg = response.RspMessage });
+            }
 
             JsonElement s = summaryBlock.Value;
 
