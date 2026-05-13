@@ -3,6 +3,7 @@
     <File Path="README.md" />
     <File Path="README.en.md" />
     <File Path="CONTRIBUTING.md" />
+    <File Path="SECURITY.md" />
     <File Path="RELEASENOTES.Core.md" />
     <File Path="RELEASENOTES.Mcp.md" />
     <File Path="docs/ADR-001-credential-management.md" />
