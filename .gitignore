@@ -1,0 +1,28 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+artifacts/
+nupkg/
+TestResults/
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Tool output
+.claude/settings.local.json
+
+# Logs / scratch
+*.log
+*.tmp
+tmp-*/
+
+# Internal working notes (agent specs, in-flight task docs)
+todo/

@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>RedoxNet.LsOpenApi.Core</RootNamespace>
+    <AssemblyName>RedoxNet.LsOpenApi.Core</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+    <Version>1.0.0-alpha.1</Version>
+    <PackageId>RedoxNet.LsOpenApi.Core</PackageId>
+    <Authors>RedoxNet contributors</Authors>
+    <Description>SDK for LS증권 OpenAPI: HTTP client, OAuth2 client_credentials, TR catalog, indicators.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/redoxnet/mcp-lsopenapi</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/redoxnet/mcp-lsopenapi</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>ls;ls-securities;ls-증권;openapi;korean-stock;stock;sdk</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.*" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="8.*" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="8.*" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.*" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.*" />
+    <PackageReference Include="Polly" Version="8.*" />
+    <PackageReference Include="Skender.Stock.Indicators" Version="2.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="" Visible="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Catalog\TrCatalog.json" Condition="Exists('Catalog\TrCatalog.json')" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>RedoxNet.LsOpenApi.Core.Tests</_Parameter1>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>RedoxNet.Mcp.LsOpenApi</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+</Project>

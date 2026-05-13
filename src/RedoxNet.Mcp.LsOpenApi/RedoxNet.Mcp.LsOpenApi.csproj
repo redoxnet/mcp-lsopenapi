@@ -1,0 +1,62 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>RedoxNet.Mcp.LsOpenApi</RootNamespace>
+    <AssemblyName>redoxnet-mcp-lsopenapi</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+    <Version>1.0.0-alpha.1</Version>
+    <PackageId>RedoxNet.Mcp.LsOpenApi</PackageId>
+    <Authors>RedoxNet contributors</Authors>
+    <Description>MCP server exposing LS증권 OpenAPI (REST) as tools. Read-only Korean stock market data and analysis via natural language.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/redoxnet/mcp-lsopenapi</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/redoxnet/mcp-lsopenapi</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>mcp;mcp-server;ai;dotnet;ls;ls-securities;ls-증권;korean-stock;openapi;stock</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+
+    <PackageType>McpServer</PackageType>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>mcp-lsopenapi</ToolCommandName>
+    <RollForward>LatestMajor</RollForward>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol" Version="1.2.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.*" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="8.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RedoxNet.LsOpenApi.Core\RedoxNet.LsOpenApi.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="" Visible="false" />
+    <None Include=".mcp\server.json" Pack="true" PackagePath=".mcp\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>RedoxNet.Mcp.LsOpenApi.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <!-- Sync check: .mcp/server.json's "version" fields must match csproj <Version>. -->
+  <Target Name="VerifyServerJsonVersion" BeforeTargets="GenerateNuspec">
+    <PropertyGroup>
+      <_ServerJsonContent>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)\.mcp\server.json'))</_ServerJsonContent>
+      <_ExpectedVersionToken>"version": "$(Version)"</_ExpectedVersionToken>
+    </PropertyGroup>
+    <Error Condition="!$(_ServerJsonContent.Contains($(_ExpectedVersionToken)))"
+           Text=".mcp/server.json version is out of sync with csproj &lt;Version&gt;$(Version)&lt;/Version&gt;. Update both 'version' fields in .mcp/server.json to match before packing." />
+  </Target>
+
+</Project>
