@@ -57,6 +57,16 @@ API 사용 시 LS증권 OpenAPI [이용약관](https://openapi.ls-sec.co.kr/howt
 
 캐시는 SQLite 데이터베이스(WAL 모드)이며, 캐시 키는 `SHA256(appkey):market` 형태로 생성됩니다. 원시 앱 키는 디스크에 저장되지 않습니다. 토큰은 만료 5분 전에 자동으로 갱신됩니다.
 
+### 자격 증명 처리 정책
+
+이 서버는 **환경 변수로만** `LS_APPKEY` / `LS_APPSECRETKEY`를 받습니다. 의도적인 설계로, 채팅창·툴 인자·MCP elicitation 등 **모델 컨텍스트가 닿을 수 있는 어떤 경로로도 키를 입력받지 않습니다.** 호스트(Claude Desktop, AssistStudio 등)가 OS 환경 또는 자격 저장소에서 읽어 자식 프로세스에 주입하는 구조를 전제합니다.
+
+- **디스크 평문 저장 없음.** 위 토큰 캐시는 `SHA256(appkey):market`만 보관하며, 원시 앱 키/시크릿은 메모리 외부로 나가지 않습니다.
+- **로그·에러·툴 응답에 노출 안 됨.** 진단 출력은 `****` + 마지막 4자리만 표시하며(`AppKey`), 시크릿 키는 어떤 형태로도 로그에 찍지 않습니다.
+- **잘못된 키 입력 시 LS의 `IGW00121` 등 인증 오류**는 [`LsAuthException`](src/RedoxNet.LsOpenApi.Core/Auth/LsAuthException.cs)으로 변환되어 툴 응답의 `error` 필드에만 표시되며, 입력한 키 값은 응답에 포함되지 않습니다.
+
+이는 [MCP 스펙이 "Servers MUST NOT use elicitation to request sensitive information" 으로 권고](https://modelcontextprotocol.io/specification/2025-06-18/server/elicitation#security-considerations)하는 사항을 가장 보수적으로 해석한 결과입니다.
+
 ## 사용 시나리오 예시
 
 #### 1. 일일 신호 리포트 자동화
