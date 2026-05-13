@@ -31,7 +31,7 @@ public class ChartContextBuilderTests
             Array.Empty<IndicatorSpec>());
 
         ctx.Volume.Latest.Should().Be(0);
-        ctx.BullishAlignment.Should().BeFalse();
+        ctx.BullishAlignment.Should().BeNull();
         ctx.DivergenceFromMa.Should().BeEmpty();
         ctx.MaTrend.Should().BeEmpty();
     }
@@ -167,7 +167,7 @@ public class ChartContextBuilderTests
     }
 
     [Fact]
-    public void Build_BullishAlignment_FalseWithFewerThanTwoMas()
+    public void Build_BullishAlignment_NullWithFewerThanTwoMas()
     {
         List<Candle> candles = Ramp(30);
         var service = new IndicatorService();
@@ -176,6 +176,25 @@ public class ChartContextBuilderTests
 
         ChartContext ctx = ChartContextBuilder.Build(candles, indicators, specs);
 
-        ctx.BullishAlignment.Should().BeFalse();
+        ctx.BullishAlignment.Should().BeNull();
+    }
+
+    [Fact]
+    public void Build_BullishAlignment_NullWhenAnyMaHasNoValueYet()
+    {
+        // 30 candles with ma:5 and ma:60 → ma:60 has no last value (warm-up).
+        // Result must be null, not false, to distinguish "warm-up" from "bearish stack".
+        List<Candle> candles = Ramp(30);
+        var service = new IndicatorService();
+        IndicatorSpec[] specs =
+        {
+            IndicatorSpecParser.Parse("ma:5"),
+            IndicatorSpecParser.Parse("ma:60"),
+        };
+        var indicators = service.Compute(candles, specs);
+
+        ChartContext ctx = ChartContextBuilder.Build(candles, indicators, specs);
+
+        ctx.BullishAlignment.Should().BeNull();
     }
 }

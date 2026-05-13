@@ -73,4 +73,67 @@ public class SearchStockToolTests
         string sent = await handler.Requests[0].Content!.ReadAsStringAsync();
         sent.Should().Contain("\"gubun\":\"1\"");
     }
+
+    const string MixedBody = """
+    {
+      "t8436OutBlock": [
+        { "hname": "바이오노트",       "shcode": "377740", "expcode": "KR7377740004", "gubun": "1", "etfgubun": "0", "spac_gubun": "N", "bu12gubun": "01" },
+        { "hname": "KODEX 바이오",     "shcode": "244620", "expcode": "KR7244620008", "gubun": "1", "etfgubun": "1", "spac_gubun": "N", "bu12gubun": "01" },
+        { "hname": "TIGER 헬스케어",   "shcode": "143860", "expcode": "KR7143860007", "gubun": "1", "etfgubun": "1", "spac_gubun": "N", "bu12gubun": "01" },
+        { "hname": "바이오플러스",     "shcode": "099430", "expcode": "KR7099430002", "gubun": "2", "etfgubun": "0", "spac_gubun": "N", "bu12gubun": "01" }
+      ],
+      "rsp_cd": "00000",
+      "rsp_msg": "정상"
+    }
+    """;
+
+    [Fact]
+    public async Task SearchStock_InstrumentAll_ReturnsEverything()
+    {
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(MixedBody));
+
+        string result = await SearchStockTool.SearchStock(client, "바이오");
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        root.GetProperty("instrument_filter").GetString().Should().Be("all");
+        // "바이오" matches "바이오노트", "KODEX 바이오", "바이오플러스" (not "TIGER 헬스케어").
+        root.GetProperty("count").GetInt32().Should().Be(3);
+    }
+
+    [Fact]
+    public async Task SearchStock_InstrumentStock_ExcludesEtfs()
+    {
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(MixedBody));
+
+        string result = await SearchStockTool.SearchStock(client, "바이오", instrument: "stock");
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        root.GetProperty("instrument_filter").GetString().Should().Be("stock");
+        root.GetProperty("count").GetInt32().Should().Be(2);
+        foreach (JsonElement r in root.GetProperty("results").EnumerateArray())
+            r.GetProperty("etf").GetString().Should().Be("0");
+    }
+
+    [Fact]
+    public async Task SearchStock_InstrumentEtf_KeepsOnlyEtfs()
+    {
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(MixedBody));
+
+        string result = await SearchStockTool.SearchStock(client, "바이오", instrument: "etf");
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        root.GetProperty("instrument_filter").GetString().Should().Be("etf");
+        root.GetProperty("count").GetInt32().Should().Be(1);
+        root.GetProperty("results")[0].GetProperty("name").GetString().Should().Be("KODEX 바이오");
+    }
+
+    [Fact]
+    public async Task SearchStock_UnknownInstrument_ReturnsError()
+    {
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(MixedBody));
+
+        string result = await SearchStockTool.SearchStock(client, "바이오", instrument: "weird");
+        JsonDocument.Parse(result).RootElement.GetProperty("error").GetString()
+            .Should().Contain("instrument");
+    }
 }

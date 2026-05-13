@@ -27,6 +27,7 @@ public static class SearchStockTool
     /// <param name="query">Korean or English name fragment.</param>
     /// <param name="market">'all', 'kospi', or 'kosdaq'. Default 'all'.</param>
     /// <param name="limit">Max results, default 20, max 100.</param>
+    /// <param name="instrument">'all' (default), 'stock' (일반주, etfgubun='0'), or 'etf' (ETF/ETN, etfgubun!='0').</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>JSON list of <c>{ shcode, name, market }</c>.</returns>
     [McpServerTool(Name = "ls_search_stock")]
@@ -35,6 +36,8 @@ public static class SearchStockTool
 
         USE WHEN: the user mentions a stock by name but the 6-digit code is needed (e.g. "삼성전자 알려줘", "find Hyundai Motor's code").
         AVOID WHEN: the user already supplied a 6-digit code — use ls_get_quote / ls_get_chart directly.
+
+        Use instrument='stock' to exclude ETFs/ETNs (e.g. "바이오 관련 일반주만 찾아줘"), instrument='etf' to keep only ETF/ETN rows, instrument='all' (default) for the full mix.
         """)]
     public static async Task<string> SearchStock(
         LsApiClient apiClient,
@@ -44,6 +47,8 @@ public static class SearchStockTool
         string market = "all",
         [Description("Max results (1–100). Default 20.")]
         int limit = 20,
+        [Description("Instrument filter: 'all' (default), 'stock' (일반주 only), or 'etf' (ETF/ETN only).")]
+        string instrument = "all",
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(query))
@@ -56,6 +61,10 @@ public static class SearchStockTool
             "kosdaq" or "2" => "2",
             _ => "0",
         };
+
+        string instrumentFilter = instrument?.Trim().ToLowerInvariant() ?? "all";
+        if (instrumentFilter is not ("all" or "stock" or "etf"))
+            return McpJson.Error($"Unknown instrument '{instrument}'. Use 'all', 'stock', or 'etf'.");
 
         try
         {
@@ -86,6 +95,11 @@ public static class SearchStockTool
                     !shcode.Contains(query, StringComparison.OrdinalIgnoreCase))
                     continue;
 
+                string? etfRaw = row.ReadString("etfgubun");
+                bool isEtf = !string.IsNullOrEmpty(etfRaw) && etfRaw != "0";
+                if (instrumentFilter == "stock" && isEtf) continue;
+                if (instrumentFilter == "etf" && !isEtf) continue;
+
                 string? spacRaw = row.ReadString("spac_gubun");
                 matches.Add(new
                 {
@@ -93,7 +107,7 @@ public static class SearchStockTool
                     name,
                     expcode = row.ReadString("expcode"),
                     market = MarketLabel(row.ReadString("gubun")),
-                    etf = row.ReadString("etfgubun"),
+                    etf = etfRaw,
                     is_spac = string.Equals(spacRaw, "Y", StringComparison.OrdinalIgnoreCase),
                     status_code = row.ReadString("bu12gubun"),
                 });
@@ -105,6 +119,7 @@ public static class SearchStockTool
             {
                 query,
                 market_filter = gubun switch { "1" => "kospi", "2" => "kosdaq", _ => "all" },
+                instrument_filter = instrumentFilter,
                 limit = cappedLimit,
                 count = matches.Count,
                 results = matches,

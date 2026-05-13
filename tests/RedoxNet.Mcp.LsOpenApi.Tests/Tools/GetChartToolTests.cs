@@ -120,4 +120,77 @@ public class GetChartToolTests
         JsonDocument.Parse(result).RootElement.GetProperty("error").GetString()
             .Should().Contain("bogus");
     }
+
+    static string DailyBody(int rows, int startBase = 100)
+    {
+        var sb = new System.Text.StringBuilder();
+        for (int i = 0; i < rows; i++)
+        {
+            if (sb.Length > 0) sb.Append(',');
+            sb.Append(DailyRow(i + 1, startBase + i));
+        }
+        return $$"""{ "t8410OutBlock": { "shcode":"005930" }, "t8410OutBlock1": [ {{sb}} ], "rsp_cd":"00000", "rsp_msg":"정상" }""";
+    }
+
+    [Fact]
+    public async Task GetChart_SummaryOnly_TrimsCandlesAndCollapsesIndicators()
+    {
+        // 30 candles, ma:5 indicator. summary_only must:
+        //  - keep only the last 5 candles
+        //  - collapse 'indicators' to a dict of scalar last values (not arrays)
+        //  - keep 'count' as the full underlying count
+        //  - keep 'context' intact
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(DailyBody(30)));
+
+        string result = await GetChartTool.GetChart(
+            client, "005930", "day", count: 30, indicators: new[] { "ma:5" }, summary_only: true);
+
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+        root.GetProperty("summary_only").GetBoolean().Should().BeTrue();
+        root.GetProperty("count").GetInt32().Should().Be(30);
+        root.GetProperty("candles").GetArrayLength().Should().Be(5);
+
+        JsonElement indicators = root.GetProperty("indicators");
+        indicators.TryGetProperty("ma:5", out JsonElement ma).Should().BeTrue();
+        ma.ValueKind.Should().Be(JsonValueKind.Number);
+
+        root.TryGetProperty("context", out JsonElement context).Should().BeTrue();
+        context.GetProperty("volume").GetProperty("latest").GetInt64().Should().Be(1000);
+    }
+
+    [Fact]
+    public async Task GetChart_SummaryOnly_MultiTimeframe_TrimsEachFrame()
+    {
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(DailyBody(30)));
+
+        string result = await GetChartTool.GetChart(
+            client, "005930", "day,week", count: 30, indicators: new[] { "ma:5" }, summary_only: true);
+
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+        root.GetProperty("summary_only").GetBoolean().Should().BeTrue();
+
+        JsonElement frames = root.GetProperty("frames");
+        frames.GetArrayLength().Should().Be(2);
+        foreach (JsonElement frame in frames.EnumerateArray())
+        {
+            frame.GetProperty("count").GetInt32().Should().Be(30);
+            frame.GetProperty("candles").GetArrayLength().Should().Be(5);
+            frame.GetProperty("indicators").GetProperty("ma:5").ValueKind.Should().Be(JsonValueKind.Number);
+            frame.TryGetProperty("context", out _).Should().BeTrue();
+        }
+    }
+
+    [Fact]
+    public async Task GetChart_SummaryOnlyDefaultsFalse_FullSeriesReturned()
+    {
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(DailyBody(30)));
+
+        string result = await GetChartTool.GetChart(
+            client, "005930", "day", count: 30, indicators: new[] { "ma:5" });
+
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+        root.GetProperty("summary_only").GetBoolean().Should().BeFalse();
+        root.GetProperty("candles").GetArrayLength().Should().Be(30);
+        root.GetProperty("indicators").GetProperty("ma:5").GetArrayLength().Should().Be(30);
+    }
 }

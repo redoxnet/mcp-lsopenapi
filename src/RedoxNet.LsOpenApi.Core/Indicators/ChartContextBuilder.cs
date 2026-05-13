@@ -38,7 +38,7 @@ public static class ChartContextBuilder
                 Volume: new VolumeContext(0, null, null, null, null),
                 Drawdown: new DrawdownInfo(0, default, 0, 0),
                 MaTrend: new Dictionary<string, string>(),
-                BullishAlignment: false);
+                BullishAlignment: null);
         }
 
         // Last close once.
@@ -105,7 +105,9 @@ public static class ChartContextBuilder
         }
 
         // 6) Bullish alignment — all MAs in ascending order by period: shorter MA ≥ longer MA.
-        bool alignment = false;
+        // Tristate: null when at least one MA has no last value (warm-up) — distinguishes
+        // "stack is bearish" from "stack cannot yet be judged".
+        bool? alignment = null;
         if (maPeriods.Count >= 2)
         {
             var ordered = maPeriods
@@ -115,15 +117,16 @@ public static class ChartContextBuilder
 
             if (ordered.All(v => v.HasValue))
             {
-                alignment = true;
+                bool stacked = true;
                 for (int i = 0; i < ordered.Count - 1; i++)
                 {
                     if (ordered[i]!.Value < ordered[i + 1]!.Value)
                     {
-                        alignment = false;
+                        stacked = false;
                         break;
                     }
                 }
+                alignment = stacked;
             }
         }
 

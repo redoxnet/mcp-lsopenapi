@@ -9,13 +9,13 @@ namespace RedoxNet.LsOpenApi.Core.Models;
 /// <param name="Volume">Latest volume and trailing averages.</param>
 /// <param name="Drawdown">Distance from the period high.</param>
 /// <param name="MaTrend">Direction of each moving-average over the last few periods (<c>"up"</c>, <c>"down"</c>, <c>"flat"</c>).</param>
-/// <param name="BullishAlignment">True when shorter-period MAs sit above longer-period MAs (classic bullish stack).</param>
+/// <param name="BullishAlignment">True when shorter-period MAs sit above longer-period MAs (classic bullish stack). <see langword="null"/> when at least one enrolled MA has no value yet (warm-up), so the stack cannot be judged.</param>
 public sealed record ChartContext(
     IReadOnlyDictionary<string, double> DivergenceFromMa,
     VolumeContext Volume,
     DrawdownInfo Drawdown,
     IReadOnlyDictionary<string, string> MaTrend,
-    bool BullishAlignment);
+    bool? BullishAlignment);
 
 /// <summary>
 /// Latest candle volume vs trailing averages.

@@ -46,6 +46,7 @@ public static class GetChartTool
     /// <param name="minute_unit">For period_type='min': minute interval (1/3/5/10/15/30/60).</param>
     /// <param name="indicators">Optional indicator specs (e.g. ['ma:5','rsi:14','macd:12,26,9','bb:20,2']).</param>
     /// <param name="include_chart">If true, attach a Plotly v5 JSON spec under <c>chart</c> for client-side rendering. Default false.</param>
+    /// <param name="summary_only">If true, return only the last 5 candles and the last value of each indicator series; the <c>context</c> block is preserved. Default false.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>JSON with candles, indicators, and a <c>context</c> block of pre-computed analytics.</returns>
     [McpServerTool(Name = "ls_get_chart")]
@@ -59,6 +60,8 @@ public static class GetChartTool
         Multi timeframe: period_type='day,week,month' → response has a frames[] array, one entry per timeframe, each with its own context.
 
         Set include_chart=true to also receive a Plotly v5 JSON spec under 'chart' (single) or each frame's 'chart' (multi). Clients render it via Plotly.js with no server-side image rendering.
+
+        Set summary_only=true to shrink the payload: only the last 5 candles plus the last value of each indicator series are returned, but the full pre-computed 'context' block is kept. Use this for the screening/triage pass over many stocks or timeframes, then re-call with summary_only=false on the single frame you want to deep-dive.
 
         Indicator examples: 'ma:5', 'ma:20', 'ema:12', 'rsi:14', 'macd:12,26,9', 'bb:20,2'.
         """)]
@@ -80,6 +83,8 @@ public static class GetChartTool
         string[]? indicators = null,
         [Description("If true, attach a Plotly v5 JSON spec under 'chart' for client-side rendering. Default false.")]
         bool include_chart = false,
+        [Description("If true, keep only the last 5 candles and the last value of each indicator series (context is kept intact). Use for the screening pass when scanning many stocks/timeframes. Default false.")]
+        bool summary_only = false,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(shcode))
@@ -128,14 +133,18 @@ public static class GetChartTool
             if (periods.Count == 1)
             {
                 FrameResult only = frames[0];
+                IReadOnlyList<Candle> candleView = SummarizeCandles(only.Candles, summary_only);
                 var single = new
                 {
                     shcode,
                     period_type = only.PeriodType,
                     tr_cd = only.TrCode,
                     count = only.Candles.Count,
-                    candles = SerializeCandles(only.Candles, only.PeriodType),
-                    indicators = only.Indicators.ToDictionary(kv => kv.Key, kv => kv.Value),
+                    summary_only,
+                    candles = SerializeCandles(candleView, only.PeriodType),
+                    indicators = summary_only
+                        ? (object)SummarizeIndicators(only.Indicators)
+                        : only.Indicators.ToDictionary(kv => kv.Key, kv => kv.Value),
                     context = only.Context,
                     chart = include_chart
                         ? PlotlyChartBuilder.Build(shcode, only.PeriodType, only.Candles, only.Indicators, parsedIndicators)
@@ -148,17 +157,24 @@ public static class GetChartTool
             {
                 shcode,
                 period_types = periods,
-                frames = frames.Select(f => new
+                summary_only,
+                frames = frames.Select(f =>
                 {
-                    period_type = f.PeriodType,
-                    tr_cd = f.TrCode,
-                    count = f.Candles.Count,
-                    candles = SerializeCandles(f.Candles, f.PeriodType),
-                    indicators = f.Indicators.ToDictionary(kv => kv.Key, kv => kv.Value),
-                    context = f.Context,
-                    chart = include_chart
-                        ? PlotlyChartBuilder.Build(shcode, f.PeriodType, f.Candles, f.Indicators, parsedIndicators)
-                        : null,
+                    IReadOnlyList<Candle> view = SummarizeCandles(f.Candles, summary_only);
+                    return new
+                    {
+                        period_type = f.PeriodType,
+                        tr_cd = f.TrCode,
+                        count = f.Candles.Count,
+                        candles = SerializeCandles(view, f.PeriodType),
+                        indicators = summary_only
+                            ? (object)SummarizeIndicators(f.Indicators)
+                            : f.Indicators.ToDictionary(kv => kv.Key, kv => kv.Value),
+                        context = f.Context,
+                        chart = include_chart
+                            ? PlotlyChartBuilder.Build(shcode, f.PeriodType, f.Candles, f.Indicators, parsedIndicators)
+                            : null,
+                    };
                 }),
             };
             return JsonSerializer.Serialize(multi, McpJson.Tool);
@@ -209,6 +225,24 @@ public static class GetChartTool
 
         ChartContext context = ChartContextBuilder.Build(candles, indicatorResults, specs);
         return new FrameResult(period, trCode, candles, indicatorResults, context);
+    }
+
+    const int SummaryTailCount = 5;
+
+    static IReadOnlyList<Candle> SummarizeCandles(IReadOnlyList<Candle> candles, bool summaryOnly)
+    {
+        if (!summaryOnly || candles.Count <= SummaryTailCount)
+            return candles;
+        return candles.Skip(candles.Count - SummaryTailCount).ToList();
+    }
+
+    static Dictionary<string, double?> SummarizeIndicators(
+        IReadOnlyDictionary<string, IReadOnlyList<double?>> series)
+    {
+        var summary = new Dictionary<string, double?>(StringComparer.Ordinal);
+        foreach ((string key, IReadOnlyList<double?> values) in series)
+            summary[key] = values.Count == 0 ? null : values[^1];
+        return summary;
     }
 
     static IEnumerable<object> SerializeCandles(IReadOnlyList<Candle> candles, string periodType) =>
