@@ -11,7 +11,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 
-    <Version>1.0.0-alpha.1</Version>
+    <Version>0.1.0-alpha.1</Version>
     <PackageId>RedoxNet.LsOpenApi.Core</PackageId>
     <Authors>RedoxNet contributors</Authors>
     <Description>SDK for LS증권 OpenAPI: HTTP client, OAuth2 client_credentials, TR catalog, indicators.</Description>

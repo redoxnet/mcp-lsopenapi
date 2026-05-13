@@ -11,7 +11,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 
-    <Version>1.0.0-alpha.1</Version>
+    <Version>0.1.0-alpha.1</Version>
     <PackageId>RedoxNet.Mcp.LsOpenApi</PackageId>
     <Authors>RedoxNet contributors</Authors>
     <Description>MCP server exposing LS증권 OpenAPI (REST) as tools. Read-only Korean stock market data and analysis via natural language.</Description>
