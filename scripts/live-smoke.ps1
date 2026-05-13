@@ -25,8 +25,21 @@
     Target framework for dotnet run. Default net8.0.
 
 .PARAMETER ToolName
-    Tool to invoke. Default ls_get_quote. Override for broader smoke tests
-    (e.g. ls_get_stock_info).
+    Tool to invoke. Default ls_get_quote. Supported tools:
+    - ls_get_quote        (uses -Shcode)
+    - ls_get_stock_info   (uses -Shcode)
+    - ls_get_multi_quote  (uses -Shcodes; default '005930,000660,078020')
+    - ls_get_chart        (uses -Shcode + -PeriodType + -Count)
+
+.PARAMETER Shcodes
+    Comma-separated list of 6-digit codes for ls_get_multi_quote.
+    Ignored by single-stock tools.
+
+.PARAMETER PeriodType
+    Period type for ls_get_chart. Ignored by other tools.
+
+.PARAMETER Count
+    Candle count for ls_get_chart. Ignored by other tools.
 
 .EXAMPLE
     # In a PowerShell session where LS_APPKEY / LS_APPSECRETKEY are set:
@@ -34,11 +47,20 @@
 
 .EXAMPLE
     pwsh scripts/live-smoke.ps1 -Shcode 000660 -ToolName ls_get_stock_info
+
+.EXAMPLE
+    pwsh scripts/live-smoke.ps1 -ToolName ls_get_multi_quote -Shcodes '005930,000660,078020'
+
+.EXAMPLE
+    pwsh scripts/live-smoke.ps1 -ToolName ls_get_chart -PeriodType day -Count 5
 #>
 
 [CmdletBinding()]
 param(
     [string]$Shcode = '005930',
+    [string]$Shcodes = '005930,000660,078020',
+    [string]$PeriodType = 'day',
+    [int]$Count = 5,
     [string]$Framework = 'net8.0',
     [string]$ToolName = 'ls_get_quote'
 )
@@ -70,8 +92,12 @@ Write-Host "==== RedoxNet.Mcp.LsOpenApi live smoke ====" -ForegroundColor Cyan
 Write-Host ("  appkey       : {0}" -f (Mask $env:LS_APPKEY))
 Write-Host ("  appsecretkey : {0}" -f (Mask $env:LS_APPSECRETKEY))
 Write-Host ("  market       : {0}" -f $market)
-Write-Host ("  shcode       : {0}" -f $Shcode)
 Write-Host ("  tool         : {0}" -f $ToolName)
+switch ($ToolName) {
+    'ls_get_multi_quote' { Write-Host ("  shcodes      : {0}" -f $Shcodes) }
+    'ls_get_chart'       { Write-Host ("  shcode       : {0}" -f $Shcode); Write-Host ("  period_type  : {0} (count={1})" -f $PeriodType, $Count) }
+    default              { Write-Host ("  shcode       : {0}" -f $Shcode) }
+}
 Write-Host ("  framework    : {0}" -f $Framework)
 Write-Host ""
 
@@ -140,13 +166,26 @@ try {
 
     SendJsonRpc @{ jsonrpc = '2.0'; method = 'notifications/initialized'; params = @{} }
 
+    $toolArgs = switch ($ToolName) {
+        'ls_get_multi_quote' {
+            $codes = $Shcodes.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+            @{ shcodes = @($codes) }
+        }
+        'ls_get_chart' {
+            @{ shcode = $Shcode; period_type = $PeriodType; count = $Count }
+        }
+        default {
+            @{ shcode = $Shcode }
+        }
+    }
+
     SendJsonRpc @{
         jsonrpc = '2.0'
         id = 2
         method = 'tools/call'
         params = @{
             name = $ToolName
-            arguments = @{ shcode = $Shcode }
+            arguments = $toolArgs
         }
     }
     $callResponse = ReceiveJsonRpc
@@ -184,6 +223,21 @@ try {
                 Write-Host ("       PER / PBR     : {0:N2} / {1:N2}" -f $parsed.fundamentals.per, $parsed.fundamentals.pbr)
                 Write-Host ("       52w range     : {0:N0} ~ {1:N0}" -f $parsed.range.week52.low, $parsed.range.week52.high)
                 Write-Host ("       market cap    : {0:N0} 억원" -f $parsed.listing.market_cap_in_100m_won)
+            }
+            'ls_get_multi_quote' {
+                Write-Host ("    ✅ {0} quote(s) returned" -f $parsed.count) -ForegroundColor Green
+                foreach ($q in $parsed.quotes) {
+                    Write-Host ("       {0,-20} {1,12:N0}  ({2,+6:N2}%)  best ask/bid {3,10:N0} / {4,10:N0}" -f $q.name, $q.price, $q.change_percent, $q.best_ask, $q.best_bid)
+                }
+            }
+            'ls_get_chart' {
+                Write-Host ("    ✅ {0} {1} candle(s) for {2}" -f $parsed.count, $parsed.period_type, $parsed.shcode) -ForegroundColor Green
+                foreach ($c in $parsed.candles) {
+                    Write-Host ("       {0,-12} O:{1,8:N0}  H:{2,8:N0}  L:{3,8:N0}  C:{4,8:N0}  V:{5,12:N0}" -f $c.date, $c.open, $c.high, $c.low, $c.close, $c.volume)
+                }
+                if ($parsed.context) {
+                    Write-Host ("       drawdown      : {0:N2}% from {1:N0} on {2}" -f $parsed.context.drawdown.pct, $parsed.context.drawdown.period_high, $parsed.context.drawdown.period_high_date)
+                }
             }
             default {
                 Write-Host ("    ✅ Tool returned (first 400 chars):") -ForegroundColor Green
