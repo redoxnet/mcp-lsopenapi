@@ -234,20 +234,49 @@ public static class GetChartTool
         string? to,
         CancellationToken ct)
     {
+        // LS empirically returns only today's partial candle when sdate/edate
+        // are absent. Default the range to "the last `count` periods back from
+        // today" so qrycnt actually caps the result instead of being a no-op.
+        DateTime today = DateTime.Today;
+        string effectiveEnd = !string.IsNullOrWhiteSpace(to)
+            ? to
+            : today.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
+        string effectiveStart = !string.IsNullOrWhiteSpace(from)
+            ? from
+            : ComputeDefaultDailyStart(today, gubun, count).ToString("yyyyMMdd", CultureInfo.InvariantCulture);
+
         var inBlock = new JsonObject
         {
             ["shcode"] = shcode,
             ["gubun"] = gubun,
             ["qrycnt"] = count,
+            ["sdate"] = effectiveStart,
+            ["edate"] = effectiveEnd,
             ["comp_yn"] = "N",
         };
-        if (!string.IsNullOrWhiteSpace(from)) inBlock["sdate"] = from;
-        if (!string.IsNullOrWhiteSpace(to)) inBlock["edate"] = to;
 
         LsTrResponse response = await apiClient.CallTrAsync("t8410", inBlock, cancellationToken: ct);
         EnsureSuccess(response);
 
         return ParseDailyCandles(response.GetBlock("t8410OutBlock1"));
+    }
+
+    /// <summary>
+    /// Generous lookback window for the t8410 InBlock. Returns a date that is
+    /// safely far enough back to cover <paramref name="count"/> candles of the
+    /// given period, even with weekends + holidays.
+    /// </summary>
+    static DateTime ComputeDefaultDailyStart(DateTime end, string gubun, int count)
+    {
+        int daysBack = gubun switch
+        {
+            "2" => Math.Max(count * 3 + 7, 14),    // day: ~70% busy days + buffer
+            "3" => Math.Max(count * 8, 30),        // week
+            "4" => Math.Max(count * 32, 60),       // month
+            "5" => Math.Max(count * 367, 365 * 2), // year
+            _ => Math.Max(count * 3 + 7, 14),
+        };
+        return end.AddDays(-daysBack);
     }
 
     static async Task<List<Candle>> FetchMinuteAsync(

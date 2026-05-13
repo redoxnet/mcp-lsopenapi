@@ -121,6 +121,37 @@ public class GetChartToolMultiTimeframeTests
     }
 
     [Fact]
+    public async Task GetChart_NoExplicitDates_SetsSdateAndEdateDefaults()
+    {
+        // LS empirically returns only 1 (today's) candle when sdate/edate
+        // are omitted. The tool must default the range so qrycnt actually
+        // caps the result.
+        var (client, handler) = TestClientFactory.Create((_, _) => Ok(DailyBody(5)));
+
+        await GetChartTool.GetChart(client, "005930", "day", count: 5);
+
+        string body = await handler.Requests[0].Content!.ReadAsStringAsync();
+        body.Should().Contain("\"sdate\":");
+        body.Should().Contain("\"edate\":");
+        body.Should().Contain("\"qrycnt\":5");
+        // edate should default to today (yyyyMMdd).
+        body.Should().Contain($"\"edate\":\"{DateTime.Today:yyyyMMdd}\"");
+    }
+
+    [Fact]
+    public async Task GetChart_ExplicitDates_HonoredVerbatim()
+    {
+        var (client, handler) = TestClientFactory.Create((_, _) => Ok(DailyBody(5)));
+
+        await GetChartTool.GetChart(client, "005930", "day", count: 5,
+            from: "20240101", to: "20240201");
+
+        string body = await handler.Requests[0].Content!.ReadAsStringAsync();
+        body.Should().Contain("\"sdate\":\"20240101\"");
+        body.Should().Contain("\"edate\":\"20240201\"");
+    }
+
+    [Fact]
     public async Task GetChart_MultiPeriod_OneBadPeriod_ReturnsErrorAndDoesNotCall()
     {
         var (client, handler) = TestClientFactory.Create((_, _) => Ok(DailyBody(5)));

@@ -84,12 +84,28 @@ public static class GetMultiQuoteTool
             if (block is null || block.Value.ValueKind != JsonValueKind.Array)
                 return McpJson.Error("t8407OutBlock1 array was missing from the response.");
 
-            var quotes = new List<object>();
+            // LS empirically returns up to 50 rows regardless of qrycnt,
+            // padding with default codes when fewer were requested. Index by
+            // shcode, then emit only the codes the caller asked for, in the
+            // order they asked for them.
+            var byShcode = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
             foreach (JsonElement row in block.Value.EnumerateArray())
             {
+                string? rowShcode = row.ReadString("shcode");
+                if (string.IsNullOrEmpty(rowShcode))
+                    continue;
+                byShcode[rowShcode] = row;
+            }
+
+            var quotes = new List<object>(normalized.Count);
+            foreach (string code in normalized)
+            {
+                if (!byShcode.TryGetValue(code, out JsonElement row))
+                    continue;
+
                 quotes.Add(new
                 {
-                    shcode = row.ReadString("shcode"),
+                    shcode = code,
                     name = row.ReadString("hname"),
                     price = row.ReadLong("price"),
                     sign = row.ReadString("sign"),

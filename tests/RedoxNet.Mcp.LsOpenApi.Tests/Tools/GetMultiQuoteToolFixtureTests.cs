@@ -129,6 +129,82 @@ public class GetMultiQuoteToolFixtureTests
     }
 
     [Fact]
+    public async Task GetMultiQuote_LsPadsResponseTo50_OnlyRequestedCodesReturned()
+    {
+        // LS's t8407 empirically pads the OutBlock1 array to 50 entries even
+        // when fewer codes are requested. The tool must filter the response
+        // down to the caller's input set.
+        string padding = string.Join(",", Enumerable.Range(1, 47).Select(i => $$"""
+            {
+              "shcode": "9{{i:D5}}", "hname": "FILLER-{{i}}",
+              "price": 0, "sign": "3", "change": 0, "diff": "000.00",
+              "volume": 0, "cvolume": 0, "value": 0,
+              "open": 0, "high": 0, "low": 0, "jnilclose": 0,
+              "uplmtprice": 0, "dnlmtprice": 0,
+              "offerho": 0, "bidho": 0, "offerrem": 0, "bidrem": 0,
+              "totofferrem": 0, "totbidrem": 0,
+              "chdegree": "000000.00"
+            }
+            """));
+
+        string paddedBody = $$"""
+            {
+              "rsp_cd": "00000", "rsp_msg": "정상",
+              "t8407OutBlock1": [
+                { "shcode":"005930", "hname":"삼성전자", "price":71700, "sign":"5", "change":500, "diff":"-00.69",
+                  "volume":12640775, "cvolume":25, "value":908016, "open":72700, "high":72700, "low":71400, "jnilclose":72200,
+                  "uplmtprice":93800, "dnlmtprice":50600,
+                  "offerho":71700, "bidho":71600, "offerrem":58968, "bidrem":31934,
+                  "totofferrem":1498765, "totbidrem":880412, "chdegree":"000056.80" },
+                {{padding}}
+              ]
+            }
+            """;
+
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(paddedBody));
+
+        string result = await GetMultiQuoteTool.GetMultiQuote(client, new[] { "005930" });
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        root.GetProperty("count").GetInt32().Should().Be(1);
+        root.GetProperty("quotes")[0].GetProperty("shcode").GetString().Should().Be("005930");
+        root.GetProperty("quotes")[0].GetProperty("name").GetString().Should().Be("삼성전자");
+    }
+
+    [Fact]
+    public async Task GetMultiQuote_PreservesUserInputOrder()
+    {
+        // Response order differs from input order; tool must echo the user's
+        // requested order rather than LS's response order.
+        const string reorderedBody = """
+        {
+          "rsp_cd": "00000", "rsp_msg": "정상",
+          "t8407OutBlock1": [
+            { "shcode":"005930", "hname":"삼성전자",     "price":71700, "sign":"5", "change":500, "diff":"-00.69",
+              "volume":1, "cvolume":1, "value":1, "open":1, "high":1, "low":1, "jnilclose":1,
+              "uplmtprice":1, "dnlmtprice":1,
+              "offerho":1, "bidho":1, "offerrem":1, "bidrem":1,
+              "totofferrem":1, "totbidrem":1, "chdegree":"000000.00" },
+            { "shcode":"000660", "hname":"SK하이닉스",   "price":108700, "sign":"5", "change":1600, "diff":"-01.45",
+              "volume":1, "cvolume":1, "value":1, "open":1, "high":1, "low":1, "jnilclose":1,
+              "uplmtprice":1, "dnlmtprice":1,
+              "offerho":1, "bidho":1, "offerrem":1, "bidrem":1,
+              "totofferrem":1, "totbidrem":1, "chdegree":"000000.00" }
+          ]
+        }
+        """;
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(reorderedBody));
+
+        // Ask for SK Hynix first, Samsung second.
+        string result = await GetMultiQuoteTool.GetMultiQuote(client, new[] { "000660", "005930" });
+        JsonElement quotes = JsonDocument.Parse(result).RootElement.GetProperty("quotes");
+
+        quotes.GetArrayLength().Should().Be(2);
+        quotes[0].GetProperty("shcode").GetString().Should().Be("000660");
+        quotes[1].GetProperty("shcode").GetString().Should().Be("005930");
+    }
+
+    [Fact]
     public async Task GetMultiQuote_TooManyShcodes_ReturnsError()
     {
         var (client, _) = TestClientFactory.Create((_, _) => Ok(TestbedT8407Response));

@@ -236,7 +236,13 @@ try {
                     Write-Host ("       {0,-12} O:{1,8:N0}  H:{2,8:N0}  L:{3,8:N0}  C:{4,8:N0}  V:{5,12:N0}" -f $c.date, $c.open, $c.high, $c.low, $c.close, $c.volume)
                 }
                 if ($parsed.context) {
-                    Write-Host ("       drawdown      : {0:N2}% from {1:N0} on {2}" -f $parsed.context.drawdown.pct, $parsed.context.drawdown.period_high, $parsed.context.drawdown.period_high_date)
+                    $highDateRaw = $parsed.context.drawdown.period_high_date
+                    $highDateDisplay = if ($highDateRaw -is [DateTime]) {
+                        $highDateRaw.ToString('yyyy-MM-dd')
+                    } else {
+                        ([string]$highDateRaw).Split('T')[0]
+                    }
+                    Write-Host ("       drawdown      : {0:N2}% from {1:N0} on {2}" -f $parsed.context.drawdown.pct, $parsed.context.drawdown.period_high, $highDateDisplay)
                 }
             }
             default {
