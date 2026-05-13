@@ -643,6 +643,175 @@
       ],
       "continuation": { "supported": false },
       "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t1901",
+      "name": "ETF 현재가(시세) 조회",
+      "category": "주식ETF",
+      "path": "/stock/etf",
+      "description": "지정한 ETF/ETN 종목의 현재가, NAV, 추적기준지수, 괴리율, LP 정보, 52주/연중 가격 범위 등 ETF 한정 시세 스냅샷을 반환합니다.",
+      "in_blocks": [
+        {
+          "name": "t1901InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "shcode", "type": "char", "description": "단축종목코드 (6자리, ETF/ETN)", "required": true, "length": 6, "example": "069500" }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t1901OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "hname", "type": "char", "description": "한글종목명" },
+            { "name": "shcode", "type": "char", "description": "단축종목코드 (echo)", "length": 6 },
+            { "name": "price", "type": "long", "description": "현재가" },
+            { "name": "sign", "type": "char", "description": "전일대비구분 (1상한 2상승 3보합 4하한 5하락)", "length": 1 },
+            { "name": "change", "type": "long", "description": "전일대비" },
+            { "name": "diff", "type": "char", "description": "등락율 문자열 'NNN.NN'", "length": 6 },
+            { "name": "open", "type": "long", "description": "시가" },
+            { "name": "high", "type": "long", "description": "고가" },
+            { "name": "low", "type": "long", "description": "저가" },
+            { "name": "volume", "type": "char", "description": "누적거래량 (문자열)" },
+            { "name": "value", "type": "long", "description": "누적거래대금" },
+            { "name": "jnilvolume", "type": "char", "description": "전일거래량" },
+            { "name": "volumediff", "type": "long", "description": "거래량 전일대비" },
+            { "name": "vol", "type": "char", "description": "회전율 문자열 'NNN.NN'" },
+            { "name": "recprice", "type": "long", "description": "기준가" },
+            { "name": "uplmtprice", "type": "long", "description": "상한가" },
+            { "name": "dnlmtprice", "type": "long", "description": "하한가" },
+            { "name": "subprice", "type": "long", "description": "대용가" },
+            { "name": "nav", "type": "char", "description": "현재 NAV 문자열" },
+            { "name": "navsign", "type": "char", "description": "NAV 전일대비구분", "length": 1 },
+            { "name": "navchange", "type": "char", "description": "NAV 전일대비 문자열" },
+            { "name": "navdiff", "type": "char", "description": "NAV 등락율 문자열" },
+            { "name": "jnilnav", "type": "char", "description": "전일 NAV" },
+            { "name": "jnilnavsign", "type": "char", "description": "전일 NAV 구분" },
+            { "name": "jnilnavchange", "type": "char", "description": "전일 NAV 변화" },
+            { "name": "jnilnavdiff", "type": "char", "description": "전일 NAV 등락율" },
+            { "name": "kasis", "type": "char", "description": "추적기준지수값" },
+            { "name": "cocrate", "type": "char", "description": "괴리율" },
+            { "name": "exhratio", "type": "char", "description": "거래소 발표 괴리율" },
+            { "name": "spread", "type": "char", "description": "호가 스프레드" },
+            { "name": "etftotcap", "type": "long", "description": "ETF 시가총액(단위 LS 명세 기준)" },
+            { "name": "listing", "type": "long", "description": "상장좌수" },
+            { "name": "leverage", "type": "long", "description": "레버리지 배수 (0 일반, 2 2배, -1 인버스 등)" },
+            { "name": "leverage2", "type": "char", "description": "보조 레버리지 문자열" },
+            { "name": "taxgubun", "type": "char", "description": "과세구분", "length": 1 },
+            { "name": "etf_kind", "type": "char", "description": "ETF 종목구분 코드" },
+            { "name": "etp_gb", "type": "char", "description": "ETP 구분 (ETF/ETN)" },
+            { "name": "etn_kind_cd", "type": "char", "description": "ETN 종목구분 코드" },
+            { "name": "etn_elback_yn", "type": "char", "description": "ETN 조기상환 사유 발생 여부", "length": 1 },
+            { "name": "idx_asset_class1", "type": "char", "description": "기초지수 자산군 분류" },
+            { "name": "issuernmk", "type": "char", "description": "발행회사명" },
+            { "name": "opcom_nmk", "type": "char", "description": "자산운용사명" },
+            { "name": "lp_holdvol", "type": "char", "description": "LP 보유수량 문자열" },
+            { "name": "lp_nm1", "type": "char", "description": "LP명1" },
+            { "name": "lp_nm2", "type": "char", "description": "LP명2" },
+            { "name": "lp_nm3", "type": "char", "description": "LP명3" },
+            { "name": "lp_nm4", "type": "char", "description": "LP명4" },
+            { "name": "lp_nm5", "type": "char", "description": "LP명5" },
+            { "name": "high52w", "type": "long", "description": "52주 최고가" },
+            { "name": "high52wdate", "type": "char", "description": "52주 최고가 일자 yyyyMMdd", "length": 8 },
+            { "name": "low52w", "type": "long", "description": "52주 최저가" },
+            { "name": "low52wdate", "type": "char", "description": "52주 최저가 일자 yyyyMMdd", "length": 8 },
+            { "name": "highyear", "type": "long", "description": "연중 최고가" },
+            { "name": "highyeardate", "type": "char", "description": "연중 최고가 일자", "length": 8 },
+            { "name": "lowyear", "type": "long", "description": "연중 최저가" },
+            { "name": "lowyeardate", "type": "char", "description": "연중 최저가 일자", "length": 8 },
+            { "name": "opentime", "type": "char", "description": "시가 형성 시각" },
+            { "name": "hightime", "type": "char", "description": "고가 형성 시각" },
+            { "name": "lowtime", "type": "char", "description": "저가 형성 시각" },
+            { "name": "futcode", "type": "char", "description": "관련 선물 코드" },
+            { "name": "futname", "type": "char", "description": "관련 선물 종목명" },
+            { "name": "futprice", "type": "char", "description": "관련 선물 가격" },
+            { "name": "futsign", "type": "char", "description": "선물 전일대비구분", "length": 1 },
+            { "name": "futchange", "type": "char", "description": "선물 전일대비" },
+            { "name": "futdiff", "type": "char", "description": "선물 등락율" },
+            { "name": "vi_gubun", "type": "char", "description": "VI 발동 구분" },
+            { "name": "payday", "type": "char", "description": "분배락일", "length": 8 },
+            { "name": "listdate", "type": "char", "description": "상장일", "length": 8 }
+          ]
+        }
+      ],
+      "continuation": { "supported": false },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t1904",
+      "name": "ETF 구성종목 조회",
+      "category": "주식ETF",
+      "path": "/stock/etf",
+      "description": "지정한 ETF 의 PDF(구성종목) 리스트와 ETF 자체의 NAV/시가총액/구성종목수 등 요약 정보를 반환합니다.",
+      "in_blocks": [
+        {
+          "name": "t1904InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "shcode", "type": "char", "description": "단축종목코드 (6자리)", "required": true, "length": 6, "example": "069500" }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t1904OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "date", "type": "char", "description": "기준일 yyyyMMdd", "length": 8 },
+            { "name": "price", "type": "long", "description": "ETF 현재가" },
+            { "name": "sign", "type": "char", "description": "전일대비구분", "length": 1 },
+            { "name": "change", "type": "long", "description": "전일대비" },
+            { "name": "diff", "type": "char", "description": "등락율" },
+            { "name": "volume", "type": "long", "description": "ETF 누적거래량" },
+            { "name": "nav", "type": "char", "description": "현재 NAV" },
+            { "name": "navsign", "type": "char", "description": "NAV 구분" },
+            { "name": "navchange", "type": "char", "description": "NAV 변화" },
+            { "name": "navdiff", "type": "char", "description": "NAV 등락율" },
+            { "name": "jnilnav", "type": "char", "description": "전일 NAV" },
+            { "name": "jnilnavsign", "type": "char", "description": "전일 NAV 구분" },
+            { "name": "jnilnavchange", "type": "char", "description": "전일 NAV 변화" },
+            { "name": "jnilnavdiff", "type": "char", "description": "전일 NAV 등락율" },
+            { "name": "etfnum", "type": "long", "description": "구성종목 수 (현금 제외 가능)" },
+            { "name": "etfcunum", "type": "long", "description": "CU(설정/환매 단위) 좌수" },
+            { "name": "etftotcap", "type": "long", "description": "ETF 시가총액" },
+            { "name": "tot_pval", "type": "long", "description": "PDF 평가금액 합계" },
+            { "name": "tot_sigatval", "type": "long", "description": "PDF 시가총액 합계" },
+            { "name": "cash", "type": "long", "description": "PDF 내 현금성 자산" },
+            { "name": "chk_tday", "type": "char", "description": "당일 확정 여부", "length": 1 },
+            { "name": "futcode", "type": "char", "description": "관련 선물 코드" },
+            { "name": "futname", "type": "char", "description": "관련 선물 종목명" },
+            { "name": "futprice", "type": "char", "description": "관련 선물 가격" },
+            { "name": "futsign", "type": "char", "description": "선물 구분", "length": 1 },
+            { "name": "futchange", "type": "char", "description": "선물 전일대비" },
+            { "name": "futdiff", "type": "char", "description": "선물 등락율" },
+            { "name": "upcode", "type": "char", "description": "업종 상위 코드" }
+          ]
+        },
+        {
+          "name": "t1904OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "shcode", "type": "char", "description": "구성종목 단축코드 (또는 ISIN, 채권일 경우)" },
+            { "name": "hname", "type": "char", "description": "구성종목명" },
+            { "name": "weight", "type": "char", "description": "ETF 내 비중(%) 문자열" },
+            { "name": "price", "type": "long", "description": "구성종목 현재가" },
+            { "name": "sign", "type": "char", "description": "전일대비구분", "length": 1 },
+            { "name": "change", "type": "long", "description": "전일대비" },
+            { "name": "diff", "type": "char", "description": "등락율" },
+            { "name": "diff2", "type": "char", "description": "보조 등락율" },
+            { "name": "volume", "type": "long", "description": "구성종목 거래량" },
+            { "name": "value", "type": "long", "description": "구성종목 거래대금" },
+            { "name": "pvalue", "type": "long", "description": "ETF 내 평가금액" },
+            { "name": "sigatvalue", "type": "long", "description": "구성종목 시가총액" },
+            { "name": "parprice", "type": "long", "description": "액면가" },
+            { "name": "profitdate", "type": "char", "description": "이익 기준일 yyyyMMdd", "length": 8 },
+            { "name": "icux", "type": "long", "description": "ICUX (구성 좌수)" }
+          ]
+        }
+      ],
+      "continuation": { "supported": false },
+      "rate_limit_per_sec": 1
     }
   ]
 }

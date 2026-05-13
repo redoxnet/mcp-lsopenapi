@@ -148,10 +148,10 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 
 | TR | 이름 | Status | Tool / Notes |
 | --- | --- | --- | --- |
-| `t1901` | ETF 현재가 (시세) 조회 | ⚪ | |
+| `t1901` | ETF 현재가 (시세) 조회 | 🟢 | `ls_get_etf_info` — NAV, 추적기준지수, 괴리율, AUM, LP 5개, 52주/연중 범위, 관련 선물 |
 | `t1902` | ETF 시간별 추이 | ⚪ | |
 | `t1903` | ETF 일별 추이 | ⚪ | |
-| `t1904` | ETF 구성종목 조회 | ⚪ 💎 | "TIGER 미국S&P500 안에 뭐 들어있어?" |
+| `t1904` | ETF 구성종목 조회 | 🟢 | `ls_get_etf_holdings` — PDF(구성종목) 리스트 + 비중 + 평가/시가총액 + ETF 요약(NAV/AUM/현금) |
 | `t1906` | ETFLP 호가 | ⚪ | |
 
 ## [주식] ELW — Warrants
