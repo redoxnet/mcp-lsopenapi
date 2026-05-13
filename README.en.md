@@ -4,7 +4,10 @@
 
 # mcp-lsopenapi
 
+[![NuGet — Mcp](https://img.shields.io/nuget/v/RedoxNet.Mcp.LsOpenApi?label=RedoxNet.Mcp.LsOpenApi)](https://www.nuget.org/packages/RedoxNet.Mcp.LsOpenApi/)
 [![NuGet — Core](https://img.shields.io/nuget/v/RedoxNet.LsOpenApi.Core?label=RedoxNet.LsOpenApi.Core)](https://www.nuget.org/packages/RedoxNet.LsOpenApi.Core/)
+[![CI](https://github.com/redoxnet/mcp-lsopenapi/actions/workflows/ci.yml/badge.svg)](https://github.com/redoxnet/mcp-lsopenapi/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 MCP server for **LS증권 OpenAPI** — exposes Korean stock market data as MCP tools so AI assistants can query quotes, charts, and indicators in natural language.
 

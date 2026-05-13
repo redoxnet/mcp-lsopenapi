@@ -4,7 +4,10 @@
 
 # mcp-lsopenapi
 
+[![NuGet — Mcp](https://img.shields.io/nuget/v/RedoxNet.Mcp.LsOpenApi?label=RedoxNet.Mcp.LsOpenApi)](https://www.nuget.org/packages/RedoxNet.Mcp.LsOpenApi/)
 [![NuGet — Core](https://img.shields.io/nuget/v/RedoxNet.LsOpenApi.Core?label=RedoxNet.LsOpenApi.Core)](https://www.nuget.org/packages/RedoxNet.LsOpenApi.Core/)
+[![CI](https://github.com/redoxnet/mcp-lsopenapi/actions/workflows/ci.yml/badge.svg)](https://github.com/redoxnet/mcp-lsopenapi/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **LS증권 OpenAPI**용 MCP 서버 — AI 도우미가 한국 주식 시세, 차트, 지표를 자연어로 조회할 수 있게 합니다.
 
