@@ -20,6 +20,12 @@ public static class GetTopStocksTool
 
     const int MaxPages = 5;
 
+    // LS ranking TRs (t1441/t1452/t1463/t1466) declare sprice/eprice as 8-digit
+    // Number fields. eprice=0 is treated as "no price filter" — and it also
+    // suppresses sprice — so a min_price floor with no max_price cap needs a
+    // non-zero eprice. 99,999,999 is the largest value the 8-digit field holds.
+    const long PriceFilterCeiling = 99_999_999;
+
     /// <summary>
     /// Returns one of LS's top-stock ranking screens as normalized JSON.
     /// </summary>
@@ -258,8 +264,16 @@ public static class GetTopStocksTool
         string exchangeCode,
         long minPrice,
         long maxPrice,
-        long minVolume) =>
-        kind switch
+        long minVolume)
+    {
+        // When a min_price floor is set without a max_price cap, send the
+        // 8-digit ceiling as eprice; LS ignores the whole price filter (sprice
+        // included) when eprice is 0.
+        long eprice = maxPrice > 0 ? maxPrice
+            : minPrice > 0 ? PriceFilterCeiling
+            : 0;
+
+        return kind switch
         {
             "gainers" or "losers" or "unchanged" => new RankingSpec(
                 kind,
@@ -272,7 +286,7 @@ public static class GetTopStocksTool
                     ["gubun3"] = basis == "today" ? "0" : "1",
                     ["jc_num"] = 0,
                     ["sprice"] = minPrice,
-                    ["eprice"] = maxPrice,
+                    ["eprice"] = eprice,
                     ["volume"] = minVolume,
                     ["idx"] = idx,
                     ["jc_num2"] = 0,
@@ -299,7 +313,7 @@ public static class GetTopStocksTool
                     ["ediff"] = 0,
                     ["jc_num"] = 0,
                     ["sprice"] = minPrice,
-                    ["eprice"] = maxPrice,
+                    ["eprice"] = eprice,
                     ["volume"] = minVolume,
                     ["idx"] = idx,
                 }),
@@ -313,7 +327,7 @@ public static class GetTopStocksTool
                     ["jnilgubun"] = basis == "today" ? "0" : "1",
                     ["jc_num"] = 0,
                     ["sprice"] = minPrice,
-                    ["eprice"] = maxPrice,
+                    ["eprice"] = eprice,
                     ["volume"] = minVolume,
                     ["idx"] = idx,
                     ["jc_num2"] = 0,
@@ -330,7 +344,7 @@ public static class GetTopStocksTool
                     ["type2"] = "0",
                     ["jc_num"] = 0,
                     ["sprice"] = minPrice,
-                    ["eprice"] = maxPrice,
+                    ["eprice"] = eprice,
                     ["volume"] = minVolume,
                     ["idx"] = idx,
                     ["jc_num2"] = 0,
@@ -338,6 +352,7 @@ public static class GetTopStocksTool
                 }),
             _ => throw new InvalidOperationException($"Unknown kind '{kind}'."),
         };
+    }
 
     static string MarketGubun(string market) => market switch
     {

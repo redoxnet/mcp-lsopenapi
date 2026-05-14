@@ -80,7 +80,7 @@ public class GetTopStocksToolFixtureTests
             basis: "previous_day");
 
         handler.Requests.Should().HaveCount(1);
-        handler.Requests[0].RequestUri!.AbsolutePath.Should().Be("/stock/market-data");
+        handler.Requests[0].RequestUri!.AbsolutePath.Should().Be("/stock/high-item");
         handler.Requests[0].Headers.GetValues("tr_cd").Should().ContainSingle().Which.Should().Be("t1441");
 
         string sent = await handler.Requests[0].Content!.ReadAsStringAsync();
@@ -105,6 +105,37 @@ public class GetTopStocksToolFixtureTests
         row.GetProperty("best_bid").GetInt64().Should().Be(2840);
         row.GetProperty("value").GetInt64().Should().Be(1449);
         row.GetProperty("market_cap").GetInt64().Should().Be(1027);
+    }
+
+    [Fact]
+    public async Task GetTopStocks_MinPriceWithoutMaxPrice_SendsCeilingEprice()
+    {
+        // LS ranking TRs ignore the whole price filter (sprice included) when
+        // eprice is 0, so a min_price floor with no cap must send the 8-digit
+        // ceiling as eprice.
+        var (client, handler) = TestClientFactory.Create((_, _) => Ok(T1441Response));
+
+        await GetTopStocksTool.GetTopStocks(
+            client,
+            kind: "gainers",
+            market: "kospi",
+            min_price: 50000);
+
+        string sent = await handler.Requests[0].Content!.ReadAsStringAsync();
+        sent.Should().Contain("\"sprice\":50000");
+        sent.Should().Contain("\"eprice\":99999999");
+    }
+
+    [Fact]
+    public async Task GetTopStocks_NoPriceFilter_SendsZeroEprice()
+    {
+        var (client, handler) = TestClientFactory.Create((_, _) => Ok(T1441Response));
+
+        await GetTopStocksTool.GetTopStocks(client, kind: "gainers", market: "kospi");
+
+        string sent = await handler.Requests[0].Content!.ReadAsStringAsync();
+        sent.Should().Contain("\"sprice\":0");
+        sent.Should().Contain("\"eprice\":0");
     }
 
     [Fact]
