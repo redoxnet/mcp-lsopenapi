@@ -82,6 +82,10 @@ internal static class UiResources
                     Uri = PlotlyResourceUri,
                     MimeType = PlotlyMimeType,
                     Text = PlotlyHtml.Value,
+                    // SEP-1865: the host reads CSP from the resources/read
+                    // content _meta (not just the resources/list entry), so
+                    // the iframe sandbox is allowed to load the Plotly CDN.
+                    Meta = BuildResourceUiMeta(),
                 },
             },
         };
@@ -148,20 +152,26 @@ internal static class UiResources
     /// Plotly CDN. Without this, hosts default to a tight policy that blocks
     /// the script tag.
     /// </summary>
+    /// <remarks>
+    /// SEP-1865 shape: <c>_meta.ui.csp</c> takes domain lists, not raw CSP
+    /// directives. The host already grants <c>'self'</c>, <c>'unsafe-inline'</c>
+    /// (script/style) and <c>data:</c> (img) — servers declare only the extra
+    /// origins. <c>resourceDomains</c> maps to <c>script-src</c> /
+    /// <c>style-src</c> / <c>img-src</c> / <c>font-src</c> / <c>media-src</c>,
+    /// which is all the Plotly CDN needs; the template makes no network calls
+    /// of its own, so <c>connectDomains</c> is omitted.
+    /// </remarks>
     private static JsonObject BuildResourceUiMeta() => new()
     {
         ["ui"] = new JsonObject
         {
             ["csp"] = new JsonObject
             {
-                // Plotly itself + (legitimate) inline bootstrap in the template.
-                ["script-src"] = new JsonArray("'self'", "'unsafe-inline'", "https://cdn.plot.ly"),
-                // Plotly injects inline styles for tooltips/legend.
-                ["style-src"] = new JsonArray("'self'", "'unsafe-inline'"),
-                ["connect-src"] = new JsonArray("'self'"),
-                // Plotly can export raster snapshots embedded as data: URIs.
-                ["img-src"] = new JsonArray("'self'", "data:"),
+                ["resourceDomains"] = new JsonArray("https://cdn.plot.ly"),
             },
+            // Host border defaults vary; the spec recommends being explicit.
+            // A candlestick chart reads better inside a bordered card.
+            ["prefersBorder"] = true,
         },
     };
 

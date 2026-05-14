@@ -243,14 +243,17 @@
     // Window resize fallback when host doesn't send containerDimensions updates.
     window.addEventListener("resize", () => { if (lastResult) render(); });
 
-    // Kick off handshake.
+    // Kick off handshake. SEP-1865 requires the View to declare the display
+    // modes it supports; this template is a single inline chart card.
     send({
       jsonrpc: "2.0",
       id: INIT_REQUEST_ID,
       method: "ui/initialize",
       params: {
         protocolVersion: PROTOCOL_VERSION,
-        appCapabilities: {},
+        appCapabilities: {
+          availableDisplayModes: ["inline"],
+        },
       },
     });
   </script>
