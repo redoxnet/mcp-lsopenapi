@@ -64,7 +64,7 @@ public class GetEtfHoldingsToolFixtureTests
     {
         var (client, handler) = TestClientFactory.Create((_, _) => Ok(TestbedT1904Response));
 
-        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500", date: "20230104");
+        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500", date: "20230104").TextContent();
 
         handler.Requests.Should().HaveCount(1);
         handler.Requests[0].RequestUri!.AbsolutePath.Should().Be("/stock/etf");
@@ -118,7 +118,7 @@ public class GetEtfHoldingsToolFixtureTests
     {
         var (client, _) = TestClientFactory.Create((_, _) => Ok(TestbedT1904Response));
 
-        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500", top_n: 1);
+        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500", top_n: 1).TextContent();
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         root.GetProperty("holdings").GetArrayLength().Should().Be(1);
@@ -135,7 +135,7 @@ public class GetEtfHoldingsToolFixtureTests
     {
         var (client, _) = TestClientFactory.Create((_, _) => Ok(TestbedT1904Response));
 
-        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500", top_n: 100);
+        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500", top_n: 100).TextContent();
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         root.GetProperty("holdings").GetArrayLength().Should().Be(2);
@@ -148,7 +148,7 @@ public class GetEtfHoldingsToolFixtureTests
     {
         var (client, _) = TestClientFactory.Create((_, _) => Ok(TestbedT1904Response));
 
-        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500", top_n: 0);
+        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500", top_n: 0).TextContent();
 
         JsonDocument.Parse(result).RootElement.GetProperty("error").GetString()
             .Should().Contain("top_n");
@@ -159,7 +159,7 @@ public class GetEtfHoldingsToolFixtureTests
     {
         var (client, _) = TestClientFactory.Create((_, _) => Ok(TestbedT1904Response));
 
-        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500");
+        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500").TextContent();
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         root.GetProperty("holdings").GetArrayLength().Should().Be(2);
@@ -185,7 +185,7 @@ public class GetEtfHoldingsToolFixtureTests
     {
         var (client, _) = TestClientFactory.Create((_, _) => Ok("""{"rsp_cd":"00000"}"""));
 
-        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "");
+        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "").TextContent();
 
         JsonDocument.Parse(result).RootElement.GetProperty("error").GetString().Should().Contain("shcode");
     }
@@ -206,7 +206,7 @@ public class GetEtfHoldingsToolFixtureTests
         """;
         var (client, _) = TestClientFactory.Create((_, _) => Ok(body));
 
-        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500");
+        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500").TextContent();
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         root.GetProperty("confirmed_today").GetBoolean().Should().BeTrue();
@@ -221,7 +221,7 @@ public class GetEtfHoldingsToolFixtureTests
         """;
         var (client, _) = TestClientFactory.Create((_, _) => Ok(body));
 
-        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "999999");
+        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "999999").TextContent();
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         root.TryGetProperty("error", out _).Should().BeTrue();
@@ -244,7 +244,7 @@ public class GetEtfHoldingsToolFixtureTests
         """;
         var (client, _) = TestClientFactory.Create((_, _) => Ok(body));
 
-        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500");
+        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500").TextContent();
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         string error = root.GetProperty("error").GetString()!;
@@ -268,7 +268,7 @@ public class GetEtfHoldingsToolFixtureTests
         """;
         var (client, _) = TestClientFactory.Create((_, _) => Ok(body));
 
-        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "364970");
+        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "364970").TextContent();
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         string error = root.GetProperty("error").GetString()!;
