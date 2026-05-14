@@ -40,16 +40,18 @@ internal static class PlotlyChartBuilder
 
     /// <summary>
     /// Round-robin colour palette for moving-average and EMA overlays, in the
-    /// order they are enrolled in <see cref="IndicatorSpec"/>.
+    /// order they are enrolled in <see cref="IndicatorSpec"/>. Ordered to match
+    /// the Korean retail convention (Naver Finance: 5 green / 20 red / 60 orange
+    /// / 120 purple), which is what users see when MAs are passed shortest-first.
     /// </summary>
     static readonly string[] MaPalette =
     {
-        "#F39C12", // orange
-        "#27AE60", // green
-        "#8E44AD", // purple
-        "#16A085", // teal
-        "#2C3E50", // navy
-        "#D35400", // dark orange
+        "#2F9E44", // green  — MA5
+        "#E03131", // red    — MA20
+        "#F08C00", // orange — MA60
+        "#9C36B5", // purple — MA120
+        "#1098AD", // cyan   — extras
+        "#495057", // gray
     };
 
     /// <summary>
@@ -90,7 +92,7 @@ internal static class PlotlyChartBuilder
             ["spec"] = new JsonObject
             {
                 ["data"] = data,
-                ["layout"] = BuildLayout(shcode, periodType),
+                ["layout"] = BuildLayout(shcode, periodType, candles, xAxis),
             },
         };
     }
@@ -279,12 +281,19 @@ internal static class PlotlyChartBuilder
 
     /// <summary>
     /// Builds the Plotly <c>layout</c> object: title, axes (with price on top,
-    /// volume on bottom), legend, hover and margin settings.
+    /// volume on bottom), legend, hover and margin settings, an evenly-spaced
+    /// date-tick x-axis, and period high/low annotations.
     /// </summary>
     /// <param name="shcode">Stock code for the title.</param>
     /// <param name="periodType">Period label; mapped to Korean (일/주/월/분/틱) for display.</param>
+    /// <param name="candles">Candle list (oldest first) — drives ticks and annotations.</param>
+    /// <param name="xAxis">Shared x-axis array, aligned 1:1 with <paramref name="candles"/>.</param>
     /// <returns>Plotly layout JSON object.</returns>
-    static JsonObject BuildLayout(string shcode, string periodType)
+    static JsonObject BuildLayout(
+        string shcode,
+        string periodType,
+        IReadOnlyList<Candle> candles,
+        JsonArray xAxis)
     {
         string periodLabel = periodType switch
         {
@@ -296,7 +305,7 @@ internal static class PlotlyChartBuilder
             _ => periodType,
         };
 
-        return new JsonObject
+        var layout = new JsonObject
         {
             ["title"] = new JsonObject { ["text"] = $"{shcode} — {periodLabel}" },
             ["hovermode"] = "x unified",
@@ -307,12 +316,7 @@ internal static class PlotlyChartBuilder
                 ["x"] = 0,
                 ["y"] = 1.05,
             },
-            ["xaxis"] = new JsonObject
-            {
-                ["type"] = "category",
-                ["rangeslider"] = new JsonObject { ["visible"] = false },
-                ["showspikes"] = true,
-            },
+            ["xaxis"] = BuildXAxisLayout(candles, xAxis, periodType),
             ["yaxis"] = new JsonObject
             {
                 ["title"] = new JsonObject { ["text"] = "Price" },
@@ -330,7 +334,153 @@ internal static class PlotlyChartBuilder
                 ["l"] = 40, ["r"] = 60, ["t"] = 40, ["b"] = 40,
             },
         };
+
+        JsonArray annotations = BuildExtremaAnnotations(candles, xAxis, periodType);
+        if (annotations.Count > 0)
+            layout["annotations"] = annotations;
+
+        return layout;
     }
+
+    /// <summary>
+    /// Builds the x-axis layout: a categorical axis (every candle evenly
+    /// spaced, no weekend/holiday gaps) whose ticks are an evenly-spaced
+    /// subset of the raw x values — Naver-style. The trace <c>x</c> arrays keep
+    /// the verbatim ISO strings; <c>tickvals</c> holds the chosen subset (which
+    /// must match those strings exactly so the category axis can place them)
+    /// and <c>ticktext</c> holds the short display label (e.g. <c>"05/14"</c>).
+    /// </summary>
+    /// <param name="candles">Candle list, aligned 1:1 with <paramref name="xAxis"/>.</param>
+    /// <param name="xAxis">Raw x-axis string values.</param>
+    /// <param name="periodType">Period label; selects the tick label format.</param>
+    /// <returns>Plotly x-axis layout JSON object.</returns>
+    static JsonObject BuildXAxisLayout(
+        IReadOnlyList<Candle> candles,
+        JsonArray xAxis,
+        string periodType)
+    {
+        var axis = new JsonObject
+        {
+            ["type"] = "category",
+            ["rangeslider"] = new JsonObject { ["visible"] = false },
+            ["showspikes"] = true,
+            ["tickangle"] = 0,
+        };
+
+        if (candles.Count == 0)
+            return axis;
+
+        // ~8 ticks, evenly spaced over the candle index range. Rounding can
+        // collide on a short series, so de-dup consecutive picks.
+        const int DesiredTicks = 8;
+        string fmt = TickFormat(periodType);
+        int desired = Math.Min(candles.Count, DesiredTicks);
+        var tickvals = new JsonArray();
+        var ticktext = new JsonArray();
+        int lastIdx = -1;
+        for (int t = 0; t < desired; t++)
+        {
+            int idx = desired == 1
+                ? candles.Count - 1
+                : (int)Math.Round((double)t * (candles.Count - 1) / (desired - 1));
+            if (idx == lastIdx)
+                continue;
+            lastIdx = idx;
+            tickvals.Add(xAxis[idx]!.GetValue<string>());
+            ticktext.Add(candles[idx].Date.ToString(fmt, CultureInfo.InvariantCulture));
+        }
+
+        axis["tickmode"] = "array";
+        axis["tickvals"] = tickvals;
+        axis["ticktext"] = ticktext;
+        return axis;
+    }
+
+    /// <summary>
+    /// Builds the period-high and period-low annotations (Naver-style: red
+    /// "최고" above the highest candle, blue "최저" below the lowest), anchored
+    /// on the price axis. Returns an empty array when there are no candles.
+    /// </summary>
+    /// <param name="candles">Candle list.</param>
+    /// <param name="xAxis">Raw x-axis strings, aligned 1:1 with <paramref name="candles"/>.</param>
+    /// <param name="periodType">Period label; selects the date format in the label text.</param>
+    /// <returns>Plotly <c>annotations</c> array (0 or 2 entries).</returns>
+    static JsonArray BuildExtremaAnnotations(
+        IReadOnlyList<Candle> candles,
+        JsonArray xAxis,
+        string periodType)
+    {
+        var annotations = new JsonArray();
+        if (candles.Count == 0)
+            return annotations;
+
+        int hiIdx = 0, loIdx = 0;
+        for (int i = 1; i < candles.Count; i++)
+        {
+            if (candles[i].High > candles[hiIdx].High) hiIdx = i;
+            if (candles[i].Low < candles[loIdx].Low) loIdx = i;
+        }
+
+        string fmt = TickFormat(periodType);
+        Candle hi = candles[hiIdx];
+        Candle lo = candles[loIdx];
+
+        annotations.Add(ExtremumAnnotation(
+            xAxis[hiIdx]!.GetValue<string>(), hi.High,
+            $"최고 {hi.High.ToString("N0", CultureInfo.InvariantCulture)} " +
+            $"({hi.Date.ToString(fmt, CultureInfo.InvariantCulture)})",
+            ColorRising, ay: -26));
+        annotations.Add(ExtremumAnnotation(
+            xAxis[loIdx]!.GetValue<string>(), lo.Low,
+            $"최저 {lo.Low.ToString("N0", CultureInfo.InvariantCulture)} " +
+            $"({lo.Date.ToString(fmt, CultureInfo.InvariantCulture)})",
+            ColorFalling, ay: 26));
+        return annotations;
+    }
+
+    /// <summary>
+    /// Builds one price-axis annotation with a short arrow to the candle.
+    /// No background box — just coloured text + arrow, so it reads on light
+    /// and dark surfaces alike.
+    /// </summary>
+    /// <param name="x">Category x value (must match a trace x entry).</param>
+    /// <param name="y">Price the arrow points at.</param>
+    /// <param name="text">Annotation label.</param>
+    /// <param name="color">Text + arrow colour.</param>
+    /// <param name="ay">Vertical text offset in pixels (negative = above the point).</param>
+    /// <returns>Plotly annotation JSON object.</returns>
+    static JsonObject ExtremumAnnotation(string x, decimal y, string text, string color, int ay) =>
+        new()
+        {
+            ["x"] = x,
+            ["y"] = y,
+            ["xref"] = "x",
+            ["yref"] = "y",
+            ["text"] = text,
+            ["showarrow"] = true,
+            ["arrowhead"] = 3,
+            ["arrowsize"] = 1,
+            ["arrowwidth"] = 1,
+            ["arrowcolor"] = color,
+            ["ax"] = 0,
+            ["ay"] = ay,
+            ["font"] = new JsonObject { ["size"] = 10, ["color"] = color },
+        };
+
+    /// <summary>
+    /// .NET date format for tick labels and annotation dates, by period type:
+    /// intraday → time, month → <c>yy/MM</c>, year → <c>yyyy</c>, day/week → <c>MM/dd</c>.
+    /// </summary>
+    /// <param name="periodType">Period label.</param>
+    /// <returns>A <see cref="DateTime.ToString(string, IFormatProvider)"/> format string.</returns>
+    static string TickFormat(string periodType) => periodType switch
+    {
+        "min" => "HH:mm",
+        "tick" => "HH:mm:ss",
+        "month" => "yy/MM",
+        "year" => "yyyy",
+        _ => "MM/dd", // day, week
+    };
 
     /// <summary>
     /// Returns a deep-enough copy of an x-axis array so each trace can own its

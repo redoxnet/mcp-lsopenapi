@@ -189,4 +189,73 @@ public class PlotlyChartBuilderTests
         y[3].Should().BeNull();
         y[4].Should().NotBeNull();
     }
+
+    [Fact]
+    public void Build_XAxis_TicksAreEvenlySpacedSubsetOfRawX()
+    {
+        var candles = SampleCandles(30);
+        JsonObject env = PlotlyChartBuilder.Build(
+            "005930", "day", candles,
+            new Dictionary<string, IReadOnlyList<double?>>(),
+            Array.Empty<IndicatorSpec>());
+
+        JsonObject xaxis = env["spec"]!["layout"]!["xaxis"]!.AsObject();
+        xaxis["type"]!.GetValue<string>().Should().Be("category");
+        xaxis["tickmode"]!.GetValue<string>().Should().Be("array");
+
+        JsonArray tickvals = xaxis["tickvals"]!.AsArray();
+        JsonArray ticktext = xaxis["ticktext"]!.AsArray();
+        tickvals.Count.Should().Be(ticktext.Count);
+        tickvals.Count.Should().BeLessThanOrEqualTo(8).And.BeGreaterThan(1);
+
+        // Every tick value must be a verbatim entry of the candlestick trace's x
+        // (category axis matches ticks by string equality).
+        var traceX = env["spec"]!["data"]![0]!["x"]!.AsArray()
+            .Select(n => n!.GetValue<string>()).ToHashSet();
+        tickvals.Select(n => n!.GetValue<string>()).Should().OnlyContain(v => traceX.Contains(v));
+
+        // Labels are the short MM/dd form, not the raw ISO string.
+        ticktext[0]!.GetValue<string>().Should().MatchRegex(@"^\d{2}/\d{2}$");
+    }
+
+    [Fact]
+    public void Build_Layout_HasPeriodHighAndLowAnnotations()
+    {
+        var candles = new List<Candle>
+        {
+            new(new DateTime(2026, 3, 2), 100, 110, 90, 105, 1000),
+            new(new DateTime(2026, 3, 3), 105, 180, 95, 150, 1100),  // period high 180
+            new(new DateTime(2026, 3, 4), 150, 160, 40, 70, 1200),   // period low 40
+            new(new DateTime(2026, 3, 5), 70, 120, 65, 115, 1300),
+        };
+        JsonObject env = PlotlyChartBuilder.Build(
+            "005930", "day", candles,
+            new Dictionary<string, IReadOnlyList<double?>>(),
+            Array.Empty<IndicatorSpec>());
+
+        JsonArray annotations = env["spec"]!["layout"]!["annotations"]!.AsArray();
+        annotations.Count.Should().Be(2);
+
+        JsonObject high = annotations[0]!.AsObject();
+        high["text"]!.GetValue<string>().Should().Contain("최고").And.Contain("180");
+        high["y"]!.GetValue<decimal>().Should().Be(180);
+        high["x"]!.GetValue<string>().Should().Be("2026-03-03");
+
+        JsonObject low = annotations[1]!.AsObject();
+        low["text"]!.GetValue<string>().Should().Contain("최저").And.Contain("40");
+        low["y"]!.GetValue<decimal>().Should().Be(40);
+        low["x"]!.GetValue<string>().Should().Be("2026-03-04");
+    }
+
+    [Fact]
+    public void Build_MaOverlay_FirstLineUsesNaverGreen()
+    {
+        var candles = SampleCandles(20);
+        IndicatorSpec ma5 = IndicatorSpecParser.Parse("ma:5");
+        var indicators = new IndicatorService().Compute(candles, new[] { ma5 });
+
+        JsonObject env = PlotlyChartBuilder.Build("005930", "day", candles, indicators, new[] { ma5 });
+
+        env["spec"]!["data"]![1]!["line"]!["color"]!.GetValue<string>().Should().Be("#2F9E44");
+    }
 }
