@@ -49,6 +49,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- MCP Apps (SEP-1865) UI resource served via resources/read. -->
+    <EmbeddedResource Include="Apps\PlotlyTemplate.html" />
+  </ItemGroup>
+
+  <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>RedoxNet.Mcp.LsOpenApi.Tests</_Parameter1>
     </AssemblyAttribute>

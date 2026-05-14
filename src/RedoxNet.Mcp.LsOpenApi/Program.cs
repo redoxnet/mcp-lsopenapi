@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using RedoxNet.LsOpenApi.Core;
+using RedoxNet.Mcp.LsOpenApi.Apps;
 
 // CLI subcommand dispatch (one-shot mode for diagnostics).
 if (args.Length > 0 && IsCliCommand(args[0]))
@@ -42,7 +43,22 @@ builder.Services
         };
     })
     .WithStdioServerTransport()
-    .WithToolsFromAssembly();
+    .WithToolsFromAssembly()
+    // MCP Apps (SEP-1865): publish the generic Plotly UI template so hosts
+    // (Claude Desktop, ChatGPT, Goose, VS Code) can render inline charts
+    // returned by ls_get_chart / ls_get_etf_holdings.
+    .WithListResourcesHandler(UiResources.ListAsync)
+    .WithReadResourceHandler(UiResources.ReadAsync)
+    // Attribute-based tool registration can't express nested _meta.ui — so
+    // we attach the SEP-1865 envelope via a tools/list filter that mutates
+    // the descriptors for chart-emitting tools just before they ship out.
+    .WithRequestFilters(filters => filters.AddListToolsFilter(next => async (ctx, ct) =>
+    {
+        var result = await next(ctx, ct);
+        foreach (var tool in result.Tools)
+            UiResources.PatchToolMetaIfChartEmitting(tool);
+        return result;
+    }));
 
 var app = builder.Build();
 await app.RunAsync();
