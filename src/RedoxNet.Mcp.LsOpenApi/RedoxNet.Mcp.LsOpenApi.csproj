@@ -11,7 +11,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
     <PackageId>RedoxNet.Mcp.LsOpenApi</PackageId>
 	<Authors>Jong Hyun Kim</Authors>
     <Company>RedoxNet</Company>
@@ -24,7 +24,7 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>icon.png</PackageIcon>
     <Copyright>Copyright (c) 2026 RedoxNet</Copyright>
-    <PackageReleaseNotes>v0.2.0: MCP host interop fixes — SchemaNormalizer rewrites the SDK's nullable-array tool schemas ("type":["array","null"] → "array") so strict host validators accept calls with optional params like indicators; MCP Apps _meta.ui.csp corrected to the SEP-1865 domain-list shape and attached to resources/read. Adds LS_LOG_LEVEL. No tool surface changes. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Mcp.md for full notes.</PackageReleaseNotes>
+    <PackageReleaseNotes>v0.3.0: Adds ls_get_top_stocks (market screener over t1441/t1444/t1452/t1463/t1466). Renames ls_search_stock's query parameter to keyword for consistency with ls_search_tr. ls_get_chart gains an optional name parameter for the chart title; inline chart specs polished toward the Naver Finance look (evenly spaced date ticks, Korean MA palette, high/low annotations, high-contrast treemap labels). See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Mcp.md for full notes.</PackageReleaseNotes>
 
     <PackageType>McpServer</PackageType>
     <PackAsTool>true</PackAsTool>

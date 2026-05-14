@@ -1,5 +1,27 @@
 # Release Notes — RedoxNet.Mcp.LsOpenApi
 
+## v0.3.0 (2026-05-14)
+
+A new market-screener tool, a search-parameter rename, and Naver-style chart polish.
+
+### Added
+
+- **`ls_get_top_stocks`** — market-wide ranking screener wrapping five TRs behind one `kind` parameter: `gainers` / `losers` / `unchanged` (t1441), `market_cap` (t1444), `volume` (t1452), `amount` (t1463), `volume_surge` (t1466). Supports `market` (all / kospi / kosdaq), `basis` (today / previous_day), `exchange` (unified / krx / nxt), and price/volume floor filters; paginates via the LS `idx` continuation key and merges KOSPI + KOSDAQ for `market_cap` when `market=all`. Brings the tool count to 11.
+
+### Fixed
+
+- **`ls_get_top_stocks` price filters were silently ignored.** LS's ranking TRs (t1441/t1452/t1463/t1466) treat `eprice=0` as "no price filter" and — the non-obvious part — suppress the `sprice` floor along with it. So `min_price` with no `max_price` returned the full unfiltered list. The tool now sends the 8-digit ceiling (`99999999`) as `eprice` whenever a `min_price` floor is set without a `max_price` cap. `min_volume` and the both-bounds case were already correct. Verified end-to-end against the live LS server. (Sending the fields as JSON strings instead of numbers, an early hypothesis, makes LS return HTTP 500 — the field types were never the problem.)
+
+### Changed
+
+- **`ls_search_stock`'s `query` parameter renamed to `keyword`.** `ls_search_tr` already took `keyword`, and models generalize the sibling tool's parameter name — so `ls_search_stock` calls came in with `keyword` and were rejected by the .NET MCP SDK's parameter binder with an opaque *"An error occurred invoking 'ls_search_stock'."* (the real "missing required parameter" detail only reaches the server's stderr log). Both search tools' keyword parameters are now also optional at the protocol level, so a missing or misnamed argument reaches the in-body validation and returns a clear *"keyword is required."* instead.
+- **`ls_get_chart` gained an optional `name` parameter.** When supplied, the inline chart title reads *"삼성전자 (005930) — 일봉"* instead of just the code. The chart TRs do not carry the stock name, so the caller passes it through; omitted, the title falls back to the code as before.
+- **Inline chart specs polished toward the Naver Finance look.** Candlestick x-axis labels are now an evenly-spaced ~8-tick subset (`MM/dd`) rather than one label per candle; MA / EMA overlays use the Korean retail palette (green / red / orange / purple); the period high and low get `최고` / `최저` annotations; the ETF-holdings treemap uses white labels on a deeper blue so they stay legible regardless of the host theme.
+
+### Internal
+
+- The Plotly chart-spec builders moved into `RedoxNet.LsOpenApi.Core` (see the Core 0.3.0 notes) — no effect on the tool surface.
+
 ## v0.2.0 (2026-05-14)
 
 MCP host interoperability fixes. **No tool surface or behavior changes** — the 10 tools, their inputs, and their outputs are identical to v0.1.0. This release only reshapes the published JSON schema and UI-resource metadata so MCP hosts accept and render them correctly.

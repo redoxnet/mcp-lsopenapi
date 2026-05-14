@@ -98,7 +98,7 @@ directly in the conversation.
 
 Credentials are accepted **only** through the process environment — never through chat, tool arguments, or MCP elicitation. See [ADR-001](https://github.com/redoxnet/mcp-lsopenapi/blob/main/docs/ADR-001-credential-management.md) for the rationale.
 
-## Tools (v0.2.0)
+## Tools (v0.3.0)
 
 | Tool | TR | Purpose |
 |---|---|---|
