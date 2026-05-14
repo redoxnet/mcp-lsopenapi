@@ -27,8 +27,11 @@ public static class SearchTrTool
         """)]
     public static string SearchTr(
         TrCatalog catalog,
+        // Optional at the protocol level so a missing/misnamed argument lands in
+        // the validation below with a clear "keyword is required." message,
+        // instead of failing opaquely in the MCP SDK's parameter binder.
         [Description("Korean or English keyword. Examples: '현재가', '차트', 'balance', 'ohlcv'.")]
-        string keyword,
+        string keyword = "",
         [Description("Max results (1–50). Default 10.")]
         int limit = 10)
     {

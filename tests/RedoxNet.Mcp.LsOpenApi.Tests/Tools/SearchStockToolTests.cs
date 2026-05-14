@@ -54,13 +54,13 @@ public class SearchStockToolTests
     }
 
     [Fact]
-    public async Task SearchStock_EmptyQuery_ReturnsError()
+    public async Task SearchStock_EmptyKeyword_ReturnsError()
     {
         var (client, _) = TestClientFactory.Create((_, _) => Ok(SampleBody));
 
         string result = await SearchStockTool.SearchStock(client, "");
         JsonDocument.Parse(result).RootElement.GetProperty("error").GetString()
-            .Should().Contain("query");
+            .Should().Contain("keyword");
     }
 
     [Fact]

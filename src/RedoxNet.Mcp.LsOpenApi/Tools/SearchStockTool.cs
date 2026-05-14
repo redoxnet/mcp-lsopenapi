@@ -24,7 +24,7 @@ public static class SearchStockTool
     /// Returns up to <paramref name="limit"/> matching stocks.
     /// </summary>
     /// <param name="apiClient">Injected LS API client.</param>
-    /// <param name="query">Korean or English name fragment.</param>
+    /// <param name="keyword">Korean or English name fragment. Named <c>keyword</c> to match <c>ls_search_tr</c>.</param>
     /// <param name="market">'all', 'kospi', or 'kosdaq'. Default 'all'.</param>
     /// <param name="limit">Max results, default 20, max 100.</param>
     /// <param name="instrument">'all' (default), 'stock' (일반주, etfgubun='0'), or 'etf' (ETF/ETN, etfgubun!='0').</param>
@@ -41,8 +41,12 @@ public static class SearchStockTool
         """)]
     public static async Task<string> SearchStock(
         LsApiClient apiClient,
+        // Optional at the protocol level so a missing/misnamed argument lands in
+        // the validation below with a clear "keyword is required." message,
+        // instead of failing in the MCP SDK's parameter binder with an opaque
+        // "An error occurred invoking 'ls_search_stock'.".
         [Description("Korean or English name fragment, e.g. '삼성', 'Samsung'.")]
-        string query,
+        string keyword = "",
         [Description("Market filter: 'all' (default), 'kospi', or 'kosdaq'.")]
         string market = "all",
         [Description("Max results (1–100). Default 20.")]
@@ -51,8 +55,8 @@ public static class SearchStockTool
         string instrument = "all",
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(query))
-            return McpJson.Error("query is required.");
+        if (string.IsNullOrWhiteSpace(keyword))
+            return McpJson.Error("keyword is required.");
 
         int cappedLimit = Math.Clamp(limit, 1, 100);
         string gubun = market?.Trim().ToLowerInvariant() switch
@@ -91,8 +95,8 @@ public static class SearchStockTool
                 string? shcode = row.ReadString("shcode");
                 if (name is null || shcode is null)
                     continue;
-                if (!name.Contains(query, StringComparison.OrdinalIgnoreCase) &&
-                    !shcode.Contains(query, StringComparison.OrdinalIgnoreCase))
+                if (!name.Contains(keyword, StringComparison.OrdinalIgnoreCase) &&
+                    !shcode.Contains(keyword, StringComparison.OrdinalIgnoreCase))
                     continue;
 
                 string? etfRaw = row.ReadString("etfgubun");
@@ -117,7 +121,7 @@ public static class SearchStockTool
 
             var payload = new
             {
-                query,
+                keyword,
                 market_filter = gubun switch { "1" => "kospi", "2" => "kosdaq", _ => "all" },
                 instrument_filter = instrumentFilter,
                 limit = cappedLimit,
