@@ -1,5 +1,20 @@
 # Release Notes — RedoxNet.LsOpenApi.Core
 
+## v0.3.0 (2026-05-14)
+
+Five market-ranking TRs added to the catalog; the chart-spec builders now live here.
+
+### Added
+
+- **Five 주식상위종목 ranking TRs in the embedded catalog** — `t1441` (등락율 상위), `t1444` (시가총액 상위), `t1452` (거래량 상위), `t1463` (거래대금 상위), `t1466` (전일동시간대비 거래급증), each with full InBlock / OutBlock schemas and `idx` continuation metadata. The catalog now covers 16 TRs.
+- **`Charting/` chart-spec builders** — `PlotlyChartBuilder` and `EtfHoldingsChartBuilder` (Plotly v5 candlestick + volume specs, ETF-holdings treemap specs) moved here from the MCP server. They depend only on Core types (`Candle`, `IndicatorSpec`) and `System.Text.Json`, so Core is their natural home. Both are `internal`, exposed to the MCP server via `InternalsVisibleTo` — **no public API surface change**.
+
+### Changed
+
+- Chart-spec output: Naver-style evenly-spaced date ticks (`tickvals` / `ticktext` over the verbatim category x), the Korean MA palette (green / red / orange / purple), period high/low annotations, white-on-deep-blue ETF treemap labels, and an optional stock name in the candlestick title.
+
+> Versioned independently from `RedoxNet.Mcp.LsOpenApi`; the shared 0.3.0 is a coincidence.
+
 ## v0.2.0 (2026-05-14)
 
 Packaging fix. **No code or API changes** — the SDK is equivalent to v0.1.0.
