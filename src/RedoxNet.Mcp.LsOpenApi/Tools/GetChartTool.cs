@@ -48,6 +48,7 @@ public static class GetChartTool
     /// <param name="indicators">Optional indicator specs (e.g. ['ma:5','rsi:14','macd:12,26,9','bb:20,2']).</param>
     /// <param name="include_chart">If true (and period_type is a single timeframe), the tool ships a Plotly v5 spec as structuredContent so MCP Apps (SEP-1865) hosts render the chart inline. Default false.</param>
     /// <param name="summary_only">If true, return only the last 5 candles and the last value of each indicator series; the <c>context</c> block is preserved. Default false.</param>
+    /// <param name="name">Optional human-readable stock name (e.g. '삼성전자'); used only for the inline chart title. The chart TRs do not carry the name.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Text content with candles/indicators/context plus an optional <c>structuredContent.chart</c> for inline rendering.</returns>
     [McpServerTool(Name = "ls_get_chart")]
