@@ -31,10 +31,17 @@ namespace RedoxNet.LsOpenApi.Core.Charting;
 /// </remarks>
 internal static class EtfHoldingsChartBuilder
 {
-    /// <summary>Korean blue (#3498DB). Same hex as the falling-candle color in
-    /// <see cref="PlotlyChartBuilder"/>; here it carries no directional
-    /// meaning, just provides a consistent palette across the package.</summary>
-    const string HoldingColor = "#3498DB";
+    /// <summary>Cell fill — a deep blue chosen so white labels clear ~6.7:1
+    /// contrast (WCAG AA, comfortably above the 4.5:1 normal-text bar). The
+    /// colour carries no directional meaning; it just gives the treemap a
+    /// single, self-contrast-owning palette.</summary>
+    const string HoldingColor = "#21618C";
+
+    /// <summary>Cell label colour — white on <see cref="HoldingColor"/>. Pinned
+    /// so the chart owns its own contrast instead of inheriting
+    /// <c>layout.font.color</c>, which a dark host theme would set to a light
+    /// grey that vanishes on the cells.</summary>
+    const string HoldingTextColor = "#FFFFFF";
 
     /// <summary>Chart type discriminator emitted under the top-level <c>chart</c> field.</summary>
     public const string ChartType = "plotly";
@@ -132,11 +139,10 @@ internal static class EtfHoldingsChartBuilder
             ["text"] = text,
             ["textinfo"] = "text",
             ["textposition"] = "middle center",
-            // Explicit near-black label colour: ~6.7:1 contrast on the #3498DB
-            // cells. Without it the text inherits layout.font.color, which a
-            // dark host theme sets to a light grey — unreadable on the blue.
-            // The chart owns its own contrast rather than depending on the host.
-            ["textfont"] = new JsonObject { ["size"] = 13, ["color"] = "#1A1A1A" },
+            // White-on-deep-blue (see HoldingTextColor / HoldingColor) — the
+            // chart owns its own ~6.7:1 contrast rather than inheriting
+            // layout.font.color, which a dark host theme drags to a light grey.
+            ["textfont"] = new JsonObject { ["size"] = 13, ["color"] = HoldingTextColor },
             ["customdata"] = customData,
             ["hovertemplate"] =
                 "<b>%{label}</b><br>" +

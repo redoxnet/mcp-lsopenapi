@@ -66,7 +66,7 @@ public class EtfHoldingsChartBuilderTests
             EtfHoldingsChartBuilder.Build("069500", SyntheticHoldings(5), cashPercent: null)!["chart"])
             .GetProperty("spec").GetProperty("data")[0];
 
-        trace.GetProperty("textfont").GetProperty("color").GetString().Should().Be("#1A1A1A");
+        trace.GetProperty("textfont").GetProperty("color").GetString().Should().Be("#FFFFFF");
     }
 
     [Fact]
