@@ -11,7 +11,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <PackageId>RedoxNet.LsOpenApi.Core</PackageId>
     <Authors>Jong Hyun Kim</Authors>
     <Company>RedoxNet</Company>
@@ -22,8 +22,9 @@
     <RepositoryType>git</RepositoryType>
     <PackageTags>ls;ls-securities;ls-증권;openapi;korean-stock;stock;sdk</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+	<PackageIcon>icon.png</PackageIcon>
     <Copyright>Copyright (c) 2026 RedoxNet</Copyright>
-    <PackageReleaseNotes>v0.1.0: Initial public SDK release — OAuth2 client_credentials token issuer with SQLite WAL cache, 13-TR seed catalog (시세/차트/ETF/종목조회), Polly-retried HTTP client with per-TR rate limiting, indicator service (SMA/EMA/RSI/MACD/Bollinger) and chart context builder with tristate bullish_alignment. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Core.md for full notes.</PackageReleaseNotes>
+    <PackageReleaseNotes>v0.2.0: Packaging fix — the package README is now included on NuGet (v0.1.0 shipped without it). No code or API changes; the SDK is equivalent to v0.1.0. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Core.md for full notes.</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>
@@ -38,6 +39,7 @@
 
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="" />
+    <None Include="icon.png" Pack="true" PackagePath="" />
   </ItemGroup>
 
   <ItemGroup>

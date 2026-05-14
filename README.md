@@ -19,7 +19,7 @@
 
 본 도구는 **정보 제공 목적의 시세·차트 데이터 조회용**입니다. 투자 자문이나 매매 권유가 아니며, 주식 거래에는 원금 손실을 포함한 위험이 따릅니다. 모든 투자 결정과 그에 따른 손익은 전적으로 사용자 본인의 책임입니다.
 
-API 사용 시 LS증권 OpenAPI [이용약관](https://openapi.ls-sec.co.kr/howto-use)을 준수하시기 바랍니다.
+API 사용 시 [LS증권 OpenAPI 이용 안내](https://openapi.ls-sec.co.kr/howto-use)를 참조하시고, 사이트 하단의 "이용약관" 링크로 표시되는 정식 약관을 확인 후 준수하시기 바랍니다.
 
 ## 패키지 구성
 
@@ -46,7 +46,7 @@ API 사용 시 LS증권 OpenAPI [이용약관](https://openapi.ls-sec.co.kr/howt
       "env": {
         "LS_APPKEY": "...",
         "LS_APPSECRETKEY": "...",
-        "LS_MARKET": "virtual"
+        "LS_MARKET": "virtual"  // "virtual"(모의투자) 또는 "real"(실거래)
       }
     }
   }
@@ -65,7 +65,7 @@ args = ["RedoxNet.Mcp.LsOpenApi", "--yes"]
 [mcp_servers.lsopenapi.env]
 LS_APPKEY = "..."
 LS_APPSECRETKEY = "..."
-LS_MARKET = "virtual"
+LS_MARKET = "virtual"  # "virtual"(모의투자) 또는 "real"(실거래)
 ```
 
 ### VS Code (`mcp.json`)
@@ -82,7 +82,7 @@ LS_MARKET = "virtual"
       "env": {
         "LS_APPKEY": "...",
         "LS_APPSECRETKEY": "...",
-        "LS_MARKET": "virtual"
+        "LS_MARKET": "virtual"  // "virtual"(모의투자) 또는 "real"(실거래)
       }
     }
   }
@@ -172,7 +172,7 @@ LS증권 OpenAPI를 사용하려면 LS증권에서 발급한 **AppKey**와 **App
 
 #### 4. 인터랙티브 차트
 
-`include_chart: true`로 호출하면 Plotly v5 JSON spec이 응답에 포함됩니다. AssistStudio처럼 Plotly.js를 임베드한 클라이언트는 인라인 차트로, 그 외 클라이언트는 구조화된 데이터(`candles`/`indicators`/`context`)로 활용 가능합니다.
+`include_chart: true`로 호출하면 Plotly v5 JSON spec이 응답에 포함됩니다. [AssistStudio](https://github.com/fieldcure/fieldcure-assiststudio)처럼 Plotly.js를 임베드한 클라이언트는 인라인 차트로, 그 외 클라이언트는 구조화된 데이터(`candles`/`indicators`/`context`)로 활용 가능합니다.
 
 ## 도구
 
@@ -260,8 +260,6 @@ LS증권 OpenAPI를 사용하려면 LS증권에서 발급한 **AppKey**와 **App
 }
 ```
 
-한국 증권사 관례: 양봉/양봉 거래량은 빨강(`#E74C3C`), 음봉/음봉 거래량은 파랑(`#3498DB`)입니다.
-
 차트의 지표 처리:
 - `ma:N`, `ema:N`, `bb:N,SD` → 가격 서브플롯에 오버레이로 그려집니다.
 - `rsi:N`, `macd:F,S,Sig` → `indicators`에는 포함되지만 **그려지지는 않습니다** (별도 스케일의 서브플롯이 필요하며, 향후 개선 예정).
@@ -317,7 +315,7 @@ dotnet run --project src/RedoxNet.Mcp.LsOpenApi --framework net8.0
 - ✅ M3 — TR 실행(`LsApiClient.CallTrAsync`): Polly 재시도, TR별 레이트 리미터, 헤더 + body 두 가지 페이징 모드.
 - ✅ M4 — 메타 도구 3개(`ls_search_tr`, `ls_describe_tr`, `ls_call_tr`)를 노출하는 stdio MCP 서버.
 - ✅ M5 — 의미 도구 7개: `ls_get_quote`, `ls_get_multi_quote`, `ls_get_stock_info`, `ls_get_chart` (+ 지표, 컨텍스트 메타데이터, 다중 시간프레임, `include_chart`로 Plotly v5 spec), `ls_search_stock`, **`ls_get_etf_info`, `ls_get_etf_holdings`**.
-- ✅ LS 모의투자 서버에서 라이브 검증 완료 (v0.1.0).
+- ✅ LS 모의투자 서버에서 라이브 검증 완료 (v0.2.0).
 - ⏳ 다음 릴리스 — 실시간(WebSocket), 계좌/잔고, 주문.
 
 ## License

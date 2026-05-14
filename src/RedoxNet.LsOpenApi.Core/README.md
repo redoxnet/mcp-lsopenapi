@@ -2,7 +2,7 @@
 
 .NET SDK for the **LS증권 OpenAPI** (REST). Provides the auth, HTTP, TR catalog, and indicator primitives used by the [`RedoxNet.Mcp.LsOpenApi`](https://www.nuget.org/packages/RedoxNet.Mcp.LsOpenApi/) MCP server, and usable on its own as a Korean stock market data SDK.
 
-> Unofficial third-party SDK. Not affiliated with or endorsed by LS Securities Co., Ltd. (LS증권). Read-only market-data scope on the v0.1.x line.
+> Unofficial third-party SDK. Not affiliated with or endorsed by LS Securities Co., Ltd. (LS증권). Read-only market-data scope.
 
 ## Install
 

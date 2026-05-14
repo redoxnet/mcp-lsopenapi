@@ -1,5 +1,15 @@
 # Release Notes — RedoxNet.LsOpenApi.Core
 
+## v0.2.0 (2026-05-14)
+
+Packaging fix. **No code or API changes** — the SDK is equivalent to v0.1.0.
+
+### Fixed
+
+- **Package README missing on NuGet.** v0.1.0 was pushed without its README, so the NuGet package page showed no documentation. v0.2.0 ships with the README included.
+
+> The version is bumped to 0.2.0 to land alongside the `RedoxNet.Mcp.LsOpenApi` 0.2.0 release. The two packages are versioned independently — they only happen to share this number; there is no lockstep policy.
+
 ## v0.1.0 (2026-05-13)
 
 Initial public release of the LS증권 OpenAPI SDK.

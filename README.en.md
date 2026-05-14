@@ -19,7 +19,7 @@ This is an **unofficial third-party MCP server**. It is not affiliated with, end
 
 This tool provides **market data access for informational purposes only**. It does not constitute investment advice or a solicitation to trade. Trading carries risk, including loss of principal. All trading decisions and any resulting gains or losses are solely the user's responsibility.
 
-When using the API, please comply with the LS OpenAPI [terms of service](https://openapi.ls-sec.co.kr/howto-use).
+When using the API, please review the [LS OpenAPI usage guide](https://openapi.ls-sec.co.kr/howto-use) and comply with the Terms of Service available via the "이용약관" link in the site footer.
 
 ## Packages
 
@@ -46,7 +46,7 @@ When using the API, please comply with the LS OpenAPI [terms of service](https:/
       "env": {
         "LS_APPKEY": "...",
         "LS_APPSECRETKEY": "...",
-        "LS_MARKET": "virtual"
+        "LS_MARKET": "virtual"  // "virtual" (paper) or "real" (live)
       }
     }
   }
@@ -65,7 +65,7 @@ args = ["RedoxNet.Mcp.LsOpenApi", "--yes"]
 [mcp_servers.lsopenapi.env]
 LS_APPKEY = "..."
 LS_APPSECRETKEY = "..."
-LS_MARKET = "virtual"
+LS_MARKET = "virtual"  # "virtual" (paper) or "real" (live)
 ```
 
 ### VS Code (`mcp.json`)
@@ -82,7 +82,7 @@ Workspace `.vscode/mcp.json`:
       "env": {
         "LS_APPKEY": "...",
         "LS_APPSECRETKEY": "...",
-        "LS_MARKET": "virtual"
+        "LS_MARKET": "virtual"  // "virtual" (paper) or "real" (live)
       }
     }
   }
@@ -173,7 +173,7 @@ User: "Has KODEX AI Power Infrastructure ETF hit a sell signal on its 12-period 
 
 #### 4. Interactive Charts
 
-Pass `include_chart: true` to receive a Plotly v5 JSON spec in the response. Clients that embed Plotly.js (e.g. AssistStudio) render inline charts; other clients fall back to the structured `candles`/`indicators`/`context` payload.
+Pass `include_chart: true` to receive a Plotly v5 JSON spec in the response. Clients that embed Plotly.js (e.g. [AssistStudio](https://github.com/fieldcure/fieldcure-assiststudio)) render inline charts; other clients fall back to the structured `candles`/`indicators`/`context` payload.
 
 ## Tools
 
@@ -261,7 +261,7 @@ Pass `include_chart: true` and the response carries a Plotly v5 JSON spec under 
 }
 ```
 
-Korean broker convention: rising candles/bars are red (`#E74C3C`), falling are blue (`#3498DB`).
+Korean broker convention: rising candles/bars are red (`#E74C3C`), falling are blue (`#3498DB`). This is the opposite of the US/European convention where green indicates rising and red falling.
 
 Indicator handling in the chart:
 - `ma:N`, `ema:N`, `bb:N,SD` → drawn as overlays on the price subplot.
@@ -318,7 +318,7 @@ dotnet run --project src/RedoxNet.Mcp.LsOpenApi --framework net8.0
 - ✅ M3 — TR execution (`LsApiClient.CallTrAsync`) with Polly retries, per-TR rate limiter, header + body continuation modes.
 - ✅ M4 — MCP stdio server with 3 meta tools (`ls_search_tr`, `ls_describe_tr`, `ls_call_tr`).
 - ✅ M5 — 7 semantic tools: `ls_get_quote`, `ls_get_multi_quote`, `ls_get_stock_info`, `ls_get_chart` (+ indicators, context metadata, multi-timeframe, Plotly v5 spec via `include_chart`), `ls_search_stock`, **`ls_get_etf_info`, `ls_get_etf_holdings`**.
-- ✅ Live verified against the LS virtual server (v0.1.0).
+- ✅ Live verified against the LS virtual server (v0.2.0).
 - ⏳ Next release — Realtime (WebSocket), accounts/balances, orders.
 
 ## License

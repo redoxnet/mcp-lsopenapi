@@ -23,7 +23,7 @@ A clear and concise description of what you expected to happen.
 If applicable, paste the tool's JSON response (mask any credentials).
 
 **Environment**
-- Package(s) and version: (e.g., `RedoxNet.Mcp.LsOpenApi 0.1.0`, `RedoxNet.LsOpenApi.Core 0.1.0`)
+- Package(s) and version: (e.g., `RedoxNet.Mcp.LsOpenApi 0.2.0`, `RedoxNet.LsOpenApi.Core 0.2.0`)
 - MCP tool: (e.g., `ls_get_quote`, `ls_get_chart`, `ls_get_etf_holdings`, `ls_call_tr`)
 - TR code: (if applicable, e.g., `t1101`, `t8410`, `t1904`)
 - LS market: (real / virtual)
