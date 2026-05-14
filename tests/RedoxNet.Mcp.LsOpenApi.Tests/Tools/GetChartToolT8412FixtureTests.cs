@@ -55,7 +55,7 @@ public class GetChartToolT8412FixtureTests
         var (client, handler) = TestClientFactory.Create((_, _) => Ok(TestbedT8412Response));
 
         string result = await GetChartTool.GetChart(
-            client, "078020", "min", count: 3, minute_unit: 1);
+            client, "078020", "min", count: 3, minute_unit: 1).TextContent();
 
         handler.Requests[0].RequestUri!.AbsolutePath.Should().Be("/stock/chart");
         handler.Requests[0].Headers.GetValues("tr_cd").Should().ContainSingle().Which.Should().Be("t8412");

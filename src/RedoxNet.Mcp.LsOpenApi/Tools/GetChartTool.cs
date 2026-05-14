@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using RedoxNet.LsOpenApi.Core.Auth;
 using RedoxNet.LsOpenApi.Core.Http;
@@ -45,10 +46,10 @@ public static class GetChartTool
     /// <param name="to">Optional end date 'yyyyMMdd'.</param>
     /// <param name="minute_unit">For period_type='min': minute interval (1/3/5/10/15/30/60).</param>
     /// <param name="indicators">Optional indicator specs (e.g. ['ma:5','rsi:14','macd:12,26,9','bb:20,2']).</param>
-    /// <param name="include_chart">If true, attach a Plotly v5 JSON spec under <c>chart</c> for client-side rendering. Default false.</param>
+    /// <param name="include_chart">If true (and period_type is a single timeframe), the tool ships a Plotly v5 spec as structuredContent so MCP Apps (SEP-1865) hosts render the chart inline. Default false.</param>
     /// <param name="summary_only">If true, return only the last 5 candles and the last value of each indicator series; the <c>context</c> block is preserved. Default false.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>JSON with candles, indicators, and a <c>context</c> block of pre-computed analytics.</returns>
+    /// <returns>Text content with candles/indicators/context plus an optional <c>structuredContent.chart</c> for inline rendering.</returns>
     [McpServerTool(Name = "ls_get_chart")]
     [Description("""
         Returns OHLCV candles for a Korean stock with optional technical indicators and pre-computed analysis context (divergence from MAs, volume averages, drawdown from period high, MA trend, bullish alignment).
@@ -59,13 +60,13 @@ public static class GetChartTool
         Single timeframe: period_type='day' → response has top-level candles/indicators/context.
         Multi timeframe: period_type='day,week,month' → response has a frames[] array, one entry per timeframe, each with its own context.
 
-        Set include_chart=true to also receive a Plotly v5 JSON spec under 'chart' (single) or each frame's 'chart' (multi). Clients render it via Plotly.js with no server-side image rendering.
+        Set include_chart=true (single timeframe only) for inline chart rendering on MCP Apps hosts — Claude Desktop, Claude.ai, ChatGPT, Goose, VS Code. The Plotly v5 spec ships as structuredContent (not in the model's text context — zero token cost) and the host's iframe renders it via the ui://lsopenapi/plotly template. Multi-timeframe with include_chart is a no-op for inline rendering (call once per period_type for charts); the structured candles/indicators/context payload is unaffected.
 
         Set summary_only=true to shrink the payload: only the last 5 candles plus the last value of each indicator series are returned, but the full pre-computed 'context' block is kept. Use this for the screening/triage pass over many stocks or timeframes, then re-call with summary_only=false on the single frame you want to deep-dive.
 
         Indicator examples: 'ma:5', 'ma:20', 'ema:12', 'rsi:14', 'macd:12,26,9', 'bb:20,2'.
         """)]
-    public static async Task<string> GetChart(
+    public static async Task<CallToolResult> GetChart(
         LsApiClient apiClient,
         [Description("6-digit Korean short code, e.g. '005930'.")]
         string shcode,
@@ -81,16 +82,16 @@ public static class GetChartTool
         int minute_unit = 5,
         [Description("Optional indicator specs, e.g. ['ma:5','ma:20','rsi:14','macd:12,26,9','bb:20,2'].")]
         string[]? indicators = null,
-        [Description("If true, attach a Plotly v5 JSON spec under 'chart' for client-side rendering. Default false.")]
+        [Description("If true (single timeframe only), ship a Plotly v5 spec as structuredContent so MCP Apps hosts render an inline chart. Default false.")]
         bool include_chart = false,
         [Description("If true, keep only the last 5 candles and the last value of each indicator series (context is kept intact). Use for the screening pass when scanning many stocks/timeframes. Default false.")]
         bool summary_only = false,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(shcode))
-            return McpJson.Error("shcode is required.");
+            return McpJson.ErrorResult("shcode is required.");
         if (string.IsNullOrWhiteSpace(period_type))
-            return McpJson.Error("period_type is required.");
+            return McpJson.ErrorResult("period_type is required.");
 
         int cappedCount = Math.Clamp(count, 1, 500);
 
@@ -101,12 +102,12 @@ public static class GetChartTool
             .ToList();
 
         if (periods.Count == 0)
-            return McpJson.Error("period_type is required.");
+            return McpJson.ErrorResult("period_type is required.");
 
         foreach (string p in periods)
         {
             if (!KnownPeriodTypes.Contains(p))
-                return McpJson.Error($"Unknown period_type '{p}'. Use day, week, month, min, or tick.");
+                return McpJson.ErrorResult($"Unknown period_type '{p}'. Use day, week, month, min, or tick.");
         }
 
         List<IndicatorSpec> parsedIndicators = new();
@@ -115,7 +116,7 @@ public static class GetChartTool
             foreach (string raw in indicators)
             {
                 if (!IndicatorSpecParser.TryParse(raw, out IndicatorSpec? spec, out string? error))
-                    return McpJson.Error($"Invalid indicator spec '{raw}'.", new { reason = error });
+                    return McpJson.ErrorResult($"Invalid indicator spec '{raw}'.", new { reason = error });
                 parsedIndicators.Add(spec!);
             }
         }
@@ -146,13 +147,26 @@ public static class GetChartTool
                         ? (object)SummarizeIndicators(only.Indicators)
                         : only.Indicators.ToDictionary(kv => kv.Key, kv => kv.Value),
                     context = only.Context,
-                    chart = include_chart
-                        ? PlotlyChartBuilder.Build(shcode, only.PeriodType, only.Candles, only.Indicators, parsedIndicators)
-                        : null,
+                    chart_available = include_chart,
                 };
-                return JsonSerializer.Serialize(single, McpJson.Tool);
+                string singleText = JsonSerializer.Serialize(single, McpJson.Tool);
+
+                JsonObject? structured = null;
+                if (include_chart)
+                {
+                    structured = new JsonObject
+                    {
+                        ["chart"] = PlotlyChartBuilder.Build(
+                            shcode, only.PeriodType, only.Candles, only.Indicators, parsedIndicators),
+                    };
+                }
+                return McpJson.OkResult(singleText, structured);
             }
 
+            // Multi-timeframe: structuredContent stays null — the iframe template
+            // renders one chart per tool result. Users wanting inline charts call
+            // once per period_type. The structured candles/indicators/context
+            // payload below covers programmatic / LLM use either way.
             var multi = new
             {
                 shcode,
@@ -171,21 +185,22 @@ public static class GetChartTool
                             ? (object)SummarizeIndicators(f.Indicators)
                             : f.Indicators.ToDictionary(kv => kv.Key, kv => kv.Value),
                         context = f.Context,
-                        chart = include_chart
-                            ? PlotlyChartBuilder.Build(shcode, f.PeriodType, f.Candles, f.Indicators, parsedIndicators)
-                            : null,
                     };
                 }),
+                chart_note = include_chart
+                    ? "Inline chart rendering is single-timeframe only. Call once per period_type for inline charts."
+                    : null,
             };
-            return JsonSerializer.Serialize(multi, McpJson.Tool);
+            string multiText = JsonSerializer.Serialize(multi, McpJson.Tool);
+            return McpJson.OkResult(multiText);
         }
         catch (LsAuthException ex)
         {
-            return McpJson.Error("Authentication failed.", new { reason = ex.Message });
+            return McpJson.ErrorResult("Authentication failed.", new { reason = ex.Message });
         }
         catch (LsTrException ex)
         {
-            return McpJson.Error("TR call failed.", new { reason = ex.Message, status = ex.StatusCode });
+            return McpJson.ErrorResult("TR call failed.", new { reason = ex.Message, status = ex.StatusCode });
         }
     }
 

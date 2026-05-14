@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using ModelContextProtocol.Protocol;
 using RedoxNet.Mcp.LsOpenApi.Tests.TestSupport;
 using RedoxNet.Mcp.LsOpenApi.Tools;
 using Xunit;
@@ -28,31 +29,46 @@ public class GetChartToolPlotlyTests
         return $$"""{ "t8410OutBlock": { "shcode":"005930" }, "t8410OutBlock1": [ {{sb}} ], "rsp_cd":"00000", "rsp_msg":"정상" }""";
     }
 
-    [Fact]
-    public async Task GetChart_DefaultIncludeChartFalse_NoChartField()
+    /// <summary>Extracts the text body that the model sees from a CallToolResult.</summary>
+    static JsonElement ParseTextContent(CallToolResult result)
     {
-        var (client, _) = TestClientFactory.Create((_, _) => Ok(DailyBody(10)));
-
-        string result = await GetChartTool.GetChart(client, "005930", "day", count: 10);
-        JsonElement root = JsonDocument.Parse(result).RootElement;
-
-        bool hasChart = root.TryGetProperty("chart", out JsonElement chart);
-        // The field will exist (anonymous type), but it should be null when include_chart=false.
-        (!hasChart || chart.ValueKind == JsonValueKind.Null).Should().BeTrue();
+        TextContentBlock text = (TextContentBlock)result.Content[0];
+        return JsonDocument.Parse(text.Text).RootElement;
     }
 
     [Fact]
-    public async Task GetChart_IncludeChartTrue_AttachesPlotlySpec()
+    public async Task GetChart_DefaultIncludeChartFalse_NoStructuredContent()
+    {
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(DailyBody(10)));
+
+        CallToolResult result = await GetChartTool.GetChart(client, "005930", "day", count: 10);
+
+        result.StructuredContent.Should().BeNull(
+            "include_chart=false must not ship an inline chart spec");
+
+        JsonElement text = ParseTextContent(result);
+        text.GetProperty("chart_available").GetBoolean().Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetChart_IncludeChartTrue_ShipsPlotlySpecAsStructuredContent()
     {
         var (client, _) = TestClientFactory.Create((_, _) => Ok(DailyBody(20)));
 
-        string result = await GetChartTool.GetChart(
+        CallToolResult result = await GetChartTool.GetChart(
             client, "005930", "day", count: 20,
             indicators: new[] { "ma:5" },
             include_chart: true);
 
-        JsonElement root = JsonDocument.Parse(result).RootElement;
-        JsonElement chart = root.GetProperty("chart");
+        // Model-facing text: chart_available flag only, no spec.
+        JsonElement text = ParseTextContent(result);
+        text.GetProperty("chart_available").GetBoolean().Should().BeTrue();
+        text.TryGetProperty("chart", out _).Should().BeFalse(
+            "the Plotly spec must not leak into the model's text context");
+
+        // structuredContent: full Plotly v5 spec for the iframe to render.
+        result.StructuredContent.Should().NotBeNull();
+        JsonElement chart = result.StructuredContent!.Value.GetProperty("chart");
         chart.GetProperty("type").GetString().Should().Be("plotly");
         chart.GetProperty("version").GetString().Should().Be("5");
 
@@ -65,22 +81,24 @@ public class GetChartToolPlotlyTests
     }
 
     [Fact]
-    public async Task GetChart_MultiTimeframe_IncludeChart_EachFrameHasChart()
+    public async Task GetChart_MultiTimeframe_IncludeChartTrue_NoStructuredContent_TextNotesLimitation()
     {
         var (client, _) = TestClientFactory.Create((_, _) => Ok(DailyBody(10)));
 
-        string result = await GetChartTool.GetChart(
+        CallToolResult result = await GetChartTool.GetChart(
             client, "005930", "day,week,month", count: 10, include_chart: true);
 
-        JsonElement frames = JsonDocument.Parse(result).RootElement.GetProperty("frames");
-        frames.GetArrayLength().Should().Be(3);
+        result.StructuredContent.Should().BeNull(
+            "multi-timeframe inline rendering is not supported in v0.2.0 — users call once per period_type");
 
-        foreach (JsonElement frame in frames.EnumerateArray())
-        {
-            JsonElement chart = frame.GetProperty("chart");
-            chart.GetProperty("type").GetString().Should().Be("plotly");
-            chart.GetProperty("spec").GetProperty("data").GetArrayLength().Should().BeGreaterThanOrEqualTo(2);
-        }
+        JsonElement text = ParseTextContent(result);
+        text.GetProperty("frames").GetArrayLength().Should().Be(3);
+        text.GetProperty("chart_note").GetString()
+            .Should().Contain("single-timeframe only");
+
+        // No `chart` key leaks into any frame either.
+        foreach (JsonElement frame in text.GetProperty("frames").EnumerateArray())
+            frame.TryGetProperty("chart", out _).Should().BeFalse();
     }
 
     [Fact]
@@ -88,10 +106,10 @@ public class GetChartToolPlotlyTests
     {
         var (client, _) = TestClientFactory.Create((_, _) => Ok(DailyBody(5)));
 
-        string result = await GetChartTool.GetChart(
+        CallToolResult result = await GetChartTool.GetChart(
             client, "005930", "day", count: 5, include_chart: true);
 
-        JsonElement candle = JsonDocument.Parse(result).RootElement
+        JsonElement candle = result.StructuredContent!.Value
             .GetProperty("chart").GetProperty("spec").GetProperty("data")[0];
 
         candle.GetProperty("increasing").GetProperty("line").GetProperty("color").GetString().Should().Be("#E74C3C");

@@ -34,7 +34,7 @@ public class GetChartToolTests
         """;
         var (client, handler) = TestClientFactory.Create((_, _) => Ok(body));
 
-        string result = await GetChartTool.GetChart(client, "005930", "day", count: 3);
+        string result = await GetChartTool.GetChart(client, "005930", "day", count: 3).TextContent();
 
         handler.Requests.Should().HaveCount(1);
         handler.Requests[0].RequestUri!.AbsolutePath.Should().Be("/stock/chart");
@@ -61,7 +61,7 @@ public class GetChartToolTests
         """;
         var (client, handler) = TestClientFactory.Create((_, _) => Ok(body));
 
-        string result = await GetChartTool.GetChart(client, "005930", "min", count: 1, minute_unit: 3);
+        string result = await GetChartTool.GetChart(client, "005930", "min", count: 1, minute_unit: 3).TextContent();
 
         handler.Requests[0].Headers.GetValues("tr_cd").Should().ContainSingle().Which.Should().Be("t8412");
         string sent = await handler.Requests[0].Content!.ReadAsStringAsync();
@@ -75,7 +75,7 @@ public class GetChartToolTests
     {
         var (client, _) = TestClientFactory.Create((_, _) => Ok("""{"rsp_cd":"00000"}"""));
 
-        string result = await GetChartTool.GetChart(client, "005930", "yearly");
+        string result = await GetChartTool.GetChart(client, "005930", "yearly").TextContent();
 
         JsonDocument.Parse(result).RootElement.GetProperty("error").GetString()
             .Should().Contain("period_type");
@@ -100,7 +100,7 @@ public class GetChartToolTests
         var (client, _) = TestClientFactory.Create((_, _) => Ok(body));
 
         string result = await GetChartTool.GetChart(
-            client, "005930", "day", count: 30, indicators: new[] { "ma:5" });
+            client, "005930", "day", count: 30, indicators: new[] { "ma:5" }).TextContent();
 
         JsonElement root = JsonDocument.Parse(result).RootElement;
         root.GetProperty("indicators").TryGetProperty("ma:5", out JsonElement ma).Should().BeTrue();
@@ -115,7 +115,7 @@ public class GetChartToolTests
         var (client, _) = TestClientFactory.Create((_, _) => Ok("""{"rsp_cd":"00000"}"""));
 
         string result = await GetChartTool.GetChart(
-            client, "005930", "day", indicators: new[] { "bogus:1" });
+            client, "005930", "day", indicators: new[] { "bogus:1" }).TextContent();
 
         JsonDocument.Parse(result).RootElement.GetProperty("error").GetString()
             .Should().Contain("bogus");
@@ -143,7 +143,7 @@ public class GetChartToolTests
         var (client, _) = TestClientFactory.Create((_, _) => Ok(DailyBody(30)));
 
         string result = await GetChartTool.GetChart(
-            client, "005930", "day", count: 30, indicators: new[] { "ma:5" }, summary_only: true);
+            client, "005930", "day", count: 30, indicators: new[] { "ma:5" }, summary_only: true).TextContent();
 
         JsonElement root = JsonDocument.Parse(result).RootElement;
         root.GetProperty("summary_only").GetBoolean().Should().BeTrue();
@@ -164,7 +164,7 @@ public class GetChartToolTests
         var (client, _) = TestClientFactory.Create((_, _) => Ok(DailyBody(30)));
 
         string result = await GetChartTool.GetChart(
-            client, "005930", "day,week", count: 30, indicators: new[] { "ma:5" }, summary_only: true);
+            client, "005930", "day,week", count: 30, indicators: new[] { "ma:5" }, summary_only: true).TextContent();
 
         JsonElement root = JsonDocument.Parse(result).RootElement;
         root.GetProperty("summary_only").GetBoolean().Should().BeTrue();
@@ -186,7 +186,7 @@ public class GetChartToolTests
         var (client, _) = TestClientFactory.Create((_, _) => Ok(DailyBody(30)));
 
         string result = await GetChartTool.GetChart(
-            client, "005930", "day", count: 30, indicators: new[] { "ma:5" });
+            client, "005930", "day", count: 30, indicators: new[] { "ma:5" }).TextContent();
 
         JsonElement root = JsonDocument.Parse(result).RootElement;
         root.GetProperty("summary_only").GetBoolean().Should().BeFalse();

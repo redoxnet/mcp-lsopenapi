@@ -1,10 +1,13 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using ModelContextProtocol.Protocol;
 
 namespace RedoxNet.Mcp.LsOpenApi;
 
 /// <summary>
-/// Shared <see cref="JsonSerializerOptions"/> instances for MCP tool responses.
+/// Shared <see cref="JsonSerializerOptions"/> instances and
+/// <see cref="CallToolResult"/> builders for MCP tool responses.
 /// </summary>
 /// <remarks>
 /// Tool payloads use indented snake_case with relaxed escaping so Korean
@@ -30,4 +33,36 @@ internal static class McpJson
     /// <returns>The serialized JSON.</returns>
     public static string Error(string message, object? details = null) =>
         JsonSerializer.Serialize(new { error = message, details }, Tool);
+
+    /// <summary>
+    /// Builds a successful <see cref="CallToolResult"/>. The model sees
+    /// <paramref name="textJson"/> as the tool's text content; MCP Apps
+    /// hosts forward <paramref name="structuredContent"/> to the iframe.
+    /// </summary>
+    /// <param name="textJson">Serialized JSON for the model (already encoded with <see cref="Tool"/>).</param>
+    /// <param name="structuredContent">Optional UI-only payload; not added to model context.</param>
+    public static CallToolResult OkResult(string textJson, JsonObject? structuredContent = null)
+    {
+        return new CallToolResult
+        {
+            Content = new List<ContentBlock> { new TextContentBlock { Text = textJson } },
+            // CallToolResult.StructuredContent is JsonElement?; lift the JsonObject through the serializer.
+            StructuredContent = structuredContent is null
+                ? null
+                : JsonSerializer.SerializeToElement(structuredContent),
+        };
+    }
+
+    /// <summary>
+    /// Builds an error <see cref="CallToolResult"/> using the same envelope
+    /// as <see cref="Error(string, object?)"/> and marks <c>isError</c>.
+    /// </summary>
+    public static CallToolResult ErrorResult(string message, object? details = null)
+    {
+        return new CallToolResult
+        {
+            Content = new List<ContentBlock> { new TextContentBlock { Text = Error(message, details) } },
+            IsError = true,
+        };
+    }
 }

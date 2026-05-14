@@ -59,7 +59,7 @@ public class GetChartToolT8410FixtureTests
     {
         var (client, handler) = TestClientFactory.Create((_, _) => Ok(TestbedT8410Response));
 
-        string result = await GetChartTool.GetChart(client, "078020", "day", count: 1);
+        string result = await GetChartTool.GetChart(client, "078020", "day", count: 1).TextContent();
 
         handler.Requests[0].RequestUri!.AbsolutePath.Should().Be("/stock/chart");
         handler.Requests[0].Headers.GetValues("tr_cd").Should().ContainSingle().Which.Should().Be("t8410");

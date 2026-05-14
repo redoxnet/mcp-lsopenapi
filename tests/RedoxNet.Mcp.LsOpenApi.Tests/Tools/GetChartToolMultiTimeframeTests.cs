@@ -34,7 +34,7 @@ public class GetChartToolMultiTimeframeTests
         var (client, _) = TestClientFactory.Create((_, _) => Ok(DailyBody(30)));
 
         string result = await GetChartTool.GetChart(
-            client, "005930", "day", count: 30, indicators: new[] { "ma:5", "ma:20" });
+            client, "005930", "day", count: 30, indicators: new[] { "ma:5", "ma:20" }).TextContent();
 
         JsonElement root = JsonDocument.Parse(result).RootElement;
         root.TryGetProperty("context", out JsonElement context).Should().BeTrue();
@@ -67,7 +67,7 @@ public class GetChartToolMultiTimeframeTests
         });
 
         string result = await GetChartTool.GetChart(
-            client, "005930", "day,week,month", count: 20, indicators: new[] { "ma:5" });
+            client, "005930", "day,week,month", count: 20, indicators: new[] { "ma:5" }).TextContent();
 
         // Three TR calls (day/week/month all map to t8410 with different gubun).
         handler.Requests.Should().HaveCount(3);
@@ -114,7 +114,7 @@ public class GetChartToolMultiTimeframeTests
     {
         var (client, handler) = TestClientFactory.Create((_, _) => Ok(DailyBody(5)));
 
-        string result = await GetChartTool.GetChart(client, "005930", "day,day,week", count: 5);
+        string result = await GetChartTool.GetChart(client, "005930", "day,day,week", count: 5).TextContent();
 
         handler.Requests.Should().HaveCount(2);
         JsonDocument.Parse(result).RootElement.GetProperty("frames").GetArrayLength().Should().Be(2);
@@ -156,7 +156,7 @@ public class GetChartToolMultiTimeframeTests
     {
         var (client, handler) = TestClientFactory.Create((_, _) => Ok(DailyBody(5)));
 
-        string result = await GetChartTool.GetChart(client, "005930", "day,yearly");
+        string result = await GetChartTool.GetChart(client, "005930", "day,yearly").TextContent();
 
         handler.Requests.Should().BeEmpty();
         JsonDocument.Parse(result).RootElement.GetProperty("error").GetString()
