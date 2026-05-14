@@ -132,7 +132,11 @@ internal static class EtfHoldingsChartBuilder
             ["text"] = text,
             ["textinfo"] = "text",
             ["textposition"] = "middle center",
-            ["textfont"] = new JsonObject { ["size"] = 12 },
+            // Explicit near-black label colour: ~6.7:1 contrast on the #3498DB
+            // cells. Without it the text inherits layout.font.color, which a
+            // dark host theme sets to a light grey — unreadable on the blue.
+            // The chart owns its own contrast rather than depending on the host.
+            ["textfont"] = new JsonObject { ["size"] = 13, ["color"] = "#1A1A1A" },
             ["customdata"] = customData,
             ["hovertemplate"] =
                 "<b>%{label}</b><br>" +

@@ -57,6 +57,19 @@ public class EtfHoldingsChartBuilderTests
     }
 
     [Fact]
+    public void Build_TreemapText_HasExplicitHighContrastColor()
+    {
+        // The chart must own its label contrast: textfont.color is set
+        // explicitly so a dark host theme can't drag the text to a light grey
+        // that vanishes on the blue cells.
+        JsonElement trace = JsonSerializer.SerializeToElement(
+            EtfHoldingsChartBuilder.Build("069500", SyntheticHoldings(5), cashPercent: null)!["chart"])
+            .GetProperty("spec").GetProperty("data")[0];
+
+        trace.GetProperty("textfont").GetProperty("color").GetString().Should().Be("#1A1A1A");
+    }
+
+    [Fact]
     public void Build_VisibleLabels_Top10OnlyRestEmpty()
     {
         JsonObject? result = EtfHoldingsChartBuilder.Build("069500", SyntheticHoldings(15), cashPercent: null);
