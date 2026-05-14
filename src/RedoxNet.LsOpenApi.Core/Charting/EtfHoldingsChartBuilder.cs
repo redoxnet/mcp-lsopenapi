@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text.Json.Nodes;
 
-namespace RedoxNet.Mcp.LsOpenApi.Charting;
+namespace RedoxNet.LsOpenApi.Core.Charting;
 
 /// <summary>
 /// Builds the Plotly treemap + side-panel pair that

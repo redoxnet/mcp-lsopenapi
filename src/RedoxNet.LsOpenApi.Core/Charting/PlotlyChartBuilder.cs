@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 using RedoxNet.LsOpenApi.Core.Indicators;
 using RedoxNet.LsOpenApi.Core.Models;
 
-namespace RedoxNet.Mcp.LsOpenApi.Charting;
+namespace RedoxNet.LsOpenApi.Core.Charting;
 
 /// <summary>
 /// Builds a Plotly v5 JSON spec for a candlestick + volume chart, optionally

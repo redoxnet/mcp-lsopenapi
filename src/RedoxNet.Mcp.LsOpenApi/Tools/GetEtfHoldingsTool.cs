@@ -6,7 +6,7 @@ using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using RedoxNet.LsOpenApi.Core.Auth;
 using RedoxNet.LsOpenApi.Core.Http;
-using RedoxNet.Mcp.LsOpenApi.Charting;
+using RedoxNet.LsOpenApi.Core.Charting;
 
 namespace RedoxNet.Mcp.LsOpenApi.Tools;
 

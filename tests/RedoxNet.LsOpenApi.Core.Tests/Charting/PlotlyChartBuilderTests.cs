@@ -1,11 +1,11 @@
 using System.Text.Json.Nodes;
 using FluentAssertions;
+using RedoxNet.LsOpenApi.Core.Charting;
 using RedoxNet.LsOpenApi.Core.Indicators;
 using RedoxNet.LsOpenApi.Core.Models;
-using RedoxNet.Mcp.LsOpenApi.Charting;
 using Xunit;
 
-namespace RedoxNet.Mcp.LsOpenApi.Tests.Charting;
+namespace RedoxNet.LsOpenApi.Core.Tests.Charting;
 
 public class PlotlyChartBuilderTests
 {

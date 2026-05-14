@@ -8,7 +8,7 @@ using RedoxNet.LsOpenApi.Core.Auth;
 using RedoxNet.LsOpenApi.Core.Http;
 using RedoxNet.LsOpenApi.Core.Indicators;
 using RedoxNet.LsOpenApi.Core.Models;
-using RedoxNet.Mcp.LsOpenApi.Charting;
+using RedoxNet.LsOpenApi.Core.Charting;
 
 namespace RedoxNet.Mcp.LsOpenApi.Tools;
 

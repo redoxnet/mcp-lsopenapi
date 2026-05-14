@@ -1,11 +1,11 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FluentAssertions;
-using RedoxNet.Mcp.LsOpenApi.Charting;
+using RedoxNet.LsOpenApi.Core.Charting;
 using Xunit;
-using View = RedoxNet.Mcp.LsOpenApi.Charting.EtfHoldingsChartBuilder.EtfHoldingView;
+using View = RedoxNet.LsOpenApi.Core.Charting.EtfHoldingsChartBuilder.EtfHoldingView;
 
-namespace RedoxNet.Mcp.LsOpenApi.Tests.Charting;
+namespace RedoxNet.LsOpenApi.Core.Tests.Charting;
 
 /// <summary>
 /// Direct unit tests for <see cref="EtfHoldingsChartBuilder"/> covering the

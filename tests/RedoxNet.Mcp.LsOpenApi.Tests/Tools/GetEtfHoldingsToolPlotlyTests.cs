@@ -12,7 +12,7 @@ namespace RedoxNet.Mcp.LsOpenApi.Tests.Tools;
 /// End-to-end tests for the <c>include_chart=true</c> path of
 /// <see cref="GetEtfHoldingsTool"/>, asserting that structuredContent
 /// carries the treemap spec and the side panel produced by
-/// <see cref="Charting.EtfHoldingsChartBuilder"/>.
+/// <see cref="RedoxNet.LsOpenApi.Core.Charting.EtfHoldingsChartBuilder"/>.
 /// </summary>
 public class GetEtfHoldingsToolPlotlyTests
 {

@@ -50,8 +50,11 @@
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>RedoxNet.LsOpenApi.Core.Tests</_Parameter1>
     </AssemblyAttribute>
+    <!-- Assembly name, not project name: the MCP server's <AssemblyName> is
+         redoxnet-mcp-lsopenapi. Lets it use Core internals such as the
+         Charting/ chart-spec builders. -->
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
-      <_Parameter1>RedoxNet.Mcp.LsOpenApi</_Parameter1>
+      <_Parameter1>redoxnet-mcp-lsopenapi</_Parameter1>
     </AssemblyAttribute>
   </ItemGroup>
 
