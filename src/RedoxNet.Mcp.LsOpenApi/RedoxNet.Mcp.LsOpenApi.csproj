@@ -11,7 +11,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <PackageId>RedoxNet.Mcp.LsOpenApi</PackageId>
 	<Authors>Jong Hyun Kim</Authors>
     <Company>RedoxNet</Company>
@@ -22,9 +22,9 @@
     <RepositoryType>git</RepositoryType>
     <PackageTags>mcp;mcp-server;ai;dotnet;ls;ls-securities;ls-증권;korean-stock;openapi;stock</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageIcon>Logo.png</PackageIcon>
+    <PackageIcon>icon.png</PackageIcon>
     <Copyright>Copyright (c) 2026 RedoxNet</Copyright>
-    <PackageReleaseNotes>v0.1.0: Initial public release — 10 MCP tools (3 meta + 7 semantic), multi-timeframe charts with pre-computed analysis context, Plotly v5 chart spec, ETF tools (NAV/괴리율/추적오차율/PDF/top_n), env-var-only credential policy. Read-only domestic 시세; account / realtime / order paths deferred to v0.2.x+. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Mcp.md for full notes.</PackageReleaseNotes>
+    <PackageReleaseNotes>v0.2.0: MCP host interop fixes — SchemaNormalizer rewrites the SDK's nullable-array tool schemas ("type":["array","null"] → "array") so strict host validators accept calls with optional params like indicators; MCP Apps _meta.ui.csp corrected to the SEP-1865 domain-list shape and attached to resources/read. Adds LS_LOG_LEVEL. No tool surface changes. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Mcp.md for full notes.</PackageReleaseNotes>
 
     <PackageType>McpServer</PackageType>
     <PackAsTool>true</PackAsTool>
@@ -44,7 +44,7 @@
 
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="" />
-    <None Include="Logo.png" Pack="true" PackagePath="" />
+    <None Include="icon.png" Pack="true" PackagePath="" />
     <None Include=".mcp\server.json" Pack="true" PackagePath=".mcp\" />
   </ItemGroup>
 
@@ -65,8 +65,7 @@
       <_ServerJsonContent>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)\.mcp\server.json'))</_ServerJsonContent>
       <_ExpectedVersionToken>"version": "$(Version)"</_ExpectedVersionToken>
     </PropertyGroup>
-    <Error Condition="!$(_ServerJsonContent.Contains($(_ExpectedVersionToken)))"
-           Text=".mcp/server.json version is out of sync with csproj &lt;Version&gt;$(Version)&lt;/Version&gt;. Update both 'version' fields in .mcp/server.json to match before packing." />
+    <Error Condition="!$(_ServerJsonContent.Contains($(_ExpectedVersionToken)))" Text=".mcp/server.json version is out of sync with csproj &lt;Version&gt;$(Version)&lt;/Version&gt;. Update both 'version' fields in .mcp/server.json to match before packing." />
   </Target>
 
 </Project>

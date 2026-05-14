@@ -2,7 +2,7 @@
 
 MCP server for the **LS증권 OpenAPI** — exposes Korean stock market data as MCP tools so AI assistants can query quotes, charts, and ETF data in natural language.
 
-> Unofficial third-party MCP server. Not affiliated with or endorsed by LS Securities Co., Ltd. (LS증권). Read-only market-data scope on the v0.1.x line (실시간 / 계좌 / 주문 deferred).
+> Unofficial third-party MCP server. Not affiliated with or endorsed by LS Securities Co., Ltd. (LS증권). Read-only market-data scope (실시간 / 계좌 / 주문 deferred).
 
 ## Install
 
@@ -21,7 +21,7 @@ MCP server for the **LS증권 OpenAPI** — exposes Korean stock market data as 
       "env": {
         "LS_APPKEY": "...",
         "LS_APPSECRETKEY": "...",
-        "LS_MARKET": "virtual"
+        "LS_MARKET": "virtual"  // "virtual" (paper) or "real" (live)
       }
     }
   }
@@ -40,7 +40,7 @@ args = ["RedoxNet.Mcp.LsOpenApi", "--yes"]
 [mcp_servers.lsopenapi.env]
 LS_APPKEY = "..."
 LS_APPSECRETKEY = "..."
-LS_MARKET = "virtual"
+LS_MARKET = "virtual"  # "virtual" (paper) or "real" (live)
 ```
 
 ### VS Code
@@ -57,7 +57,7 @@ Workspace `.vscode/mcp.json`:
       "env": {
         "LS_APPKEY": "...",
         "LS_APPSECRETKEY": "...",
-        "LS_MARKET": "virtual"
+        "LS_MARKET": "virtual"  // "virtual" (paper) or "real" (live)
       }
     }
   }
@@ -75,7 +75,7 @@ Workspace `.vscode/mcp.json`:
 
 Credentials are accepted **only** through the process environment — never through chat, tool arguments, or MCP elicitation. See [ADR-001](https://github.com/redoxnet/mcp-lsopenapi/blob/main/docs/ADR-001-credential-management.md) for the rationale.
 
-## Tools (v0.1.0)
+## Tools (v0.2.0)
 
 | Tool | TR | Purpose |
 |---|---|---|

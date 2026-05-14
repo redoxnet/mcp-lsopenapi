@@ -1,5 +1,23 @@
 # Release Notes — RedoxNet.Mcp.LsOpenApi
 
+## v0.2.0 (2026-05-14)
+
+MCP host interoperability fixes. **No tool surface or behavior changes** — the 10 tools, their inputs, and their outputs are identical to v0.1.0. This release only reshapes the published JSON schema and UI-resource metadata so MCP hosts accept and render them correctly.
+
+### Fixed
+
+- **Optional array/string parameters were rejected by strict MCP host validators.** The .NET MCP SDK emits JSON Schema 2020-12's `"type": ["array","null"]` form for nullable parameters. Claude Desktop, Claude Code, and cowork reject that shape, so every `ls_get_chart` call that passed `indicators` failed before reaching the server (`from` / `to` were affected the same way). A `tools/list` request filter — `SchemaNormalizer` — now rewrites `["X","null"]` → `"X"` and drops the orphaned `default: null`, leaving the C# `T?` signatures untouched. Verified end-to-end against the live LS server.
+
+- **MCP Apps (SEP-1865) UI-resource CSP metadata was the wrong shape.** `_meta.ui.csp` used raw CSP directive names (`script-src`, `style-src`, …); the spec expects domain lists (`resourceDomains`, `connectDomains`). Hosts read `csp.resourceDomains` to allowlist the Plotly CDN inside the sandbox iframe — with the old shape the CDN was never allowed. The `_meta` block is now also attached to the `resources/read` content (the host reads CSP from there, not only from the `resources/list` entry), `prefersBorder: true` is declared, and the HTML template declares `availableDisplayModes: ["inline"]` in its `ui/initialize` handshake.
+
+### Added
+
+- **`LS_LOG_LEVEL` environment variable** — sets the minimum log level (`Trace` / `Debug` / `Information` / `Warning` / `Error` / `Critical` / `None`, default `Information`). With `Trace`, every JSON-RPC message — including full `tools/call` payloads — is written to stderr, for diagnosing host-side interop issues.
+
+### Host support note
+
+Inline Plotly rendering still depends on the host. It works on Claude.ai (web). Claude Desktop / cowork currently cannot embed the MCP Apps sandbox iframe — the `claudemcpcontent.com` sandbox serves a CSP `frame-ancestors` that lists only the web origins, not the desktop app — so on those hosts the tool degrades gracefully to the structured `candles` / `indicators` / `context` payload. This is an Anthropic-side limitation, not a server issue.
+
 ## v0.1.0 (2026-05-13)
 
 Initial public release of the MCP server for LS증권 OpenAPI.
