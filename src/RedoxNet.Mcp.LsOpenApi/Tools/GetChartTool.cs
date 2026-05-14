@@ -86,6 +86,8 @@ public static class GetChartTool
         bool include_chart = false,
         [Description("If true, keep only the last 5 candles and the last value of each indicator series (context is kept intact). Use for the screening pass when scanning many stocks/timeframes. Default false.")]
         bool summary_only = false,
+        [Description("Optional human-readable stock name (e.g. '삼성전자'). Used only for the inline chart title — pass it when you already know the name so the chart reads '삼성전자 (005930) — 일봉' instead of just the code. The TR responses do not carry the name.")]
+        string? name = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(shcode))
@@ -157,7 +159,7 @@ public static class GetChartTool
                     structured = new JsonObject
                     {
                         ["chart"] = PlotlyChartBuilder.Build(
-                            shcode, only.PeriodType, only.Candles, only.Indicators, parsedIndicators),
+                            shcode, only.PeriodType, only.Candles, only.Indicators, parsedIndicators, name),
                     };
                 }
                 return McpJson.OkResult(singleText, structured);

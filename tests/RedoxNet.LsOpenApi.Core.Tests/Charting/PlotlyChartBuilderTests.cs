@@ -258,4 +258,20 @@ public class PlotlyChartBuilderTests
 
         env["spec"]!["data"]![1]!["line"]!["color"]!.GetValue<string>().Should().Be("#2F9E44");
     }
+
+    [Fact]
+    public void Build_Title_PrefersNameWhenProvided()
+    {
+        var empty = new Dictionary<string, IReadOnlyList<double?>>();
+
+        JsonObject withName = PlotlyChartBuilder.Build(
+            "005930", "day", SampleCandles(), empty, Array.Empty<IndicatorSpec>(), name: "삼성전자");
+        withName["spec"]!["layout"]!["title"]!["text"]!.GetValue<string>()
+            .Should().Be("삼성전자 (005930) — 일봉");
+
+        JsonObject noName = PlotlyChartBuilder.Build(
+            "005930", "day", SampleCandles(), empty, Array.Empty<IndicatorSpec>());
+        noName["spec"]!["layout"]!["title"]!["text"]!.GetValue<string>()
+            .Should().Be("005930 — 일봉");
+    }
 }

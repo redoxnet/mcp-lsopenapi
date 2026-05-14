@@ -34,7 +34,8 @@ public class ChartHtmlHarnessTests
         IReadOnlyDictionary<string, IReadOnlyList<double?>> indicators =
             new IndicatorService().Compute(candles, specs);
 
-        JsonObject envelope = PlotlyChartBuilder.Build("005930", "day", candles, indicators, specs);
+        JsonObject envelope = PlotlyChartBuilder.Build(
+            "005930", "day", candles, indicators, specs, name: "삼성전자");
         string path = ChartHtmlHarness.Write("candlestick-005930-day", envelope["spec"]!);
 
         _output.WriteLine("chart written — open in a browser:\n  " + path);

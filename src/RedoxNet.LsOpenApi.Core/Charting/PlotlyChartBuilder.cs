@@ -62,6 +62,11 @@ internal static class PlotlyChartBuilder
     /// <param name="candles">Candle list (oldest first).</param>
     /// <param name="indicators">Indicator series keyed by spec, aligned 1:1 with <paramref name="candles"/>.</param>
     /// <param name="specs">Parsed indicator specs (used to discover overlay kinds).</param>
+    /// <param name="name">
+    /// Optional human-readable stock name. When supplied the title reads
+    /// <c>"{name} ({shcode}) — {label}"</c>; otherwise just <c>"{shcode} — {label}"</c>.
+    /// The chart TRs do not carry the name, so the caller passes it through.
+    /// </param>
     /// <returns>
     /// <c>{ "type": "plotly", "version": "5", "spec": { "data": [...], "layout": {...} } }</c>
     /// </returns>
@@ -70,7 +75,8 @@ internal static class PlotlyChartBuilder
         string periodType,
         IReadOnlyList<Candle> candles,
         IReadOnlyDictionary<string, IReadOnlyList<double?>> indicators,
-        IReadOnlyList<IndicatorSpec> specs)
+        IReadOnlyList<IndicatorSpec> specs,
+        string? name = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(shcode);
         ArgumentException.ThrowIfNullOrWhiteSpace(periodType);
@@ -92,7 +98,7 @@ internal static class PlotlyChartBuilder
             ["spec"] = new JsonObject
             {
                 ["data"] = data,
-                ["layout"] = BuildLayout(shcode, periodType, candles, xAxis),
+                ["layout"] = BuildLayout(shcode, name, periodType, candles, xAxis),
             },
         };
     }
@@ -285,12 +291,14 @@ internal static class PlotlyChartBuilder
     /// date-tick x-axis, and period high/low annotations.
     /// </summary>
     /// <param name="shcode">Stock code for the title.</param>
+    /// <param name="name">Optional human-readable stock name for the title.</param>
     /// <param name="periodType">Period label; mapped to Korean (일/주/월/분/틱) for display.</param>
     /// <param name="candles">Candle list (oldest first) — drives ticks and annotations.</param>
     /// <param name="xAxis">Shared x-axis array, aligned 1:1 with <paramref name="candles"/>.</param>
     /// <returns>Plotly layout JSON object.</returns>
     static JsonObject BuildLayout(
         string shcode,
+        string? name,
         string periodType,
         IReadOnlyList<Candle> candles,
         JsonArray xAxis)
@@ -305,9 +313,15 @@ internal static class PlotlyChartBuilder
             _ => periodType,
         };
 
+        // Title prefers the human-readable name when the caller supplies it
+        // ("삼성전자 (005930) — 일봉"); the TRs themselves carry only the code.
+        string title = string.IsNullOrWhiteSpace(name)
+            ? $"{shcode} — {periodLabel}"
+            : $"{name} ({shcode}) — {periodLabel}";
+
         var layout = new JsonObject
         {
-            ["title"] = new JsonObject { ["text"] = $"{shcode} — {periodLabel}" },
+            ["title"] = new JsonObject { ["text"] = title },
             ["hovermode"] = "x unified",
             ["showlegend"] = true,
             ["legend"] = new JsonObject
