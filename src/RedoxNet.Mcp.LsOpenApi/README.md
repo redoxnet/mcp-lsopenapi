@@ -64,6 +64,29 @@ Workspace `.vscode/mcp.json`:
 }
 ```
 
+### FieldCure AssistStudio
+
+**Settings → Connect → Add MCP Server**, then fill the dialog:
+
+| Field | Value |
+|---|---|
+| Server Name | Any label, e.g. `LS Open Api` |
+| Description (for AI) | Leave blank — auto-filled from the server on first connect |
+| Transport | `Stdio` |
+| Command | `dnx` |
+| Arguments | `RedoxNet.Mcp.LsOpenApi --yes` &nbsp;— space-separated, **no quotes or commas** |
+| Environment Variables | one `KEY=VALUE` per line (see below) |
+
+```
+LS_APPKEY=...
+LS_APPSECRETKEY=...
+LS_MARKET=virtual
+```
+
+AssistStudio renders the optional Plotly chart spec from `ls_get_chart` inline in the
+chat — call it with `include_chart=true` (single timeframe) to get a candlestick chart
+directly in the conversation.
+
 ## Environment variables
 
 | Name | Required | Description |
@@ -84,6 +107,7 @@ Credentials are accepted **only** through the process environment — never thro
 | `ls_call_tr` | any | Invoke any TR with a caller-supplied `in_block`. |
 | `ls_get_quote` | `t1101` | Current price + 10-level order book. |
 | `ls_get_multi_quote` | `t8407` | Up to 50 stocks per call. |
+| `ls_get_top_stocks` | `t1441` / `t1444` / `t1452` / `t1463` / `t1466` | Top gainers/losers, market cap, volume, trading value, and volume-surge screeners. |
 | `ls_get_stock_info` | `t1102` | PER/PBR/EPS, quarterly financials, 52-week + YTD ranges, top-5 brokerages, foreign-investor activity, SPAC / 관리종목 flags. |
 | `ls_get_chart` | `t8410` / `t8412` / `t1301` | OHLCV (day/week/month/year/min/tick), indicators (SMA/EMA/RSI/MACD/BB), pre-computed analysis context, multi-timeframe in one call, optional Plotly v5 chart spec. |
 | `ls_search_stock` | `t8436` | Name → code search with `instrument` filter (`all` / `stock` / `etf`). |

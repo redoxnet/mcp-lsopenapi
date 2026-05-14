@@ -190,6 +190,7 @@ LS증권 OpenAPI를 사용하려면 LS증권에서 발급한 **AppKey**와 **App
 | --- | --- | --- |
 | `ls_get_quote` | `t1101` | 단일 종목의 현재가 + 10단계 호가창. |
 | `ls_get_multi_quote` | `t8407` | **최대 50종목을 한 번에** 비교 — 가격/OHLC/거래량/최우선 매도·매수호가/총잔량/체결강도. 워치리스트 또는 종목 비교용. |
+| `ls_get_top_stocks` | `t1441` / `t1444` / `t1452` / `t1463` / `t1466` | 시장 스크리너 — 상승률/하락률/보합, 시가총액, 거래량, 거래대금, 거래급증 상위 종목. |
 | `ls_get_stock_info` | `t1102` | 기업 프로필 + 펀더멘털: PER/PBR/EPS, 분기별 재무·성장률, 52주 + YTD 범위, 매도·매수 상위 5개 거래원, 외국인 동향, 상태 플래그(SPAC/관리종목). |
 | `ls_get_chart` | `t8410` / `t8412` / `t1301` | OHLCV 캔들(일/주/월/년/분/틱), 선택적 지표(SMA, EMA, RSI, MACD, Bollinger), 사전 계산된 분석 context, **다중 시간프레임 한 번에 조회**(`period_type: "day,week,month"`). |
 | `ls_search_stock` | `t8436` | 종목명 일부로 KOSPI/KOSDAQ 종목코드 검색; SPAC + 관리종목 플래그 + `instrument` 필터(`all` / `stock` / `etf`). |
@@ -311,10 +312,10 @@ dotnet run --project src/RedoxNet.Mcp.LsOpenApi --framework net8.0
 ## 진행 상황
 
 - ✅ M1 — Core 스캐폴드 + 인증(OAuth2 client_credentials, SQLite WAL 토큰 캐시, 시크릿 마스킹).
-- ✅ M2 — testbed로 검증된 11개 TR이 포함된 내장 TR 카탈로그(`t1101`, `t1102`, `t8407`, `t8410`, `t8412`, `t1301`, `t8430`, `t8436`, `t9945`, `t1901`, `t1904`).
+- ✅ M2 — testbed로 검증된 16개 TR이 포함된 내장 TR 카탈로그(`t1101`, `t1102`, `t1441`, `t1444`, `t1452`, `t1463`, `t1466`, `t8407`, `t8410`, `t8412`, `t1301`, `t8430`, `t8436`, `t9945`, `t1901`, `t1904`).
 - ✅ M3 — TR 실행(`LsApiClient.CallTrAsync`): Polly 재시도, TR별 레이트 리미터, 헤더 + body 두 가지 페이징 모드.
 - ✅ M4 — 메타 도구 3개(`ls_search_tr`, `ls_describe_tr`, `ls_call_tr`)를 노출하는 stdio MCP 서버.
-- ✅ M5 — 의미 도구 7개: `ls_get_quote`, `ls_get_multi_quote`, `ls_get_stock_info`, `ls_get_chart` (+ 지표, 컨텍스트 메타데이터, 다중 시간프레임, `include_chart`로 Plotly v5 spec), `ls_search_stock`, **`ls_get_etf_info`, `ls_get_etf_holdings`**.
+- ✅ M5 — 의미 도구 8개: `ls_get_quote`, `ls_get_multi_quote`, `ls_get_top_stocks`, `ls_get_stock_info`, `ls_get_chart` (+ 지표, 컨텍스트 메타데이터, 다중 시간프레임, `include_chart`로 Plotly v5 spec), `ls_search_stock`, **`ls_get_etf_info`, `ls_get_etf_holdings`**.
 - ✅ LS 모의투자 서버에서 라이브 검증 완료 (v0.2.0).
 - ⏳ 다음 릴리스 — 실시간(WebSocket), 계좌/잔고, 주문.
 

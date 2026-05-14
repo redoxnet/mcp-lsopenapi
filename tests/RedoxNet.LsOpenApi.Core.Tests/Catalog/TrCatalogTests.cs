@@ -111,6 +111,36 @@ public class TrCatalogTests
         candles.Fields.Should().Contain(f => f.Name == "close");
     }
 
+    [Theory]
+    [InlineData("t1441", "t1441InBlock", "t1441OutBlock1", "gubun1", "idx")]
+    [InlineData("t1444", "t1444InBlock", "t1444OutBlock1", "upcode", "idx")]
+    [InlineData("t1452", "t1452InBlock", "t1452OutBlock1", "gubun", "idx")]
+    [InlineData("t1463", "t1463InBlock", "t1463OutBlock1", "gubun", "idx")]
+    [InlineData("t1466", "t1466InBlock", "t1466OutBlock1", "gubun", "idx")]
+    public void RankingTrs_HaveExpectedCatalogShape(
+        string trCode,
+        string inBlockName,
+        string rowBlockName,
+        string firstInputField,
+        string continuationField)
+    {
+        TrMeta meta = TrCatalog.Default.Get(trCode);
+
+        meta.Path.Should().Be("/stock/market-data");
+        meta.Category.Should().Be("주식상위종목");
+        meta.InBlocks.Should().ContainSingle().Which.Name.Should().Be(inBlockName);
+        meta.InBlocks[0].Fields.Should().Contain(f => f.Name == firstInputField && f.Required);
+
+        meta.OutBlocks.Should().Contain(b => b.Name == rowBlockName && b.IsArray);
+        TrBlock rows = meta.OutBlocks.Single(b => b.Name == rowBlockName);
+        rows.Fields.Should().Contain(f => f.Name == "shcode");
+        rows.Fields.Should().Contain(f => f.Name == "price");
+        rows.Fields.Should().Contain(f => f.Name == "diff");
+
+        meta.Continuation.Supported.Should().BeTrue();
+        meta.Continuation.KeyFields.Should().Equal(continuationField);
+    }
+
     [Fact]
     public void FromContent_ParsesMinimalCatalog()
     {

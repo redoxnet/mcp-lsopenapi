@@ -71,11 +71,11 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 
 | TR | 이름 | Status | Tool / Notes |
 | --- | --- | --- | --- |
-| `t1441` | 등락율 상위 | ⚪ 💎 | Gainers / losers — primary candidate for `ls_get_top_stocks kind="gainers"` |
-| `t1444` | 시가총액 상위 | ⚪ 💎 | `kind="market_cap"` |
-| `t1452` | 거래량 상위 | ⚪ 💎 | `kind="volume"` |
-| `t1463` | 거래대금 상위 | ⚪ 💎 | `kind="amount"` |
-| `t1466` | 전일동시간대비 거래급증 | ⚪ 💎 | `kind="volume_surge"` |
+| `t1441` | 등락율 상위 | 🟢 💎 | `ls_get_top_stocks kind="gainers"|"losers"|"unchanged"` |
+| `t1444` | 시가총액 상위 | 🟢 💎 | `ls_get_top_stocks kind="market_cap"` |
+| `t1452` | 거래량 상위 | 🟢 💎 | `ls_get_top_stocks kind="volume"` |
+| `t1463` | 거래대금 상위 | 🟢 💎 | `ls_get_top_stocks kind="amount"` |
+| `t1466` | 전일동시간대비 거래급증 | 🟢 💎 | `ls_get_top_stocks kind="volume_surge"` |
 | `t1481` | 시간외 등락율 상위 | ⚪ | |
 | `t1482` | 시간외 거래량 상위 | ⚪ | |
 | `t1489` | 예상체결량 상위 조회 | ⚪ | |
@@ -233,18 +233,17 @@ WebSocket-based stream identifiers, not REST TRs. ~50 channels including:
 
 ## Implementation status summary (v1.0)
 
-- **9 TRs in catalog** — t1101, t1102, t8407, t8410, t8412, t1301, t8430, t8436, t9945
-- **8 semantic MCP tools** — `ls_search_tr`, `ls_describe_tr`, `ls_call_tr`, `ls_get_quote`, `ls_get_multi_quote`, `ls_get_stock_info`, `ls_get_chart`, `ls_search_stock`
+- **16 TRs in catalog** — t1101, t1102, t1441, t1444, t1452, t1463, t1466, t8407, t8410, t8412, t1301, t8430, t8436, t9945, t1901, t1904
+- **11 MCP tools** — meta: `ls_search_tr`, `ls_describe_tr`, `ls_call_tr`; semantic: `ls_get_quote`, `ls_get_multi_quote`, `ls_get_top_stocks`, `ls_get_stock_info`, `ls_get_chart`, `ls_search_stock`, `ls_get_etf_info`, `ls_get_etf_holdings`
 
 ## Recommended next batch (v1.0.x patches)
 
 Based on 💎 markers above, in rough priority order:
 
-1. **`ls_get_top_stocks`** — wraps t1441/t1444/t1452/t1463/t1466 (one tool, dispatched by `kind`). Resolves spec §15 Open Question #1.
+1. **`t3341` fundamental ranking** — new `ls_get_fundamentals_rank` tool (cross-stock screener; complements per-stock `ls_get_stock_info`).
 2. **`t1531` / `t1532` theme lookup** — `ls_get_theme_stocks` + `ls_get_stock_themes`.
-3. **`t3341` fundamental ranking** — new `ls_get_fundamentals_rank` tool (cross-stock screener; complements per-stock `ls_get_stock_info`).
-4. **`t1601` / `t1702` investor flow** — `ls_get_investor_flow` covering institutional/foreign net flow.
-5. **`t1442` 신고/신저가 screener** + **`t1927` short interest** for screener fold-in.
+3. **`t1601` / `t1702` investor flow** — `ls_get_investor_flow` covering institutional/foreign net flow.
+4. **`t1442` 신고/신저가 screener** + **`t1927` short interest** for screener fold-in.
 
 ## How to extend this inventory
 

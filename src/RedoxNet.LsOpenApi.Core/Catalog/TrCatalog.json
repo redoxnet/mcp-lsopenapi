@@ -539,6 +539,275 @@
       "rate_limit_per_sec": 1
     },
     {
+      "tr_code": "t1441",
+      "name": "등락율 상위",
+      "category": "주식상위종목",
+      "path": "/stock/market-data",
+      "description": "시장/거래소/당일·전일 기준으로 등락율 상위(상승률·하락률·보합) 종목을 반환합니다. ls_get_top_stocks kind=gainers|losers|unchanged 에서 사용합니다.",
+      "in_blocks": [
+        {
+          "name": "t1441InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "gubun1", "type": "char", "description": "시장구분 (0전체 1코스피 2코스닥)", "required": true, "length": 1 },
+            { "name": "gubun2", "type": "char", "description": "상승하락 (0상승률 1하락률 2보합)", "required": true, "length": 1 },
+            { "name": "gubun3", "type": "char", "description": "당일전일 (0당일 1전일)", "required": true, "length": 1 },
+            { "name": "jc_num", "type": "long", "description": "대상제외 bit mask", "required": true },
+            { "name": "sprice", "type": "long", "description": "시작가격: 현재가 >= sprice", "required": true },
+            { "name": "eprice", "type": "long", "description": "종료가격: 현재가 <= eprice, 0이면 제한 없음", "required": true },
+            { "name": "volume", "type": "long", "description": "최소 거래량", "required": true },
+            { "name": "idx", "type": "int", "description": "연속조회 IDX. 최초 0, 다음 조회는 OutBlock.idx", "required": true },
+            { "name": "jc_num2", "type": "long", "description": "대상제외2 bit mask (ETF/ETN/SPAC/투자주의 등)", "required": true },
+            { "name": "exchgubun", "type": "char", "description": "거래소구분코드 (K=KRX N=NXT U=통합)", "required": false, "length": 1 }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t1441OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "idx", "type": "int", "description": "다음 조회 IDX" }
+          ]
+        },
+        {
+          "name": "t1441OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "hname", "type": "char", "description": "한글명" },
+            { "name": "price", "type": "long", "description": "현재가" },
+            { "name": "sign", "type": "char", "description": "전일대비구분", "length": 1 },
+            { "name": "change", "type": "long", "description": "전일대비" },
+            { "name": "diff", "type": "char", "description": "등락율" },
+            { "name": "volume", "type": "long", "description": "누적거래량" },
+            { "name": "offerrem1", "type": "long", "description": "매도잔량" },
+            { "name": "offerho1", "type": "long", "description": "매도호가" },
+            { "name": "bidho1", "type": "long", "description": "매수호가" },
+            { "name": "bidrem1", "type": "long", "description": "매수잔량" },
+            { "name": "updaycnt", "type": "int", "description": "연속 일수" },
+            { "name": "jnildiff", "type": "char", "description": "전일등락율" },
+            { "name": "shcode", "type": "char", "description": "종목코드", "length": 6 },
+            { "name": "open", "type": "long", "description": "시가" },
+            { "name": "high", "type": "long", "description": "고가" },
+            { "name": "low", "type": "long", "description": "저가" },
+            { "name": "voldiff", "type": "char", "description": "거래량대비율" },
+            { "name": "value", "type": "long", "description": "거래대금" },
+            { "name": "total", "type": "long", "description": "시가총액" },
+            { "name": "ex_shcode", "type": "char", "description": "거래소별단축코드" }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "key_fields": ["idx"] },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t1444",
+      "name": "시가총액 상위",
+      "category": "주식상위종목",
+      "path": "/stock/market-data",
+      "description": "업종/시장 코드 기준 시가총액 상위 종목을 반환합니다. ls_get_top_stocks kind=market_cap 에서 사용합니다.",
+      "in_blocks": [
+        {
+          "name": "t1444InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "upcode", "type": "char", "description": "업종코드 (001=코스피 301=코스닥)", "required": true, "length": 3 },
+            { "name": "idx", "type": "int", "description": "연속조회 IDX. 최초 0, 다음 조회는 OutBlock.idx", "required": true }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t1444OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "idx", "type": "int", "description": "다음 조회 IDX" }
+          ]
+        },
+        {
+          "name": "t1444OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "shcode", "type": "char", "description": "종목코드", "length": 6 },
+            { "name": "hname", "type": "char", "description": "종목명" },
+            { "name": "price", "type": "long", "description": "현재가" },
+            { "name": "sign", "type": "char", "description": "전일대비구분" },
+            { "name": "change", "type": "long", "description": "전일대비" },
+            { "name": "diff", "type": "char", "description": "등락율" },
+            { "name": "volume", "type": "long", "description": "거래량" },
+            { "name": "vol_rate", "type": "char", "description": "거래비중" },
+            { "name": "total", "type": "long", "description": "시가총액" },
+            { "name": "rate", "type": "char", "description": "시총 비중" },
+            { "name": "for_rate", "type": "char", "description": "외인비중" }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "key_fields": ["idx"] },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t1452",
+      "name": "거래량 상위",
+      "category": "주식상위종목",
+      "path": "/stock/market-data",
+      "description": "시장/당일·전일 기준 거래량 상위 종목을 반환합니다. ls_get_top_stocks kind=volume 에서 사용합니다.",
+      "in_blocks": [
+        {
+          "name": "t1452InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "gubun", "type": "char", "description": "시장구분 (0전체 1코스피 2코스닥)", "required": true, "length": 1 },
+            { "name": "jnilgubun", "type": "char", "description": "전일구분 (1당일 2전일)", "required": true, "length": 1 },
+            { "name": "sdiff", "type": "int", "description": "시작등락율", "required": true },
+            { "name": "ediff", "type": "int", "description": "종료등락율", "required": true },
+            { "name": "jc_num", "type": "long", "description": "대상제외 bit mask", "required": true },
+            { "name": "sprice", "type": "long", "description": "시작가격", "required": true },
+            { "name": "eprice", "type": "long", "description": "종료가격", "required": true },
+            { "name": "volume", "type": "long", "description": "최소 거래량", "required": true },
+            { "name": "idx", "type": "int", "description": "연속조회 IDX", "required": true }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t1452OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "idx", "type": "int", "description": "다음 조회 IDX" }
+          ]
+        },
+        {
+          "name": "t1452OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "hname", "type": "char", "description": "종목명" },
+            { "name": "price", "type": "long", "description": "현재가" },
+            { "name": "sign", "type": "char", "description": "전일대비구분" },
+            { "name": "change", "type": "long", "description": "전일대비" },
+            { "name": "diff", "type": "char", "description": "등락율" },
+            { "name": "volume", "type": "long", "description": "누적거래량" },
+            { "name": "vol", "type": "char", "description": "회전율" },
+            { "name": "jnilvolume", "type": "long", "description": "전일거래량" },
+            { "name": "bef_diff", "type": "char", "description": "전일비" },
+            { "name": "shcode", "type": "char", "description": "종목코드", "length": 6 }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "key_fields": ["idx"] },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t1463",
+      "name": "거래대금 상위",
+      "category": "주식상위종목",
+      "path": "/stock/market-data",
+      "description": "시장/거래소/당일·전일 기준 거래대금 상위 종목을 반환합니다. ls_get_top_stocks kind=amount 에서 사용합니다.",
+      "in_blocks": [
+        {
+          "name": "t1463InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "gubun", "type": "char", "description": "시장구분 (0전체 1코스피 2코스닥)", "required": true, "length": 1 },
+            { "name": "jnilgubun", "type": "char", "description": "전일구분 (0당일 1전일)", "required": true, "length": 1 },
+            { "name": "jc_num", "type": "long", "description": "대상제외 bit mask", "required": true },
+            { "name": "sprice", "type": "long", "description": "시작가격", "required": true },
+            { "name": "eprice", "type": "long", "description": "종료가격", "required": true },
+            { "name": "volume", "type": "long", "description": "최소 거래량", "required": true },
+            { "name": "idx", "type": "int", "description": "연속조회 IDX", "required": true },
+            { "name": "jc_num2", "type": "long", "description": "대상제외2 bit mask", "required": true },
+            { "name": "exchgubun", "type": "char", "description": "거래소구분코드 (K=KRX N=NXT U=통합)", "required": false, "length": 1 }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t1463OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "idx", "type": "int", "description": "다음 조회 IDX" }
+          ]
+        },
+        {
+          "name": "t1463OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "hname", "type": "char", "description": "한글명" },
+            { "name": "price", "type": "long", "description": "현재가" },
+            { "name": "sign", "type": "char", "description": "전일대비구분" },
+            { "name": "change", "type": "long", "description": "전일대비" },
+            { "name": "diff", "type": "char", "description": "등락율" },
+            { "name": "volume", "type": "long", "description": "누적거래량" },
+            { "name": "value", "type": "long", "description": "거래대금" },
+            { "name": "jnilvalue", "type": "long", "description": "전일거래대금" },
+            { "name": "bef_diff", "type": "char", "description": "전일비" },
+            { "name": "shcode", "type": "char", "description": "종목코드", "length": 6 },
+            { "name": "filler", "type": "char", "description": "예비 필드" },
+            { "name": "jnilvolume", "type": "long", "description": "전일거래량" },
+            { "name": "ex_shcode", "type": "char", "description": "거래소별단축코드" },
+            { "name": "total", "type": "long", "description": "시가총액" }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "key_fields": ["idx"] },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t1466",
+      "name": "전일동시간대비 거래급증",
+      "category": "주식상위종목",
+      "path": "/stock/market-data",
+      "description": "전일 동시간 대비 거래량이 급증한 종목을 반환합니다. ls_get_top_stocks kind=volume_surge 에서 사용합니다.",
+      "in_blocks": [
+        {
+          "name": "t1466InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "gubun", "type": "char", "description": "시장구분 (0전체 1코스피 2코스닥)", "required": true, "length": 1 },
+            { "name": "type1", "type": "char", "description": "전일거래량 조건 (0=1주 이상, 1=1만주 이상 ...)", "required": true, "length": 1 },
+            { "name": "type2", "type": "char", "description": "거래급등율 조건 (0전체, 1=2000%이하 ...)", "required": true, "length": 1 },
+            { "name": "jc_num", "type": "long", "description": "대상제외 bit mask", "required": true },
+            { "name": "sprice", "type": "long", "description": "시작가격", "required": true },
+            { "name": "eprice", "type": "long", "description": "종료가격", "required": true },
+            { "name": "volume", "type": "long", "description": "최소 거래량", "required": true },
+            { "name": "idx", "type": "int", "description": "연속조회 IDX", "required": true },
+            { "name": "jc_num2", "type": "long", "description": "대상제외2 bit mask", "required": true },
+            { "name": "exchgubun", "type": "char", "description": "거래소구분코드 (K=KRX N=NXT U=통합)", "required": false, "length": 1 }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t1466OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "hhmm", "type": "char", "description": "현재시분" },
+            { "name": "idx", "type": "int", "description": "다음 조회 IDX" }
+          ]
+        },
+        {
+          "name": "t1466OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "shcode", "type": "char", "description": "종목코드", "length": 6 },
+            { "name": "hname", "type": "char", "description": "종목명" },
+            { "name": "price", "type": "long", "description": "현재가" },
+            { "name": "sign", "type": "char", "description": "전일대비구분" },
+            { "name": "change", "type": "long", "description": "전일대비" },
+            { "name": "diff", "type": "char", "description": "등락율" },
+            { "name": "stdvolume", "type": "long", "description": "전일거래량" },
+            { "name": "volume", "type": "long", "description": "당일거래량" },
+            { "name": "voldiff", "type": "char", "description": "거래급등율" },
+            { "name": "open", "type": "long", "description": "시가" },
+            { "name": "high", "type": "long", "description": "고가" },
+            { "name": "low", "type": "long", "description": "저가" },
+            { "name": "ex_shcode", "type": "char", "description": "거래소별단축코드" }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "key_fields": ["idx"] },
+      "rate_limit_per_sec": 1
+    },
+    {
       "tr_code": "t9945",
       "name": "주식 마스터 조회 API용 (간소판)",
       "category": "주식기타",

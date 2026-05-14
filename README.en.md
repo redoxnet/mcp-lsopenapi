@@ -191,6 +191,7 @@ Pass `include_chart: true` to receive a Plotly v5 JSON spec in the response. Cli
 | --- | --- | --- |
 | `ls_get_quote` | `t1101` | Current price + 10-level order book for a single Korean stock. |
 | `ls_get_multi_quote` | `t8407` | Compact price snapshot for **up to 50 stocks in one call** — price/OHLC/volume/best ask·bid/총잔량/체결강도. Use for side-by-side comparison or watchlists. |
+| `ls_get_top_stocks` | `t1441` / `t1444` / `t1452` / `t1463` / `t1466` | Market-wide screeners — top gainers/losers/unchanged, market cap, volume, trading value, and volume surges. |
 | `ls_get_stock_info` | `t1102` | Company profile + fundamentals: PER/PBR/EPS, quarterly financials and growth rates, 52-week + YTD ranges, top-5 buy/sell brokerages, foreign-investor activity, status flags (SPAC/관리종목). |
 | `ls_get_chart` | `t8410` / `t8412` / `t1301` | OHLCV candles (day/week/month/year/min/tick), optional indicators (SMA, EMA, RSI, MACD, Bollinger), pre-computed analysis context, **multi-timeframe in one call** (`period_type: "day,week,month"`). |
 | `ls_search_stock` | `t8436` | Find KOSPI/KOSDAQ codes by name fragment; surfaces SPAC + 관리종목 flags and an `instrument` filter (`all` / `stock` / `etf`). |
@@ -314,10 +315,10 @@ dotnet run --project src/RedoxNet.Mcp.LsOpenApi --framework net8.0
 ## Status
 
 - ✅ M1 — Core scaffold + auth (OAuth2 client_credentials, SQLite WAL token cache, secret masking).
-- ✅ M2 — Embedded TR catalog with 11 testbed-verified seed entries (`t1101`, `t1102`, `t8407`, `t8410`, `t8412`, `t1301`, `t8430`, `t8436`, `t9945`, `t1901`, `t1904`).
+- ✅ M2 — Embedded TR catalog with 16 testbed-verified seed entries (`t1101`, `t1102`, `t1441`, `t1444`, `t1452`, `t1463`, `t1466`, `t8407`, `t8410`, `t8412`, `t1301`, `t8430`, `t8436`, `t9945`, `t1901`, `t1904`).
 - ✅ M3 — TR execution (`LsApiClient.CallTrAsync`) with Polly retries, per-TR rate limiter, header + body continuation modes.
 - ✅ M4 — MCP stdio server with 3 meta tools (`ls_search_tr`, `ls_describe_tr`, `ls_call_tr`).
-- ✅ M5 — 7 semantic tools: `ls_get_quote`, `ls_get_multi_quote`, `ls_get_stock_info`, `ls_get_chart` (+ indicators, context metadata, multi-timeframe, Plotly v5 spec via `include_chart`), `ls_search_stock`, **`ls_get_etf_info`, `ls_get_etf_holdings`**.
+- ✅ M5 — 8 semantic tools: `ls_get_quote`, `ls_get_multi_quote`, `ls_get_top_stocks`, `ls_get_stock_info`, `ls_get_chart` (+ indicators, context metadata, multi-timeframe, Plotly v5 spec via `include_chart`), `ls_search_stock`, **`ls_get_etf_info`, `ls_get_etf_holdings`**.
 - ✅ Live verified against the LS virtual server (v0.2.0).
 - ⏳ Next release — Realtime (WebSocket), accounts/balances, orders.
 
