@@ -174,6 +174,21 @@ LS증권 OpenAPI를 사용하려면 LS증권에서 발급한 **AppKey**와 **App
 
 `include_chart: true`로 호출하면 Plotly v5 JSON spec이 응답에 포함됩니다. [AssistStudio](https://github.com/fieldcure/fieldcure-assiststudio)처럼 Plotly.js를 임베드한 클라이언트는 인라인 차트로, 그 외 클라이언트는 구조화된 데이터(`candles`/`indicators`/`context`)로 활용 가능합니다.
 
+![AssistStudio에서 SK하이닉스 일봉 차트를 인라인 Plotly로 렌더링하고, 이동평균선 배열과 거래량 변화를 근거로 단기 추세 국면을 분석한 화면](docs/assiststudio-chart-skhynix.png)
+
+> 인라인 차트 렌더링은 **AssistStudio v1.1 이상**에서 지원됩니다. (현재 MS Store 게시 버전은 v1.0)
+
+#### 5. 시장 스크리너 기반 분석
+
+```
+사용자: "거래대금 상위 종목을 기술적으로 분석해줘"
+  → ls_get_top_stocks(kind="amount")로 상위 종목 스크리닝
+  → 후보 종목에 ls_get_chart / ls_get_stock_info를 연쇄 호출
+  → LLM이 이동평균 배열·RSI·MACD를 종합해 종목별 기술적 리포트 생성
+```
+
+![AssistStudio에서 ls_get_top_stocks로 거래대금 상위 종목을 스크리닝한 뒤, LG이노텍을 일봉·주봉 지표로 기술적 분석한 리포트 화면](docs/assiststudio-screener-analysis.png)
+
 ## 도구
 
 ### 메타 도구
