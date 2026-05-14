@@ -137,7 +137,7 @@ LS증권 OpenAPI를 사용하려면 LS증권에서 발급한 **AppKey**와 **App
 - **로그·에러·툴 응답에 노출 안 됨.** 진단 출력은 `****` + 마지막 4자리만 표시하며(`AppKey`), 시크릿 키는 어떤 형태로도 로그에 찍지 않습니다.
 - **잘못된 키 입력 시 LS의 `IGW00121` 등 인증 오류**는 [`LsAuthException`](src/RedoxNet.LsOpenApi.Core/Auth/LsAuthException.cs)으로 변환되어 툴 응답의 `error` 필드에만 표시되며, 입력한 키 값은 응답에 포함되지 않습니다.
 
-이는 [MCP 스펙이 "Servers MUST NOT use elicitation to request sensitive information" 으로 권고](https://modelcontextprotocol.io/specification/2025-06-18/server/elicitation#security-considerations)하는 사항을 가장 보수적으로 해석한 결과입니다.
+이는 [MCP 스펙이 "Servers MUST NOT use elicitation to request sensitive information" 으로 권고](https://modelcontextprotocol.io/specification/2025-06-18/client/elicitation#security-considerations)하는 사항을 가장 보수적으로 해석한 결과입니다.
 
 ## 사용 시나리오 예시
 

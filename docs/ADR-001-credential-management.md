@@ -65,5 +65,5 @@ The access token *is* persisted, because (a) re-issuing a token every restart wa
 
 ## References
 
-- [MCP Elicitation Spec (2025-06-18)](https://modelcontextprotocol.io/specification/2025-06-18/server/elicitation) — see the "Security Considerations" subsection for the `MUST NOT` quoted above.
+- [MCP Elicitation Spec (2025-06-18)](https://modelcontextprotocol.io/specification/2025-06-18/client/elicitation) — see the "Security Considerations" subsection for the `MUST NOT` quoted above.
 - [FieldCure AssistStudio ADR-001](../../fieldcure-assiststudio/docs/ADR-001-MCP-Credential-Management.md) — sibling project; distinguishes static secret vs dynamic credential and rolled out a wider env-var-with-elicit-fallback chain. This project takes the stricter no-elicit subset of that strategy for static secrets, while keeping the same dynamic-credential persistence pattern for the access token.
