@@ -542,7 +542,7 @@
       "tr_code": "t1441",
       "name": "등락율 상위",
       "category": "주식상위종목",
-      "path": "/stock/market-data",
+      "path": "/stock/high-item",
       "description": "시장/거래소/당일·전일 기준으로 등락율 상위(상승률·하락률·보합) 종목을 반환합니다. ls_get_top_stocks kind=gainers|losers|unchanged 에서 사용합니다.",
       "in_blocks": [
         {
@@ -604,7 +604,7 @@
       "tr_code": "t1444",
       "name": "시가총액 상위",
       "category": "주식상위종목",
-      "path": "/stock/market-data",
+      "path": "/stock/high-item",
       "description": "업종/시장 코드 기준 시가총액 상위 종목을 반환합니다. ls_get_top_stocks kind=market_cap 에서 사용합니다.",
       "in_blocks": [
         {
@@ -649,7 +649,7 @@
       "tr_code": "t1452",
       "name": "거래량 상위",
       "category": "주식상위종목",
-      "path": "/stock/market-data",
+      "path": "/stock/high-item",
       "description": "시장/당일·전일 기준 거래량 상위 종목을 반환합니다. ls_get_top_stocks kind=volume 에서 사용합니다.",
       "in_blocks": [
         {
@@ -700,7 +700,7 @@
       "tr_code": "t1463",
       "name": "거래대금 상위",
       "category": "주식상위종목",
-      "path": "/stock/market-data",
+      "path": "/stock/high-item",
       "description": "시장/거래소/당일·전일 기준 거래대금 상위 종목을 반환합니다. ls_get_top_stocks kind=amount 에서 사용합니다.",
       "in_blocks": [
         {
@@ -755,7 +755,7 @@
       "tr_code": "t1466",
       "name": "전일동시간대비 거래급증",
       "category": "주식상위종목",
-      "path": "/stock/market-data",
+      "path": "/stock/high-item",
       "description": "전일 동시간 대비 거래량이 급증한 종목을 반환합니다. ls_get_top_stocks kind=volume_surge 에서 사용합니다.",
       "in_blocks": [
         {

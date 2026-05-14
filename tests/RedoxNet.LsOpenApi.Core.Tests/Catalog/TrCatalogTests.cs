@@ -126,7 +126,7 @@ public class TrCatalogTests
     {
         TrMeta meta = TrCatalog.Default.Get(trCode);
 
-        meta.Path.Should().Be("/stock/market-data");
+        meta.Path.Should().Be("/stock/high-item");
         meta.Category.Should().Be("주식상위종목");
         meta.InBlocks.Should().ContainSingle().Which.Name.Should().Be(inBlockName);
         meta.InBlocks[0].Fields.Should().Contain(f => f.Name == firstInputField && f.Required);
