@@ -5,6 +5,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using RedoxNet.LsOpenApi.Core;
 using RedoxNet.Mcp.LsOpenApi.Apps;
+using RedoxNet.Mcp.LsOpenApi.Server;
 
 // CLI subcommand dispatch (one-shot mode for diagnostics).
 if (args.Length > 0 && IsCliCommand(args[0]))
@@ -26,6 +27,17 @@ builder.Logging.AddConsole(options =>
     // MCP uses stdout for protocol traffic; logs must go to stderr.
     options.LogToStandardErrorThreshold = LogLevel.Trace;
 });
+
+// Opt-in trace verbosity: `LS_LOG_LEVEL=Trace` lets operators capture every
+// JSON-RPC message (incoming tools/call payloads included) when diagnosing
+// host-side interop issues. Default minimum stays at Information so normal
+// runs aren't drowned in framework chatter.
+string? logLevelEnv = Environment.GetEnvironmentVariable("LS_LOG_LEVEL");
+if (!string.IsNullOrWhiteSpace(logLevelEnv) &&
+    Enum.TryParse(logLevelEnv, ignoreCase: true, out LogLevel minLevel))
+{
+    builder.Logging.SetMinimumLevel(minLevel);
+}
 
 builder.Services
     .AddLsOpenApiCore()
@@ -49,14 +61,21 @@ builder.Services
     // returned by ls_get_chart / ls_get_etf_holdings.
     .WithListResourcesHandler(UiResources.ListAsync)
     .WithReadResourceHandler(UiResources.ReadAsync)
-    // Attribute-based tool registration can't express nested _meta.ui — so
-    // we attach the SEP-1865 envelope via a tools/list filter that mutates
-    // the descriptors for chart-emitting tools just before they ship out.
+    // Tools/list response post-processing. Two passes:
+    //   1. SchemaNormalizer — rewrites `"type": ["X","null"]` to `"X"` so
+    //      strict MCP host validators (Ajv / Draft-7 style) accept the
+    //      schemas the .NET SDK auto-emits for `T?` parameters.
+    //   2. PatchToolMetaIfChartEmitting — attaches the SEP-1865 _meta.ui
+    //      envelope for chart-emitting tools (attribute-based registration
+    //      can't express the nested shape).
     .WithRequestFilters(filters => filters.AddListToolsFilter(next => async (ctx, ct) =>
     {
         var result = await next(ctx, ct);
         foreach (var tool in result.Tools)
+        {
+            SchemaNormalizer.NormalizeInputSchema(tool);
             UiResources.PatchToolMetaIfChartEmitting(tool);
+        }
         return result;
     }));
 
@@ -86,6 +105,7 @@ static int PrintUsage()
     Console.Error.WriteLine("  LS_APPSECRETKEY    LS OpenAPI app secret key (required).");
     Console.Error.WriteLine("  LS_MARKET          'real' or 'virtual' (default: virtual).");
     Console.Error.WriteLine("  LS_BASEURL         Override REST base URL (optional).");
+    Console.Error.WriteLine("  LS_LOG_LEVEL       Minimum log level: Trace|Debug|Information|Warning|Error|Critical|None (default: Information).");
     return 0;
 }
 
