@@ -24,7 +24,12 @@ namespace RedoxNet.LsOpenApi.Core.Http;
 /// </remarks>
 public sealed class LsApiClient
 {
-    static readonly MediaTypeHeaderValue JsonContentType = MediaTypeHeaderValue.Parse("application/json; charset=utf-8");
+    // LS Cloud rejects any Content-Type that carries a charset parameter
+    // (error IGW00133 — "Content-Type이 유효하지 않습니다"). Their gateway
+    // tightened the check sometime around 2026-05; bare media types only.
+    // FormUrlEncodedContent in the token issuer already defaults to no
+    // charset, so only the TR-side content-type needed fixing.
+    static readonly MediaTypeHeaderValue JsonContentType = new("application/json");
 
     readonly HttpClient _httpClient;
     readonly LsApiOptions _options;
