@@ -1,4 +1,4 @@
-"""Local smoke test for portfolio MCP tools.
+"""Local smoke test for v0.5 portfolio MCP tools.
 
 Spawns the MCP stdio server with an isolated SQLite DB. When LS
 credentials are available (env vars or the .env.local at ENV_LOCAL_PATH
@@ -18,6 +18,13 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+# Force UTF-8 on stdout so Korean and the ≈ character render on Windows consoles.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except AttributeError:
+    pass
 
 REPO = Path(__file__).resolve().parent.parent
 PROJECT = REPO / "src" / "RedoxNet.Mcp.LsOpenApi" / "RedoxNet.Mcp.LsOpenApi.csproj"
@@ -40,7 +47,6 @@ def mask(value):
 
 
 def load_dotenv(path):
-    """Parse a simple KEY=VALUE file. Lines starting with # are skipped."""
     result = {}
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
@@ -183,166 +189,182 @@ def main():
         print(f"[init] {si['name']} v{si['version']}")
         client.notify("notifications/initialized")
 
-        # --- account ---
-        print("\n[account]")
-        acc = client.call_tool("ls_account_get")
-        check("account_get → seeded default",
-              acc.get("account_no") == "UNSET" and acc.get("nickname") == "기본 계좌",
-              json.dumps(acc, ensure_ascii=False))
+        # --- empty state ---
+        print("\n[empty state]")
+        accs = client.call_tool("ls_accounts_list")
+        check("accounts_list empty initially", isinstance(accs, list) and len(accs) == 0, f"{accs}")
 
-        acc2 = client.call_tool("ls_account_set", {"account_no": "12345678-01", "nickname": "테스트"})
-        check("account_set persists changes",
-              acc2.get("account_no") == "12345678-01" and acc2.get("nickname") == "테스트",
-              json.dumps(acc2, ensure_ascii=False))
+        default = client.call_tool("ls_account_get")
+        check("account_get null when no accounts", default is None, f"{default}")
 
-        # --- watchlist groups ---
-        print("\n[watchlist groups]")
-        groups = client.call_tool("ls_watchlist_groups_list")
-        check("groups_list shows seeded 'default'",
-              isinstance(groups, list) and any(g.get("name") == "default" for g in groups),
-              f"{len(groups) if isinstance(groups, list) else '?'} groups")
+        hl_empty = client.call_tool("ls_holdings_list")
+        check("holdings_list empty when no accounts", hl_empty.get("accounts") == [], f"{hl_empty}")
 
-        created = client.call_tool("ls_watchlist_group_create", {"name": "semis", "description": "반도체"})
-        check("group_create semis",
-              created.get("name") == "semis" and created.get("description") == "반도체",
-              json.dumps(created, ensure_ascii=False))
+        empty_set = client.call_tool("ls_holdings_set", {"shcode": "005930", "quantity": 10, "avg_price": 70000})
+        check("holdings_set RequiresAccount when no accounts",
+              empty_set.get("error") == "RequiresAccount",
+              json.dumps(empty_set, ensure_ascii=False))
 
-        # --- watchlist items ---
-        print("\n[watchlist items]")
-        a1 = client.call_tool("ls_watchlist_add", {"shcode": "005930", "group_name": "semis", "note": "core"})
-        check("watchlist_add 005930 → semis",
-              a1.get("shcode") == "005930" and a1.get("group_name") == "semis" and a1.get("note") == "core",
-              json.dumps(a1, ensure_ascii=False))
+        # --- account upsert ---
+        print("\n[account upsert]")
+        hantoo = client.call_tool("ls_account_upsert", {"account_number": "12345-01", "nickname": "한투", "broker": "한국투자"})
+        check("upsert 한투 auto-promotes to default",
+              hantoo.get("nickname") == "한투" and hantoo.get("is_default") is True,
+              json.dumps(hantoo, ensure_ascii=False))
 
-        a2 = client.call_tool("ls_watchlist_add", {"shcode": "000660", "group_name": "semis"})
-        check("watchlist_add 000660 → semis",
-              a2.get("shcode") == "000660",
-              json.dumps(a2, ensure_ascii=False))
+        kb = client.call_tool("ls_account_upsert", {"account_number": "67890-22", "nickname": "KB ISA", "broker": "KB증권"})
+        check("upsert KB ISA does not displace default",
+              kb.get("is_default") is False,
+              json.dumps(kb, ensure_ascii=False))
 
-        listed = client.call_tool("ls_watchlist_list", {"group_name": "semis"})
-        sub = (listed.get("groups") or [{}])[0]
-        items = sub.get("items") or []
-        if live:
-            quoted = [i for i in items if i.get("quote") is not None]
-            check("watchlist_list semis: 2 items, all with live quotes",
-                  len(items) == 2 and len(quoted) == 2 and listed.get("quote_error") is None,
-                  f"{len(items)} items, {len(quoted)} quoted, quote_error={listed.get('quote_error')!r}")
-            if quoted:
-                q = quoted[0].get("quote") or {}
-                check("watchlist_list quote populates price/name/timestamp",
-                      isinstance(q.get("price"), int) and q.get("price") > 0
-                      and quoted[0].get("name") and not quoted[0].get("name", "").isdigit()
-                      and q.get("timestamp"),
-                      f"{quoted[0].get('name')!r} price={q.get('price')} ts={q.get('timestamp')}")
-        else:
-            check("watchlist_list semis returns 2 items, quote_error set (no creds)",
-                  len(items) == 2 and listed.get("quote_error") is not None,
-                  f"{len(items)} items, quote_error={listed.get('quote_error')!r}")
+        dup_nick = client.call_tool("ls_account_upsert", {"account_number": "99999-99", "nickname": "한투", "broker": "X"})
+        check("nickname collision returns ValidationError",
+              dup_nick.get("error") == "ValidationError",
+              json.dumps(dup_nick, ensure_ascii=False))
 
-        listed_all = client.call_tool("ls_watchlist_list")
-        names = [g.get("name") for g in (listed_all.get("groups") or [])]
-        check("watchlist_list (no group) includes default+semis",
-              "default" in names and "semis" in names,
-              f"groups={names}")
+        accs2 = client.call_tool("ls_accounts_list")
+        check("accounts_list shows 2 accounts", isinstance(accs2, list) and len(accs2) == 2, f"{len(accs2)} accounts")
 
-        rem = client.call_tool("ls_watchlist_remove", {"shcode": "000660", "group_name": "semis"})
-        check("watchlist_remove 000660 → removed=true",
-              rem.get("removed") is True,
-              json.dumps(rem))
+        switched = client.call_tool("ls_account_set_default", {"account": "KB ISA"})
+        check("set_default by nickname",
+              switched.get("is_default") is True and switched.get("nickname") == "KB ISA",
+              json.dumps(switched, ensure_ascii=False))
+        # switch back for the rest of the smoke
+        client.call_tool("ls_account_set_default", {"account": "한투"})
 
-        bad = client.call_tool("ls_watchlist_add", {"shcode": "12X", "group_name": "semis"})
-        check("watchlist_add rejects malformed shcode",
-              "error" in bad,
-              json.dumps(bad, ensure_ascii=False))
+        # --- holdings set/buy/sell on single account fallback ---
+        print("\n[holdings basic - 한투 only via fallback after explicit target]")
+        first_buy = client.call_tool("ls_holdings_buy", {"shcode": "005930", "quantity": 10, "price": 70000, "account": "한투"})
+        check("buy first time records position",
+              first_buy.get("quantity") == 10 and first_buy.get("avg_price") == 70000 and first_buy.get("applied_to", {}).get("nickname") == "한투",
+              json.dumps(first_buy, ensure_ascii=False))
 
-        # --- group delete ---
-        print("\n[group delete]")
-        d1 = client.call_tool("ls_watchlist_group_delete", {"name": "semis"})
-        check("group_delete cascades 1 remaining item",
-              d1.get("deleted") is True and d1.get("cascaded_items") == 1,
-              json.dumps(d1))
+        weighted = client.call_tool("ls_holdings_buy", {"shcode": "005930", "quantity": 5, "price": 80000, "account": "한투"})
+        expected_avg = (10*70000 + 5*80000) / 15
+        check("buy merges weighted average",
+              weighted.get("quantity") == 15 and abs(weighted.get("avg_price", 0) - expected_avg) < 1,
+              f"qty={weighted.get('quantity')}, avg={weighted.get('avg_price')!r} expected≈{expected_avg:.2f}")
 
-        d2 = client.call_tool("ls_watchlist_group_delete", {"name": "no-such"})
-        check("group_delete missing → deleted=false, cascaded=0",
-              d2.get("deleted") is False and d2.get("cascaded_items") == 0,
-              json.dumps(d2))
+        zero_set = client.call_tool("ls_holdings_set", {"shcode": "005930", "quantity": 0, "avg_price": 50000, "account": "한투"})
+        check("set quantity=0 → ValidationError",
+              zero_set.get("error") == "ValidationError",
+              json.dumps(zero_set, ensure_ascii=False))
 
-        # --- sectors ---
-        print("\n[sectors]")
-        s1 = client.call_tool("ls_watched_sectors_add", {"sector_code": "0012", "sector_name": "반도체 장비"})
-        check("sector_add 0012",
-              s1.get("sector_code") == "0012",
-              json.dumps(s1, ensure_ascii=False))
+        # --- multi-account same symbol → ambiguity ---
+        print("\n[ambiguity - same symbol two accounts]")
+        kb_buy = client.call_tool("ls_holdings_buy", {"shcode": "005930", "quantity": 4, "price": 90000, "account": "KB ISA"})
+        check("buy on KB ISA",
+              kb_buy.get("applied_to", {}).get("nickname") == "KB ISA",
+              json.dumps(kb_buy, ensure_ascii=False))
 
-        sl = client.call_tool("ls_watched_sectors_list")
-        sitems = sl.get("items") or []
-        if live:
-            row = next((i for i in sitems if i.get("sector_code") == "0012"), None)
-            check("sector_list returns 0012 with t1531 change_pct",
-                  row is not None and (row.get("quote") or {}).get("change_pct") is not None and sl.get("quote_error") is None,
-                  f"quote={row.get('quote') if row else None}, quote_error={sl.get('quote_error')!r}")
-        else:
-            check("sector_list returns 0012, quote_error set",
-                  any(i.get("sector_code") == "0012" for i in sitems) and sl.get("quote_error") is not None,
-                  f"{len(sitems)} items, quote_error={sl.get('quote_error')!r}")
+        ambig_sell = client.call_tool("ls_holdings_sell", {"shcode": "005930", "quantity": 1})
+        check("sell without account → AmbiguousAccount",
+              ambig_sell.get("error") == "AmbiguousAccount" and len(ambig_sell.get("candidates", [])) == 2,
+              json.dumps(ambig_sell, ensure_ascii=False))
 
-        s2 = client.call_tool("ls_watched_sectors_remove", {"sector_code": "0012"})
-        check("sector_remove 0012",
-              s2.get("removed") is True,
-              json.dumps(s2))
+        # --- ambiguity does not fire for writes that target an existing single-symbol account ---
+        targeted_sell = client.call_tool("ls_holdings_sell", {"shcode": "005930", "quantity": 5, "account": "한투"})
+        check("targeted sell on 한투 reduces quantity",
+              targeted_sell.get("quantity") == 10 and targeted_sell.get("applied_to", {}).get("nickname") == "한투",
+              json.dumps(targeted_sell, ensure_ascii=False))
 
-        # --- holdings ---
-        print("\n[holdings]")
-        h1 = client.call_tool("ls_holdings_add", {"shcode": "005930", "quantity": 10, "avg_price": 70000, "note": "first"})
-        check("holdings_add 005930 x10 @ 70000",
-              h1.get("shcode") == "005930" and h1.get("quantity") == 10 and h1.get("avg_price") == 70000,
-              json.dumps(h1, ensure_ascii=False))
+        over_sell = client.call_tool("ls_holdings_sell", {"shcode": "005930", "quantity": 999, "account": "한투"})
+        check("over-sell → InsufficientQuantity",
+              over_sell.get("error") == "InsufficientQuantity" and over_sell.get("current_quantity") == 10,
+              json.dumps(over_sell, ensure_ascii=False))
 
-        h2 = client.call_tool("ls_holdings_update", {"shcode": "005930", "quantity": 12, "avg_price": 71000})
-        check("holdings_update qty=12 avg=71000",
-              h2.get("quantity") == 12 and h2.get("avg_price") == 71000,
-              json.dumps(h2))
-
+        # --- list grouped ---
+        print("\n[list grouped]")
         hl = client.call_tool("ls_holdings_list")
-        hitems = hl.get("items") or []
-        check("holdings_list returns 1 item with cost summary",
-              len(hitems) == 1 and hl.get("summary", {}).get("total_cost") == 12 * 71000,
-              f"summary={hl.get('summary')}, quote_error={hl.get('quote_error')!r}")
+        accounts = hl.get("accounts") or []
+        check("holdings_list returns both accounts grouped",
+              len(accounts) == 2 and all("holdings" in a and "summary" in a for a in accounts),
+              f"{[a['nickname'] for a in accounts]}")
+        ts = hl.get("total_summary") or {}
+        # 한투: 10주 @ avg, KB: 4주 @ 90000
+        expected_total_cost = 10 * expected_avg + 4 * 90000
+        check("total_summary cost_basis aggregates",
+              abs(ts.get("cost_basis", 0) - expected_total_cost) < 1,
+              f"cost_basis={ts.get('cost_basis')}, expected≈{expected_total_cost:.2f}")
 
-        if hitems:
-            row = hitems[0]
-            if live:
-                check("holdings_list name populated from live quote",
-                      isinstance(row.get("name"), str) and not row.get("name", "").isdigit(),
-                      f"name={row.get('name')!r}")
-                check("holdings_list pnl/current_value/total_value computed",
-                      row.get("current_value") is not None
-                      and row.get("pnl") is not None
-                      and row.get("pnl_pct") is not None
-                      and hl.get("summary", {}).get("total_value") is not None,
-                      f"current_value={row.get('current_value')} pnl={row.get('pnl')} summary={hl.get('summary')}")
-            else:
-                check("holdings_list name is null without quote",
-                      row.get("name") is None,
-                      f"name={row.get('name')!r}, quote={row.get('quote') is not None}")
-                check("holdings_list pnl fields null without quote",
-                      row.get("current_value") is None and row.get("pnl") is None and row.get("pnl_pct") is None,
-                      f"current_value={row.get('current_value')} pnl={row.get('pnl')} pnl_pct={row.get('pnl_pct')}")
+        if live:
+            for acc in accounts:
+                for h in acc.get("holdings", []):
+                    if h.get("quote"):
+                        break
+            check("live quote enriches at least one row",
+                  any(h.get("quote") for acc in accounts for h in acc.get("holdings", [])),
+                  f"quote_error={hl.get('quote_error')}")
+        else:
+            check("offline list returns quote_error",
+                  hl.get("quote_error") is not None,
+                  f"quote_error={hl.get('quote_error')!r}")
 
-        hr = client.call_tool("ls_holdings_remove", {"shcode": "005930"})
-        check("holdings_remove",
-              hr.get("removed") is True,
-              json.dumps(hr))
+        # --- corporate actions ---
+        print("\n[corporate actions]")
+        split = client.call_tool("ls_holdings_split", {"shcode": "005930", "ratio": 2})
+        applied = split.get("applied_to") or []
+        check("split with no account applies to all holders",
+              len(applied) == 2 and all(r["after"]["quantity"] == r["before"]["quantity"] * 2 for r in applied),
+              json.dumps([{a["account"]["nickname"]: a["after"]["quantity"]} for a in applied], ensure_ascii=False))
 
-        hr2 = client.call_tool("ls_holdings_remove", {"shcode": "005930"})
-        check("holdings_remove (already gone) → removed=false",
-              hr2.get("removed") is False,
-              json.dumps(hr2))
+        # 7 shares before reverse_split, ratio=3 should fail divisibility
+        client.call_tool("ls_holdings_set", {"shcode": "000660", "quantity": 7, "avg_price": 100000, "account": "한투"})
+        bad_rev = client.call_tool("ls_holdings_reverse_split", {"shcode": "000660", "ratio": 3, "account": "한투"})
+        check("reverse_split non-divisible → ValidationError",
+              bad_rev.get("error") == "ValidationError",
+              json.dumps(bad_rev, ensure_ascii=False))
 
-        hu = client.call_tool("ls_holdings_update", {"shcode": "999999", "quantity": 1})
-        check("holdings_update missing → error envelope",
-              "error" in hu,
-              json.dumps(hu, ensure_ascii=False))
+        client.call_tool("ls_holdings_remove", {"shcode": "000660", "account": "한투"})
+
+        # --- account remove cascade confirm ---
+        print("\n[account remove]")
+        rm_kb_unsafe = client.call_tool("ls_account_remove", {"account": "KB ISA", "confirm": False})
+        check("remove account w/ holdings & confirm=false → RequiresConfirmation",
+              rm_kb_unsafe.get("error") == "RequiresConfirmation" and rm_kb_unsafe.get("holding_count", 0) > 0,
+              json.dumps(rm_kb_unsafe, ensure_ascii=False))
+
+        rm_kb_ok = client.call_tool("ls_account_remove", {"account": "KB ISA", "confirm": True})
+        check("remove account w/ confirm=true cascades",
+              rm_kb_ok.get("removed") is True and rm_kb_ok.get("cascaded_holdings") > 0,
+              json.dumps(rm_kb_ok, ensure_ascii=False))
+
+        # Now remove 한투 (default) and verify auto-succession to a fresh account
+        client.call_tool("ls_account_upsert", {"account_number": "NEW-01", "nickname": "신계좌"})
+        rm_default = client.call_tool("ls_account_remove", {"account": "한투", "confirm": True})
+        check("remove default cascades and auto-promotes another account",
+              rm_default.get("removed") is True and rm_default.get("new_default", {}).get("nickname") == "신계좌",
+              json.dumps(rm_default, ensure_ascii=False))
+
+        # --- broker rename ---
+        print("\n[broker rename]")
+        client.call_tool("ls_account_upsert", {"account_number": "NEW-02", "nickname": "신계좌2", "broker": "X증권"})
+        client.call_tool("ls_account_upsert", {"account_number": "NEW-03", "nickname": "신계좌3", "broker": "X증권"})
+        renamed = client.call_tool("ls_broker_rename", {"from": "X증권", "to": "X증권 (renamed)"})
+        check("broker_rename affects matching rows",
+              renamed.get("accounts_affected") == 2 and renamed.get("to") == "X증권 (renamed)",
+              json.dumps(renamed, ensure_ascii=False))
+
+        # --- watchlist group rename ---
+        print("\n[watchlist group rename]")
+        client.call_tool("ls_watchlist_group_create", {"name": "semis"})
+        ren = client.call_tool("ls_watchlist_group_rename", {"old_name": "semis", "new_name": "semiconductors"})
+        check("group rename succeeds",
+              ren.get("new_name") == "semiconductors",
+              json.dumps(ren, ensure_ascii=False))
+
+        client.call_tool("ls_watchlist_group_create", {"name": "bio"})
+        clash = client.call_tool("ls_watchlist_group_rename", {"old_name": "bio", "new_name": "semiconductors"})
+        check("group rename to existing → ValidationError",
+              clash.get("error") == "ValidationError",
+              json.dumps(clash, ensure_ascii=False))
+
+        # --- validation ---
+        print("\n[validation]")
+        bad = client.call_tool("ls_watchlist_add", {"shcode": "12X", "group_name": "default"})
+        check("watchlist_add rejects malformed shcode",
+              bad.get("error") == "ValidationError",
+              json.dumps(bad, ensure_ascii=False))
 
     finally:
         client.close()
