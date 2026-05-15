@@ -11,7 +11,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 
-    <Version>0.4.0</Version>
+    <Version>0.5.0</Version>
     <PackageId>RedoxNet.LsOpenApi.Core</PackageId>
     <Authors>Jong Hyun Kim</Authors>
     <Company>RedoxNet</Company>
@@ -24,7 +24,7 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
 	<PackageIcon>icon.png</PackageIcon>
     <Copyright>Copyright (c) 2026 RedoxNet</Copyright>
-    <PackageReleaseNotes>v0.4.0: Adds AnalyticalSummary + AnalyticalSummaryBuilder (compact model-facing chart snapshot — MA snapshots, MA60 deviation and slope via least-squares fit, drawdown from peak, change %, bounded key-turn list, per-indicator IndicatorCoverage with status + human-readable note) and a threshold-reversal ZigZag swing detector (Percent or ATR-multiple modes, strict peak/trough alternation, trailing tentative pivot). Additive — the existing public surface is unchanged. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Core.md for full notes.</PackageReleaseNotes>
+    <PackageReleaseNotes>v0.5.0: Embedded TR catalog grows to 18 entries with t1531 (테마별종목) and t1532 (종목별테마) under /stock/sector — used by the Mcp package's portfolio sector quote enrichment. tmname / tmcode marked optional so an empty input returns the full theme list. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Core.md for full notes.</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>

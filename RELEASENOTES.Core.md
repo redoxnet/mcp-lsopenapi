@@ -1,5 +1,19 @@
 # Release Notes — RedoxNet.LsOpenApi.Core
 
+## v0.5.0 (2026-05-15)
+
+Two theme classification TRs added to the embedded catalog. The Mcp package's portfolio sector quote enrichment depends on `t1531`.
+
+### Added
+
+- **`t1531` (테마별종목)** and **`t1532` (종목별테마)** under `/stock/sector` with full InBlock / OutBlock schemas. `tmname` / `tmcode` on `t1531` are marked optional — an empty input returns the full theme list (LS confirmed behavior).
+
+### Changed
+
+- Catalog count **16 → 18 TRs**.
+
+> Versioned in lockstep with `RedoxNet.Mcp.LsOpenApi` 0.5.0; the public Core surface is unchanged beyond the catalog rows.
+
 ## v0.4.0 (2026-05-15)
 
 A compact analytical-summary builder + ZigZag swing detector. Additive — the existing public surface is unchanged; the MCP server in 0.4.0 builds on this layer.
