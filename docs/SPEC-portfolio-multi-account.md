@@ -24,23 +24,31 @@ v0.4까지 portfolio 모듈은 단일 계좌 가정으로 출시됐다. 실 사�
 | 2 | account 식별은 nickname + account_number 양쪽 수용, 둘 다 오면 account_number 우선 | 사용자는 대부분 nickname 멘탈모델 ("주식1", "ISA") |
 | 3 | broker는 free text, `ls_broker_rename(from, to)`로 일괄 갱신 | 같은 broker_name의 모든 계좌 nickname 머지 시 충돌 검사 |
 | 4 | `is_default` 컬럼 유지, 정확히 0 또는 1개. 0개 상태도 허용 | 마지막 계좌 삭제 시 default도 자연스럽게 해제 |
-| 5 | Ambiguity 정책: 읽기는 폴백, 쓰기는 명시 요구 | 표 2.2 참조 |
+| 5 | Ambiguity 정책: 읽기는 폴백, 쓰기는 1개=auto+echo / 2개+=error | 표 2.1 참조. soft 정책 + 응답 명시성으로 안전망 |
 | 6 | `ls_holdings_list` 응답은 **항상 grouped** | `accounts:[…]` + `total_summary`. 단일 계좌는 길이 1 |
 | 7 | `ls_account_remove`는 2단계 confirm | 보유종목 있으면 `RequiresConfirmation` 에러, `cascade=true`로 재호출 |
 | 8 | holdings 도구를 3개로 분리 | `_set` (replace), `_buy` (incremental merge), `_sell` (incremental subtract) |
 | 9 | 분할/증자 도구 3개 | `_split`, `_reverse_split`, `_bonus`. account 미지정 시 해당 종목 보유한 모든 계좌 일괄 적용 |
 | 10 | 의심 가격 차이 경고 | list 응답에 `\|current_price/avg_price - 1\| > 5`면 분할 가능성 warning 부착 |
+| 11 | 모든 쓰기 응답에 `applied_to` 에코 | 1개 폴백/일괄 적용 시 어느 계좌(들)에 들어갔는지 응답에 명시. soft ambiguity의 안전망 |
+| 12 | default 자동 승계 | default 계좌 삭제 시 가장 오래된 다른 계좌(id ASC)가 자동 default로. 불변량: 계좌 ≥1이면 default 정확히 1개 |
+| 13 | `_set(quantity=0)` 거부 | `ValidationError` + "remove 도구를 사용하세요" 안내. `_sell`은 new_qty=0이면 auto-remove |
 
 ### 2.1 Ambiguity 매트릭스
 
 | 도구 | 0개 계좌 | 1개 | 2개+ |
 |---|---|---|---|
 | `ls_holdings_list`, `ls_accounts_list` | 빈 응답 | auto | grouped (default 우선) |
-| `ls_holdings_set` / `_buy` | error `RequiresAccount` | auto (1개로 폴백) | error `AmbiguousAccount` |
-| `ls_holdings_sell` / `_update`* / `_remove` | error | 명시 권장, auto | error `AmbiguousAccount` |
-| `ls_holdings_split` / `_reverse_split` / `_bonus` | n/a | auto | account 미지정 시 **해당 종목 보유한 모든 계좌**에 일괄 |
+| `ls_holdings_set` / `_buy` | error `RequiresAccount` | auto + echo | error `AmbiguousAccount` |
+| `ls_holdings_sell` / `_remove` | error `RequiresAccount` | auto + echo | error `AmbiguousAccount` |
+| `ls_holdings_split` / `_reverse_split` / `_bonus` | n/a | auto + echo | account 미지정 시 **해당 종목 보유한 모든 계좌**에 일괄 + echo |
 
-*v0.5에서는 `_set`/`_buy`/`_sell`이 `_update`를 대체.
+모든 쓰기 도구는 1개 폴백/일괄 적용 시 응답에 `applied_to`로 어느 계좌(들)에 적용됐는지 echo (§4.4 참조). 2개+ 상태에서 `account` 미지정 → `AmbiguousAccount` error. v0.4의 `_update`는 v0.5에서 `_set`/`_buy`/`_sell`이 대체.
+
+추가 검증 에러:
+- `_set(quantity=0)` → `ValidationError` ("0주는 remove 도구 사용"). `_sell`이 new_qty=0이면 auto-remove.
+- `_sell(quantity > current)` → `InsufficientQuantity` error.
+- `_reverse_split`의 ratio가 quantity를 나누어 떨어뜨리지 못하면 → `ValidationError`.
 
 ### 2.2 에러 envelope
 
@@ -55,7 +63,18 @@ v0.4까지 portfolio 모듈은 단일 계좌 가정으로 출시됐다. 실 사�
 }
 ```
 
-`AccountNotFound`, `RequiresAccount`, `RequiresConfirmation`도 동일 envelope. `candidates`는 항상 현재 계좌 목록 동봉 → LLM이 정정 호출에 사용.
+`AccountNotFound`, `RequiresAccount`, `RequiresConfirmation`, `InsufficientQuantity`, `ValidationError`도 동일 envelope (`candidates` 또는 도메인별 hint 필드 포함). `candidates`는 항상 현재 계좌 목록 동봉 → LLM이 정정 호출에 사용.
+
+`InsufficientQuantity` 예시:
+```json
+{
+  "error": "InsufficientQuantity",
+  "message": "Cannot sell 15 shares of '005930'; current quantity is 12.",
+  "current_quantity": 12,
+  "requested_quantity": 15,
+  "applied_to": { "account_number": "12345-01", "nickname": "한투" }
+}
+```
 
 ## 3. 데이터 모델
 
@@ -79,7 +98,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_nickname ON accounts(nickname);
 ### 3.3 무결성 제약
 
 - 정확히 0 또는 1개 row가 `is_default = 1` (애플리케이션 레벨에서 보장)
-- 마지막 계좌 삭제 시 default는 자동으로 0개가 됨
+- 계좌 ≥1개면 default 정확히 1개라는 불변량 유지 — default 계좌 삭제 시 **id ASC**로 가장 오래된 다른 계좌가 자동 default 승계
+- 마지막 계좌 삭제 시에만 default는 0개가 됨
 - 계좌 추가 시 (a) 기존 default가 없으면 자동 default (b) `set_default=true`로 명시하면 기존 default 해제
 
 ## 4. 도구 surface
@@ -91,7 +111,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_nickname ON accounts(nickname);
 | `ls_accounts_list` | — | 모든 계좌 + 보유종목 카운트 + default 표시. 0개면 빈 배열 |
 | `ls_account_upsert` | `account_number`, `nickname`, `broker`, `set_default?=false` | account_number 기준 upsert. nickname 충돌 시 에러 |
 | `ls_account_set_default` | `account` (nickname 또는 account_number) | is_default 토글. 트랜잭션 |
-| `ls_account_remove` | `account`, `confirm?=false` | 보유종목 0개면 즉시 삭제. 1+이면 `RequiresConfirmation` 에러 + 카운트/평가금액. confirm=true면 cascade |
+| `ls_account_remove` | `account`, `confirm?=false` | 보유종목 0개면 즉시 삭제. 1+이면 `RequiresConfirmation` 에러 + 카운트/평가금액. confirm=true면 cascade. 삭제 대상이 default였고 다른 계좌가 남으면 id ASC로 자동 승계 |
 | `ls_broker_rename` | `from`, `to` | `accounts.broker = to WHERE broker = from`. UNIQUE 위반(머지 대상 nickname 충돌) 시 에러 |
 
 기존 `ls_account_get`은 유지(default 단건 조회). 기존 `ls_account_set`은 제거(개명 X — 의미가 바뀌어서 silent break보다 깨끗한 제거).
@@ -101,9 +121,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_nickname ON accounts(nickname);
 | 도구 | 인자 | 동작 |
 |---|---|---|
 | `ls_holdings_list` | `account?` | grouped 응답. account 필터 시 `accounts` 길이 1 |
-| `ls_holdings_set` | `shcode`, `quantity`, `avg_price`, `note?`, `account?` | replace. 기존 row 있으면 덮어씀 |
+| `ls_holdings_set` | `shcode`, `quantity`, `avg_price`, `note?`, `account?` | replace. 기존 row 있으면 덮어씀. `quantity=0` → `ValidationError` |
 | `ls_holdings_buy` | `shcode`, `quantity`, `price`, `account?` | merge. new_qty = old+qty, new_avg = (old.qty×old.avg + qty×price)/new_qty. 새 행이면 set과 동일 |
-| `ls_holdings_sell` | `shcode`, `quantity`, `account?` | subtract. new_qty = old-qty. avg 유지. new_qty==0이면 row 삭제. old<qty면 error |
+| `ls_holdings_sell` | `shcode`, `quantity`, `account?` | subtract. new_qty = old-qty. avg 유지. new_qty==0이면 row 자동 삭제. quantity > old면 `InsufficientQuantity` |
 | `ls_holdings_remove` | `shcode`, `account?` | 행 완전 삭제 |
 | `ls_holdings_split` | `shcode`, `ratio` (int ≥ 2), `account?` | qty ×= ratio, avg /= ratio. account 미지정 시 보유 모든 계좌 |
 | `ls_holdings_reverse_split` | `shcode`, `ratio` (int ≥ 2), `account?` | qty /= ratio, avg ×= ratio. 나눠 떨어지지 않으면 error (정수 보유 가정) |
@@ -166,6 +186,35 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_nickname ON accounts(nickname);
 
 `warning` 예시: `"분할/무상증자 가능성 (현재가 / 평단 비율 5배 이상)"`. 분할 도구 안내 문자열은 응답 텍스트가 아닌 별도 필드로 분리해 LLM이 자동 라우팅 가능.
 
+#### 4.4.1 쓰기 도구 응답 envelope
+
+`_set` / `_buy` / `_sell` / `_remove` (단일 계좌 적용):
+
+```json
+{
+  "shcode": "005930",
+  "name": "삼성전자",
+  "quantity": 12,
+  "avg_price": 71000,
+  "applied_to": { "account_number": "12345-01", "nickname": "한투" }
+}
+```
+
+`_split` / `_reverse_split` / `_bonus` (다중 계좌 일괄):
+
+```json
+{
+  "shcode": "005930",
+  "ratio": 50,
+  "applied_to": [
+    { "account_number": "12345-01", "nickname": "한투",  "before": { "quantity": 10, "avg_price": 2500000 }, "after": { "quantity": 500, "avg_price": 50000 } },
+    { "account_number": "67890-22", "nickname": "ISA",  "before": { "quantity":  4, "avg_price": 2520000 }, "after": { "quantity": 200, "avg_price": 50400 } }
+  ]
+}
+```
+
+`applied_to`는 모든 쓰기 도구 응답에 반드시 포함된다. soft ambiguity 정책의 안전망 — 사용자가 계좌 미지정으로 호출해도 어디에 적용됐는지 응답에서 즉시 확인 가능.
+
 ## 5. 마이그레이션 영향
 
 - **호스트(MCP 클라이언트)**: 도구 이름이 다수 변경. v0.4→v0.5는 dev preview 구간이라 break 허용.
@@ -198,8 +247,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_nickname ON accounts(nickname);
 
 - **nickname rename 후 LLM이 옛 이름 사용**: `AccountNotFound` 에러 envelope에 `candidates` 동봉으로 자동 정정 유도. 모든 not-found 에러 envelope이 동일 shape.
 - **liability**: `ls_holdings_set`이 의도치 않게 호출되면 기존 매수 이력이 덮어써짐. tool description에 "현재 총량으로 교체 (추가매수는 _buy 사용)" 명시.
-- **분할 시 정수 나누어떨어짐**: `_reverse_split` ratio가 quantity를 정수로 나누지 못하면 error. 예외 처리 필요.
+- **분할 시 정수 나누어떨어짐**: `_reverse_split` ratio가 quantity를 정수로 나누지 못하면 `ValidationError`. 예외 처리 필요.
+- **`_sell` 과매도**: quantity > current면 `InsufficientQuantity`. 부분 매도 후 정확히 0이 되는 케이스만 auto-remove.
+- **soft ambiguity의 오작동 리스크**: 1계좌 자동 폴백이 사용자 의도와 어긋날 가능성. `applied_to` echo가 안전망. 호스트 측에서 응답을 검사하도록 description에 안내.
 - **default 0개 상태**: portfolio_list는 empty 응답, holdings_set은 RequiresAccount. 모든 진입점에서 일관 처리.
+- **default 자동 승계 순서**: id ASC (가장 오래된 계좌). 결정론적이라 테스트 안정성과 사용자 예측 가능성 모두 확보. created_at 동률 시 id로 tiebreak.
 - **WAL 파일 동시성**: 기존 v0.4 패턴 유지. WAL은 init 시 1회만.
 
 ## 8. 테스트 계획
@@ -212,18 +264,22 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_nickname ON accounts(nickname);
 ### 8.2 통합 (portfolio-smoke.py)
 
 기존 24 케이스 + 신규:
-1. 계좌 0개 상태 → holdings_list 빈 응답
-2. ls_account_upsert × 2 → ls_accounts_list 2개
+1. 계좌 0개 상태 → holdings_list 빈 응답, holdings_set → RequiresAccount
+2. ls_account_upsert × 2 → ls_accounts_list 2개, 첫 계좌 자동 default
 3. ls_account_set_default 전환
-4. ls_holdings_buy → 1회: set과 동일, 2회: weighted avg 확인
-5. ls_holdings_sell → quantity 감소, 0이면 자동 삭제
-6. 같은 symbol 두 계좌 등록 → list grouped 응답 확인
-7. _update/_remove on ambiguous symbol → AmbiguousAccount + candidates
-8. ls_holdings_split(005930, 50) → quantity ×50, avg /50, 모든 계좌
-9. ls_account_remove(보유종목 있음, confirm=false) → RequiresConfirmation
-10. ls_account_remove(confirm=true) → cascade 완료
-11. ls_broker_rename → 머지 충돌 시 에러
-12. ls_watchlist_group_rename → 정상 동작 + 충돌 시 에러
+4. ls_holdings_buy → 1회: set과 동일, 2회: weighted avg 확인, 응답 `applied_to` echo
+5. ls_holdings_sell → quantity 감소, 0이면 자동 삭제, quantity > current면 InsufficientQuantity
+6. ls_holdings_set(quantity=0) → ValidationError ("remove 사용")
+7. 같은 symbol 두 계좌 등록 → list grouped 응답 확인
+8. _sell/_remove on ambiguous symbol → AmbiguousAccount + candidates
+9. _set/_buy 1계좌 폴백 → 응답 `applied_to`에 어느 계좌인지 확인
+10. ls_holdings_split(005930, 50) → quantity ×50, avg /50, 모든 계좌, `applied_to` 배열에 before/after
+11. ls_holdings_reverse_split 나누어떨어지지 않는 케이스 → ValidationError
+12. ls_account_remove(보유종목 있음, confirm=false) → RequiresConfirmation
+13. ls_account_remove(default 계좌, confirm=true, 다른 계좌 존재) → cascade + id ASC 자동 승계
+14. ls_account_remove(마지막 계좌) → 정상 삭제, default 0개 상태 진입
+15. ls_broker_rename → 머지 충돌 시 에러
+16. ls_watchlist_group_rename → 정상 동작 + 충돌 시 에러
 
 ### 8.3 E2E (수동)
 
