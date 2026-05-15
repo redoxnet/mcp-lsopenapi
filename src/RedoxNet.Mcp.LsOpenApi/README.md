@@ -96,7 +96,7 @@ directly in the conversation.
 | `LS_MARKET` | no | `real` or `virtual` (default `virtual`). |
 | `LS_BASEURL` | no | Override REST base URL (rarely needed). |
 
-Credentials are accepted **only** through the process environment — never through chat, tool arguments, or MCP elicitation. See [ADR-001](https://github.com/redoxnet/mcp-lsopenapi/blob/main/docs/ADR-001-credential-management.md) for the rationale.
+Credentials are accepted **only** through the process environment — never through chat, tool arguments, or MCP elicitation. Prompting for them in conversation would either log them or train callers to share them in transcripts, so that input path is intentionally closed off.
 
 ## Tools (v0.3.0)
 

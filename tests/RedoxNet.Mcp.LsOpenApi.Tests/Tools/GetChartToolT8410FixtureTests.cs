@@ -59,7 +59,8 @@ public class GetChartToolT8410FixtureTests
     {
         var (client, handler) = TestClientFactory.Create((_, _) => Ok(TestbedT8410Response));
 
-        string result = await GetChartTool.GetChart(client, "078020", "day", count: 1).TextContent();
+        string result = await GetChartTool.GetChart(
+            client, "078020", "day", count: 1, output_mode: "export").TextContent();
 
         handler.Requests[0].RequestUri!.AbsolutePath.Should().Be("/stock/chart");
         handler.Requests[0].Headers.GetValues("tr_cd").Should().ContainSingle().Which.Should().Be("t8410");
@@ -125,15 +126,16 @@ public class GetChartToolT8410FixtureTests
     [Fact]
     public async Task GetChart_WithLongPeriodIndicator_FetchesWarmupAndTrimsToCount()
     {
-        // count=60 + ma:60 must fetch 60 warm-up candles ahead of the display
-        // window so the ma:60 series is populated across every displayed bar.
+        // count=60 + ma:60 + the analytical summary's day warm-up (240) means the
+        // fetch is padded to count + max(indicator warm-up, summary warm-up) = 300,
+        // so both the ma:60 series and the summary's long MAs are populated.
         var (client, handler) = TestClientFactory.Create((_, _) => Ok(BuildT8410Response(130)));
 
         string result = await GetChartTool.GetChart(
-            client, "078020", "day", count: 60, indicators: new[] { "ma:60" }).TextContent();
+            client, "078020", "day", count: 60, indicators: new[] { "ma:60" }, output_mode: "export").TextContent();
 
         string sent = await handler.Requests[0].Content!.ReadAsStringAsync();
-        sent.Should().Contain("\"qrycnt\":120");
+        sent.Should().Contain("\"qrycnt\":300");
 
         JsonElement root = JsonDocument.Parse(result).RootElement;
         root.GetProperty("count").GetInt32().Should().Be(60);
@@ -146,14 +148,71 @@ public class GetChartToolT8410FixtureTests
     }
 
     [Fact]
-    public async Task GetChart_NoIndicators_DoesNotPadTheFetch()
+    public async Task GetChart_NoIndicators_StillPadsFetchForSummaryWarmup()
     {
+        // Even with no indicators, the fetch is padded by the analytical summary's
+        // day warm-up (240) so its long MAs / slope / 1Y change stay populated:
+        // count(60) + summary warm-up(240) = 300.
         var (client, handler) = TestClientFactory.Create((_, _) => Ok(BuildT8410Response(130)));
 
         await GetChartTool.GetChart(client, "078020", "day", count: 60);
 
         string sent = await handler.Requests[0].Content!.ReadAsStringAsync();
-        sent.Should().Contain("\"qrycnt\":60");
+        sent.Should().Contain("\"qrycnt\":300");
+    }
+
+    [Fact]
+    public async Task GetChart_WithWarmupTrue_PadsEvenWithExplicitFrom()
+    {
+        // Default policy would skip summary warm-up when `from` is explicit, but
+        // with_warmup=true forces it so long-period indicators stay populated.
+        var (client, handler) = TestClientFactory.Create((_, _) => Ok(BuildT8410Response(130)));
+
+        await GetChartTool.GetChart(
+            client, "078020", "day", count: 5,
+            from: "20240101", to: "20240601", with_warmup: true);
+
+        string sent = await handler.Requests[0].Content!.ReadAsStringAsync();
+        sent.Should().Contain("\"qrycnt\":245");
+    }
+
+    [Fact]
+    public async Task GetChart_WithWarmupFalse_SkipsSummaryPadEvenWithoutFrom()
+    {
+        // Default policy would pad when `from` is null, but with_warmup=false
+        // forces the fastest, narrowest read.
+        var (client, handler) = TestClientFactory.Create((_, _) => Ok(BuildT8410Response(30)));
+
+        await GetChartTool.GetChart(client, "078020", "day", count: 5, with_warmup: false);
+
+        string sent = await handler.Requests[0].Content!.ReadAsStringAsync();
+        sent.Should().Contain("\"qrycnt\":5");
+    }
+
+    [Fact]
+    public async Task GetChart_CoverageStatusFlagsInsufficientLongIndicators()
+    {
+        // Explicit narrow window — long-period indicators must surface as
+        // insufficient_data and the coverage note must guide the model toward
+        // with_warmup=true.
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(BuildT8410Response(20)));
+
+        string result = await GetChartTool.GetChart(
+            client, "078020", "day", count: 20,
+            from: "20240101", to: "20240130").TextContent();
+
+        JsonElement coverage = JsonDocument.Parse(result).RootElement
+            .GetProperty("summary").GetProperty("coverage");
+
+        coverage.GetProperty("warmup_applied").GetBoolean().Should().BeFalse();
+        coverage.GetProperty("analytical_bar_count").GetInt32().Should().Be(20);
+        coverage.GetProperty("display_bar_count").GetInt32().Should().Be(20);
+
+        JsonElement status = coverage.GetProperty("status");
+        status.GetProperty("MA200").GetString().Should().Be("insufficient_data");
+        status.GetProperty("ma60_slope").GetString().Should().Be("insufficient_data");
+
+        coverage.GetProperty("note").GetString().Should().Contain("with_warmup=true");
     }
 
     [Fact]

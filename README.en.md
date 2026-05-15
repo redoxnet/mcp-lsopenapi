@@ -193,14 +193,38 @@ Pass `include_chart: true` to receive a Plotly v5 JSON spec in the response. Cli
 | `ls_get_multi_quote` | `t8407` | Compact price snapshot for **up to 50 stocks in one call** — price/OHLC/volume/best ask·bid/총잔량/체결강도. Use for side-by-side comparison or watchlists. |
 | `ls_get_top_stocks` | `t1441` / `t1444` / `t1452` / `t1463` / `t1466` | Market-wide screeners — top gainers/losers/unchanged, market cap, volume, trading value, and volume surges. |
 | `ls_get_stock_info` | `t1102` | Company profile + fundamentals: PER/PBR/EPS, quarterly financials and growth rates, 52-week + YTD ranges, top-5 buy/sell brokerages, foreign-investor activity, status flags (SPAC/관리종목). |
-| `ls_get_chart` | `t8410` / `t8412` / `t1301` | OHLCV candles (day/week/month/year/min/tick), optional indicators (SMA, EMA, RSI, MACD, Bollinger), pre-computed analysis context, **multi-timeframe in one call** (`period_type: "day,week,month"`). |
+| `ls_get_chart` | `t8410` / `t8412` / `t1301` | OHLCV charts (day/week/month/year/min/tick), optional indicators (SMA, EMA, RSI, MACD, Bollinger), token-efficient `summary` + `dataset_id`, **multi-timeframe in one call** (`period_type: "day,week,month"`). Raw bars are returned only with `output_mode: "export"`. |
+| `ls_add_indicator` | process-local handle cache + chart TR | Add an indicator to a `dataset_id` and return the updated `summary` / chart spec. Example: "add MA200 too". |
+| `ls_reframe_chart` | process-local handle cache + chart TR | Re-query the same `dataset_id` symbol with a different period/count and update the handle. Example: "switch this to daily for the last 6 months". |
 | `ls_search_stock` | `t8436` | Find KOSPI/KOSDAQ codes by name fragment; surfaces SPAC + 관리종목 flags and an `instrument` filter (`all` / `stock` / `etf`). |
 | `ls_get_etf_info` | `t1901` | ETF/ETN-specific snapshot — NAV, tracking-index value, premium/discount (괴리율), AUM, up to 5 liquidity providers, 52-week + year ranges, related futures. |
 | `ls_get_etf_holdings` | `t1904` | ETF PDF (portfolio deposit file / 구성종목) — per-holding weight, valuation, market cap, plus an ETF summary (NAV/AUM/cash). Heterogeneous holdings (bonds, cash) pass through verbatim. |
 
-### `ls_get_chart` context metadata
+### `ls_get_chart` token-efficient payloads
 
-Every response carries a `context` block of pre-computed analytics so the LLM doesn't have to recompute means / drawdowns / divergences from raw OHLCV. Fields:
+By default, `ls_get_chart` does not place raw OHLCV arrays in the model context. It returns a follow-up `dataset_id`, a compact model-facing `summary`, and the existing `context` block. Raw `candles` and full `indicators` arrays are returned only when the caller explicitly uses `output_mode: "export"` for table/raw/CSV-style requests.
+
+`output_mode`:
+
+- `display` — chart rendering. Text contains `summary`; Plotly spec goes to `structuredContent.chart`.
+- `analyze` — default model reasoning mode. Returns `summary` + `context`, no raw bars.
+- `export` — returns raw OHLCV/indicator arrays. Token-expensive; use only for explicit raw data requests.
+- `reference` — returns `dataset_id` and metadata only for follow-up tool calls.
+
+`summary` includes latest price, period returns, moving-average snapshots, MA60 deviation and slope (a least-squares fit over the MA), drawdown from peak, and a bounded ZigZag key-turn list (`key_turns`). Each turn carries its peak/trough kind, percent change from the previous turn, and a confirmed/tentative flag (`is_confirmed`) — the trailing turn is the in-progress swing's provisional endpoint, not yet reversed past the threshold.
+
+**Warm-up policy and `summary.coverage`** — `summary` is computed over a deeper warm-up window than the display window, so long moving averages, slope, and 1-year return stay populated even when `count` is small. The default policy is "no `from` → auto warm-up; explicit `from` → skip warm-up"; the `with_warmup` parameter overrides it:
+
+| Intent | Call | Behavior |
+|---|---|---|
+| "Recent picture" | omit `from` | Warm-up applied automatically |
+| "Just this window" | explicit `from` | Warm-up skipped |
+| "Trends inside this window" | explicit `from` + `with_warmup=true` | Warm-up forced |
+| "Fastest raw read" | `with_warmup=false` | Warm-up skipped (long indicators may be null) |
+
+`summary.coverage` is present on every response so the model can explain which indicators are null and why. It carries a `warmup_applied` flag, `analytical_bar_count`/`display_bar_count`, and a `status` map where each indicator is one of `ok`/`insufficient_data`/`disabled`. When something is insufficient, `note` carries a one-line hint such as "Narrow window — re-run with `with_warmup=true` or remove the date range to populate them."
+
+The `context` block keeps the existing pre-computed analytics:
 
 - `divergence_from_ma` — latest close vs each `ma:N` / `ema:N` indicator, as a percent.
 - `volume.{latest,avg_20,ratio_20,avg_60,ratio_60}` — volume vs trailing averages.
@@ -210,35 +234,43 @@ Every response carries a `context` block of pre-computed analytics so the LLM do
 
 ### Multi-timeframe in one call
 
-Pass a comma-separated `period_type` and the response wraps a `frames[]` array, one entry per timeframe, each with its own candles / indicators / context:
+Pass a comma-separated `period_type` and the response wraps a `frames[]` array, one compact entry per timeframe. Each frame carries its own `summary` / `context`; use `output_mode: "export"` only when raw bars are needed:
 
 ```jsonc
 // ls_get_chart shcode=005930 period_type="day,week,month" indicators=["ma:5","ma:20","ma:60"]
 {
   "shcode": "005930",
+  "output_mode": "analyze",
+  "dataset_id": "ds_a8f3...",
   "period_types": ["day", "week", "month"],
   "frames": [
-    { "period_type": "day",   "tr_cd": "t8410", "count": 60, "candles": [...], "indicators": {...}, "context": {...} },
-    { "period_type": "week",  "tr_cd": "t8410", "count": 60, "candles": [...], "indicators": {...}, "context": {...} },
-    { "period_type": "month", "tr_cd": "t8410", "count": 60, "candles": [...], "indicators": {...}, "context": {...} }
+    { "period_type": "day",   "tr_cd": "t8410", "count": 60, "summary": {...}, "context": {...} },
+    { "period_type": "week",  "tr_cd": "t8410", "count": 60, "summary": {...}, "context": {...} },
+    { "period_type": "month", "tr_cd": "t8410", "count": 60, "summary": {...}, "context": {...} }
   ]
 }
 ```
 
-A single `period_type` keeps the flat shape (`candles`, `indicators`, `context` at top level) for backward compatibility.
+A single `period_type` keeps the flat shape (`summary`, `context`, `dataset_id` at top level).
 
 ### Rendering charts (`include_chart: true`)
 
-Pass `include_chart: true` and the response carries a Plotly v5 JSON spec under `chart`. The server emits the spec only — no server-side image rendering, no charting library dependency. Clients pass the spec straight to Plotly.js.
+Pass `include_chart: true` or `output_mode: "display"` and the response carries a Plotly v5 JSON spec under `structuredContent.chart`. The spec is a UI side-channel and is not duplicated into the model-facing text. The server emits the spec only — no server-side image rendering, no charting library dependency.
 
 ```jsonc
 // ls_get_chart shcode=005930 period_type=day count=60 indicators=["ma:5","ma:20"] include_chart=true
 {
   "shcode": "005930",
   "period_type": "day",
-  "candles": [...],
-  "indicators": {...},
+  "output_mode": "display",
+  "dataset_id": "ds_a8f3...",
+  "summary": {...},
   "context": {...},
+  "chart_available": true
+}
+
+// structuredContent
+{
   "chart": {
     "type": "plotly",
     "version": "5",
@@ -266,7 +298,7 @@ Korean broker convention: rising candles/bars are red (`#E74C3C`), falling are b
 
 Indicator handling in the chart:
 - `ma:N`, `ema:N`, `bb:N,SD` → drawn as overlays on the price subplot.
-- `rsi:N`, `macd:F,S,Sig` → returned in `indicators` but **not** drawn (they need their own subplot scale; future enhancement).
+- `rsi:N`, `macd:F,S,Sig` → available for computation but **not** drawn (they need their own subplot scale; future enhancement). Full series are returned in text only with `output_mode: "export"`.
 
 Minimal HTML snippet to render the spec with Plotly.js:
 
@@ -279,15 +311,15 @@ Minimal HTML snippet to render the spec with Plotly.js:
 <body>
   <div id="chart" style="width: 900px; height: 500px;"></div>
   <script>
-    // `response` here is the JSON returned by ls_get_chart.
-    const { data, layout } = response.chart.spec;
+    // `structuredContent` here is the UI side-channel returned by ls_get_chart.
+    const { data, layout } = structuredContent.chart.spec;
     Plotly.newPlot("chart", data, layout, { responsive: true });
   </script>
 </body>
 </html>
 ```
 
-Clients that don't embed Plotly.js can ignore the `chart` field — the structured `candles` / `indicators` / `context` payload remains the source of truth.
+Clients that don't embed Plotly.js can ignore `structuredContent.chart` — the text `summary` / `context` payload remains the model-facing source of truth.
 
 ### Indicator specs (for `ls_get_chart`)
 
@@ -320,7 +352,7 @@ dotnet run --project src/RedoxNet.Mcp.LsOpenApi --framework net8.0
 - ✅ M4 — MCP stdio server with 3 meta tools (`ls_search_tr`, `ls_describe_tr`, `ls_call_tr`).
 - ✅ M5 — 8 semantic tools: `ls_get_quote`, `ls_get_multi_quote`, `ls_get_top_stocks`, `ls_get_stock_info`, `ls_get_chart` (+ indicators, context metadata, multi-timeframe, Plotly v5 spec via `include_chart`), `ls_search_stock`, **`ls_get_etf_info`, `ls_get_etf_holdings`**.
 - ✅ Live verified against the LS virtual server (v0.2.0).
-- ⏳ Next release — Realtime (WebSocket), accounts/balances, orders.
+- ⏳ v2.0 — Realtime (WebSocket), accounts/balances, orders.
 
 ## License
 

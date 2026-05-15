@@ -207,14 +207,38 @@ LS증권 OpenAPI를 사용하려면 LS증권에서 발급한 **AppKey**와 **App
 | `ls_get_multi_quote` | `t8407` | **최대 50종목을 한 번에** 비교 — 가격/OHLC/거래량/최우선 매도·매수호가/총잔량/체결강도. 워치리스트 또는 종목 비교용. |
 | `ls_get_top_stocks` | `t1441` / `t1444` / `t1452` / `t1463` / `t1466` | 시장 스크리너 — 상승률/하락률/보합, 시가총액, 거래량, 거래대금, 거래급증 상위 종목. |
 | `ls_get_stock_info` | `t1102` | 기업 프로필 + 펀더멘털: PER/PBR/EPS, 분기별 재무·성장률, 52주 + YTD 범위, 매도·매수 상위 5개 거래원, 외국인 동향, 상태 플래그(SPAC/관리종목). |
-| `ls_get_chart` | `t8410` / `t8412` / `t1301` | OHLCV 캔들(일/주/월/년/분/틱), 선택적 지표(SMA, EMA, RSI, MACD, Bollinger), 사전 계산된 분석 context, **다중 시간프레임 한 번에 조회**(`period_type: "day,week,month"`). |
+| `ls_get_chart` | `t8410` / `t8412` / `t1301` | OHLCV 차트(일/주/월/년/분/틱), 선택적 지표(SMA, EMA, RSI, MACD, Bollinger), 토큰 절약형 `summary` + `dataset_id`, **다중 시간프레임 한 번에 조회**(`period_type: "day,week,month"`). 원시 봉 배열은 `output_mode: "export"`에서만 반환. |
+| `ls_add_indicator` | process-local handle cache + chart TR | `dataset_id`에 지표를 추가하고 업데이트된 `summary` / 차트 spec을 반환. 예: "MA200도 추가해줘". |
+| `ls_reframe_chart` | process-local handle cache + chart TR | 기존 `dataset_id`의 종목을 다른 기간/개수로 다시 조회해 같은 핸들을 갱신. 예: "일봉으로 바꿔서 최근 6개월만". |
 | `ls_search_stock` | `t8436` | 종목명 일부로 KOSPI/KOSDAQ 종목코드 검색; SPAC + 관리종목 플래그 + `instrument` 필터(`all` / `stock` / `etf`). |
 | `ls_get_etf_info` | `t1901` | ETF/ETN 전용 스냅샷 — NAV, 추적기준지수, 괴리율, AUM, LP 5개, 52주/연중 가격 범위, 관련 선물. |
 | `ls_get_etf_holdings` | `t1904` | ETF PDF(구성종목) — 종목별 비중·평가금액·시가총액 + ETF 요약(NAV/AUM/현금). 채권/현금 구성종목도 그대로 통과. |
 
-### `ls_get_chart` 컨텍스트 메타데이터
+### `ls_get_chart` 토큰 절약 응답
 
-모든 응답에는 사전 계산된 분석 결과를 담은 `context` 블록이 포함되어, LLM이 원시 OHLCV에서 평균·드로다운·이격을 다시 계산할 필요가 없습니다. 필드:
+기본 응답은 원시 OHLCV 배열을 모델 컨텍스트에 넣지 않습니다. 대신 후속 호출용 `dataset_id`, 모델 분석용 `summary`, 그리고 기존 `context`를 반환합니다. 원시 `candles` / 전체 `indicators` 배열은 사용자가 표·원본·CSV를 명시적으로 요청한 경우 `output_mode: "export"`에서만 반환됩니다.
+
+`output_mode`:
+
+- `display` — 차트 표시 목적. 텍스트에는 `summary`만, Plotly spec은 `structuredContent.chart`로 전달.
+- `analyze` — 기본 분석 목적. `summary` + `context`, 원시 봉 없음.
+- `export` — 원시 OHLCV/지표 배열 반환. 토큰 비용이 크므로 명시적 데이터 요청에만 사용.
+- `reference` — 후속 도구 호출용 `dataset_id`와 메타데이터만 반환.
+
+`summary`에는 최신가, 기간 수익률, 이동평균 스냅샷, MA60 괴리율/기울기(이동평균에 선형회귀 적합), 고점 대비 낙폭, 그리고 ZigZag로 검출한 변곡점 목록(`key_turns`)이 들어갑니다. 각 변곡점은 고점/저점 종류(`peak`/`trough`), 직전 변곡점 대비 변화율, 확정/잠정 여부(`is_confirmed`)를 가지며 — 목록의 마지막 항목은 아직 임계값만큼 반전하지 않은, 진행 중인 swing의 잠정 끝점입니다.
+
+**워밍업 정책과 `summary.coverage`** — `summary`는 디스플레이 윈도우보다 깊은 워밍업 구간까지 포함해 계산되므로, `count`가 짧아도 장기 이동평균·기울기·1년 수익률이 채워집니다. 기본 정책은 "`from` 미지정 = 자동 워밍업, `from` 명시 = 워밍업 생략"이며, `with_warmup` 파라미터로 강제 켜기/끄기가 가능합니다:
+
+| 사용자 의도 | 호출 | 동작 |
+|---|---|---|
+| "최근 흐름" | `from` 미지정 | 워밍업 자동 적용 |
+| "특정 구간만 표시" | `from` 명시 | 워밍업 생략 |
+| "특정 구간에서 추세도 분석" | `from` 명시 + `with_warmup=true` | 워밍업 강제 |
+| "가장 빠른 원본 읽기" | `with_warmup=false` | 워밍업 생략(장기 지표 null 가능) |
+
+`summary.coverage`는 모든 응답에 포함되며, 어떤 지표가 왜 null인지를 모델이 사용자에게 그대로 전달할 수 있게 합니다. `warmup_applied` 플래그, `analytical_bar_count`/`display_bar_count`, 그리고 `status` 맵(각 지표가 `ok`/`insufficient_data`/`disabled` 중 하나)을 담습니다. 부족한 지표가 있을 때는 `note` 필드에 "좁은 구간이라 장기 지표가 비어 있습니다 — `with_warmup=true`로 다시 부르거나 날짜 범위를 해제하세요" 같은 한 문장이 들어갑니다.
+
+`context` 블록은 기존 사전 계산 분석 결과입니다. 필드:
 
 - `divergence_from_ma` — 마지막 종가 대비 각 `ma:N` / `ema:N` 지표 이격률(%).
 - `volume.{latest,avg_20,ratio_20,avg_60,ratio_60}` — 거래량 대비 이동평균.
@@ -224,35 +248,43 @@ LS증권 OpenAPI를 사용하려면 LS증권에서 발급한 **AppKey**와 **App
 
 ### 다중 시간프레임 한 번에 조회
 
-`period_type`에 쉼표로 구분된 값을 전달하면 응답이 `frames[]` 배열로 감싸지며, 각 시간프레임마다 자체적인 candles / indicators / context를 갖습니다:
+`period_type`에 쉼표로 구분된 값을 전달하면 응답이 `frames[]` 배열로 감싸지며, 각 시간프레임마다 자체적인 `summary` / `context`를 갖습니다. 원시 봉이 필요하면 `output_mode: "export"`를 명시합니다:
 
 ```jsonc
 // ls_get_chart shcode=005930 period_type="day,week,month" indicators=["ma:5","ma:20","ma:60"]
 {
   "shcode": "005930",
+  "output_mode": "analyze",
+  "dataset_id": "ds_a8f3...",
   "period_types": ["day", "week", "month"],
   "frames": [
-    { "period_type": "day",   "tr_cd": "t8410", "count": 60, "candles": [...], "indicators": {...}, "context": {...} },
-    { "period_type": "week",  "tr_cd": "t8410", "count": 60, "candles": [...], "indicators": {...}, "context": {...} },
-    { "period_type": "month", "tr_cd": "t8410", "count": 60, "candles": [...], "indicators": {...}, "context": {...} }
+    { "period_type": "day",   "tr_cd": "t8410", "count": 60, "summary": {...}, "context": {...} },
+    { "period_type": "week",  "tr_cd": "t8410", "count": 60, "summary": {...}, "context": {...} },
+    { "period_type": "month", "tr_cd": "t8410", "count": 60, "summary": {...}, "context": {...} }
   ]
 }
 ```
 
-단일 `period_type`은 호환성을 위해 평탄한 구조(`candles`, `indicators`, `context`가 최상위에 위치)를 유지합니다.
+단일 `period_type`은 평탄한 구조(`summary`, `context`, `dataset_id`가 최상위에 위치)를 사용합니다.
 
 ### 차트 렌더링 (`include_chart: true`)
 
-`include_chart: true`로 호출하면 응답의 `chart` 필드에 Plotly v5 JSON spec이 함께 옵니다. 서버는 spec만 생성하며, 서버 측 이미지 렌더링이나 차트 라이브러리 의존성이 없습니다. 클라이언트는 spec을 그대로 Plotly.js에 전달합니다.
+`include_chart: true` 또는 `output_mode: "display"`로 호출하면 Plotly v5 JSON spec이 `structuredContent.chart`에 함께 옵니다. 이 spec은 UI 렌더링용 side-channel이며 모델이 보는 텍스트에는 포함되지 않습니다. 서버는 spec만 생성하며, 서버 측 이미지 렌더링이나 차트 라이브러리 의존성이 없습니다.
 
 ```jsonc
 // ls_get_chart shcode=005930 period_type=day count=60 indicators=["ma:5","ma:20"] include_chart=true
 {
   "shcode": "005930",
   "period_type": "day",
-  "candles": [...],
-  "indicators": {...},
+  "output_mode": "display",
+  "dataset_id": "ds_a8f3...",
+  "summary": {...},
   "context": {...},
+  "chart_available": true
+}
+
+// structuredContent
+{
   "chart": {
     "type": "plotly",
     "version": "5",
@@ -278,7 +310,7 @@ LS증권 OpenAPI를 사용하려면 LS증권에서 발급한 **AppKey**와 **App
 
 차트의 지표 처리:
 - `ma:N`, `ema:N`, `bb:N,SD` → 가격 서브플롯에 오버레이로 그려집니다.
-- `rsi:N`, `macd:F,S,Sig` → `indicators`에는 포함되지만 **그려지지는 않습니다** (별도 스케일의 서브플롯이 필요하며, 향후 개선 예정).
+- `rsi:N`, `macd:F,S,Sig` → 계산에는 사용할 수 있지만 **그려지지는 않습니다** (별도 스케일의 서브플롯이 필요하며, 향후 개선 예정). 전체 시리즈는 `output_mode: "export"`에서만 텍스트로 반환됩니다.
 
 Plotly.js로 spec을 렌더링하는 최소 HTML 스니펫:
 
@@ -291,15 +323,15 @@ Plotly.js로 spec을 렌더링하는 최소 HTML 스니펫:
 <body>
   <div id="chart" style="width: 900px; height: 500px;"></div>
   <script>
-    // 여기서 `response`는 ls_get_chart가 반환한 JSON입니다.
-    const { data, layout } = response.chart.spec;
+    // 여기서 `structuredContent`는 ls_get_chart가 반환한 UI side-channel입니다.
+    const { data, layout } = structuredContent.chart.spec;
     Plotly.newPlot("chart", data, layout, { responsive: true });
   </script>
 </body>
 </html>
 ```
 
-Plotly.js를 임베드하지 않는 클라이언트는 `chart` 필드를 무시할 수 있으며, 구조화된 `candles` / `indicators` / `context` 페이로드가 단일 정보 출처(source of truth) 역할을 합니다.
+Plotly.js를 임베드하지 않는 클라이언트는 `structuredContent.chart`를 무시할 수 있으며, 텍스트의 `summary` / `context` 페이로드가 모델 분석용 정보 출처(source of truth) 역할을 합니다.
 
 ### 지표 명세 (`ls_get_chart` 용)
 
@@ -332,7 +364,7 @@ dotnet run --project src/RedoxNet.Mcp.LsOpenApi --framework net8.0
 - ✅ M4 — 메타 도구 3개(`ls_search_tr`, `ls_describe_tr`, `ls_call_tr`)를 노출하는 stdio MCP 서버.
 - ✅ M5 — 의미 도구 8개: `ls_get_quote`, `ls_get_multi_quote`, `ls_get_top_stocks`, `ls_get_stock_info`, `ls_get_chart` (+ 지표, 컨텍스트 메타데이터, 다중 시간프레임, `include_chart`로 Plotly v5 spec), `ls_search_stock`, **`ls_get_etf_info`, `ls_get_etf_holdings`**.
 - ✅ LS 모의투자 서버에서 라이브 검증 완료 (v0.2.0).
-- ⏳ 다음 릴리스 — 실시간(WebSocket), 계좌/잔고, 주문.
+- ⏳ v2.0 — 실시간(WebSocket), 계좌/잔고, 주문.
 
 ## License
 

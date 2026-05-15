@@ -63,6 +63,13 @@ public class GetChartToolPlotlyTests
         // Model-facing text: chart_available flag only, no spec.
         JsonElement text = ParseTextContent(result);
         text.GetProperty("chart_available").GetBoolean().Should().BeTrue();
+        text.GetProperty("output_mode").GetString().Should().Be("display");
+        text.GetProperty("dataset_id").GetString().Should().StartWith("ds_");
+        text.TryGetProperty("summary", out _).Should().BeTrue();
+        text.TryGetProperty("candles", out _).Should().BeFalse(
+            "display mode keeps raw OHLCV out of the model-facing text");
+        text.TryGetProperty("indicators", out _).Should().BeFalse(
+            "display mode keeps full indicator arrays out of the model-facing text");
         text.TryGetProperty("chart", out _).Should().BeFalse(
             "the Plotly spec must not leak into the model's text context");
 

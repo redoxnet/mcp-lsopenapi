@@ -67,7 +67,7 @@ public class GetChartToolMultiTimeframeTests
         });
 
         string result = await GetChartTool.GetChart(
-            client, "005930", "day,week,month", count: 20, indicators: new[] { "ma:5" }).TextContent();
+            client, "005930", "day,week,month", count: 20, indicators: new[] { "ma:5" }, output_mode: "export").TextContent();
 
         // Three TR calls (day/week/month all map to t8410 with different gubun).
         handler.Requests.Should().HaveCount(3);
@@ -133,7 +133,9 @@ public class GetChartToolMultiTimeframeTests
         string body = await handler.Requests[0].Content!.ReadAsStringAsync();
         body.Should().Contain("\"sdate\":");
         body.Should().Contain("\"edate\":");
-        body.Should().Contain("\"qrycnt\":5");
+        // count(5) + the day summary warm-up(240) — the fetch is padded so the
+        // analytical summary's long MAs / slope / 1Y change stay populated.
+        body.Should().Contain("\"qrycnt\":245");
         // edate should default to today (yyyyMMdd).
         body.Should().Contain($"\"edate\":\"{DateTime.Today:yyyyMMdd}\"");
     }

@@ -54,7 +54,7 @@ if (response.IsSuccess)
 
 ## Credentials
 
-`LS_APPKEY` and `LS_APPSECRETKEY` are read from the process environment via `ConfigureLsOptionsFromEnvironment()`. By design there is no other input path — see [ADR-001](https://github.com/redoxnet/mcp-lsopenapi/blob/main/docs/ADR-001-credential-management.md) for the rationale (MCP elicitation explicitly avoided for static secrets).
+`LS_APPKEY` and `LS_APPSECRETKEY` are read from the process environment via `ConfigureLsOptionsFromEnvironment()`. By design there is no other input path: MCP elicitation is explicitly avoided for static secrets, since prompting through chat would either log them or train callers to share them in transcripts.
 
 ## Documentation & source
 

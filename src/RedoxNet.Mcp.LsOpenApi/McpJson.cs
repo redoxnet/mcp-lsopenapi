@@ -1,6 +1,7 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using ModelContextProtocol.Protocol;
 
 namespace RedoxNet.Mcp.LsOpenApi;
@@ -17,11 +18,16 @@ namespace RedoxNet.Mcp.LsOpenApi;
 internal static class McpJson
 {
     /// <summary>Standard tool response: indented snake_case, non-ASCII as-is.</summary>
+    /// <remarks>
+    /// Enums serialize as snake_case strings (e.g. <c>PivotKind.Peak</c> → <c>"peak"</c>)
+    /// so the model reads meaningful labels instead of opaque integers.
+    /// </remarks>
     public static readonly JsonSerializerOptions Tool = new()
     {
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower) },
     };
 
     /// <summary>

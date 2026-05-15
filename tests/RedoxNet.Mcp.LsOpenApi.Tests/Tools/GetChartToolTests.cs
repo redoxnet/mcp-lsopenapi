@@ -34,7 +34,8 @@ public class GetChartToolTests
         """;
         var (client, handler) = TestClientFactory.Create((_, _) => Ok(body));
 
-        string result = await GetChartTool.GetChart(client, "005930", "day", count: 3).TextContent();
+        string result = await GetChartTool.GetChart(
+            client, "005930", "day", count: 3, output_mode: "export").TextContent();
 
         handler.Requests.Should().HaveCount(1);
         handler.Requests[0].RequestUri!.AbsolutePath.Should().Be("/stock/chart");
@@ -100,7 +101,7 @@ public class GetChartToolTests
         var (client, _) = TestClientFactory.Create((_, _) => Ok(body));
 
         string result = await GetChartTool.GetChart(
-            client, "005930", "day", count: 30, indicators: new[] { "ma:5" }).TextContent();
+            client, "005930", "day", count: 30, indicators: new[] { "ma:5" }, output_mode: "export").TextContent();
 
         JsonElement root = JsonDocument.Parse(result).RootElement;
         root.GetProperty("indicators").TryGetProperty("ma:5", out JsonElement ma).Should().BeTrue();
@@ -119,6 +120,19 @@ public class GetChartToolTests
 
         JsonDocument.Parse(result).RootElement.GetProperty("error").GetString()
             .Should().Contain("bogus");
+    }
+
+    [Fact]
+    public async Task GetChart_InvalidOutputMode_ReturnsError()
+    {
+        var (client, handler) = TestClientFactory.Create((_, _) => Ok("""{"rsp_cd":"00000"}"""));
+
+        string result = await GetChartTool.GetChart(
+            client, "005930", "day", output_mode: "full").TextContent();
+
+        handler.Requests.Should().BeEmpty();
+        JsonDocument.Parse(result).RootElement.GetProperty("error").GetString()
+            .Should().Contain("output_mode");
     }
 
     static string DailyBody(int rows, int startBase = 100)
@@ -143,7 +157,7 @@ public class GetChartToolTests
         var (client, _) = TestClientFactory.Create((_, _) => Ok(DailyBody(30)));
 
         string result = await GetChartTool.GetChart(
-            client, "005930", "day", count: 30, indicators: new[] { "ma:5" }, summary_only: true).TextContent();
+            client, "005930", "day", count: 30, indicators: new[] { "ma:5" }, summary_only: true, output_mode: "export").TextContent();
 
         JsonElement root = JsonDocument.Parse(result).RootElement;
         root.GetProperty("summary_only").GetBoolean().Should().BeTrue();
@@ -164,7 +178,7 @@ public class GetChartToolTests
         var (client, _) = TestClientFactory.Create((_, _) => Ok(DailyBody(30)));
 
         string result = await GetChartTool.GetChart(
-            client, "005930", "day,week", count: 30, indicators: new[] { "ma:5" }, summary_only: true).TextContent();
+            client, "005930", "day,week", count: 30, indicators: new[] { "ma:5" }, summary_only: true, output_mode: "export").TextContent();
 
         JsonElement root = JsonDocument.Parse(result).RootElement;
         root.GetProperty("summary_only").GetBoolean().Should().BeTrue();
@@ -181,7 +195,21 @@ public class GetChartToolTests
     }
 
     [Fact]
-    public async Task GetChart_SummaryOnlyDefaultsFalse_FullSeriesReturned()
+    public async Task GetChart_ExportMode_ReturnsFullSeries()
+    {
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(DailyBody(30)));
+
+        string result = await GetChartTool.GetChart(
+            client, "005930", "day", count: 30, indicators: new[] { "ma:5" }, output_mode: "export").TextContent();
+
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+        root.GetProperty("output_mode").GetString().Should().Be("export");
+        root.GetProperty("candles").GetArrayLength().Should().Be(30);
+        root.GetProperty("indicators").GetProperty("ma:5").GetArrayLength().Should().Be(30);
+    }
+
+    [Fact]
+    public async Task GetChart_DefaultAnalyzeMode_ReturnsSummaryAndNoRawArrays()
     {
         var (client, _) = TestClientFactory.Create((_, _) => Ok(DailyBody(30)));
 
@@ -189,8 +217,12 @@ public class GetChartToolTests
             client, "005930", "day", count: 30, indicators: new[] { "ma:5" }).TextContent();
 
         JsonElement root = JsonDocument.Parse(result).RootElement;
-        root.GetProperty("summary_only").GetBoolean().Should().BeFalse();
-        root.GetProperty("candles").GetArrayLength().Should().Be(30);
-        root.GetProperty("indicators").GetProperty("ma:5").GetArrayLength().Should().Be(30);
+        root.GetProperty("output_mode").GetString().Should().Be("analyze");
+        root.GetProperty("dataset_id").GetString().Should().StartWith("ds_");
+        root.TryGetProperty("summary", out JsonElement summary).Should().BeTrue();
+        summary.GetProperty("latest_close").GetDecimal().Should().BeGreaterThan(0);
+        root.TryGetProperty("context", out _).Should().BeTrue();
+        root.TryGetProperty("candles", out _).Should().BeFalse();
+        root.TryGetProperty("indicators", out _).Should().BeFalse();
     }
 }
