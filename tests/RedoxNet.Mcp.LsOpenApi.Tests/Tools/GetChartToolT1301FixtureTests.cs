@@ -19,6 +19,7 @@ namespace RedoxNet.Mcp.LsOpenApi.Tests.Tools;
 ///   <item><description>Per-tick: <c>mdvolume</c>/<c>msvolume</c> (매도/매수 누적량), <c>mdchecnt</c>/<c>mschecnt</c> (체결건수), <c>chdegree</c> (체결강도, 문자열).</description></item>
 /// </list>
 /// </remarks>
+[Collection(ChartDatasetCacheCollection.Name)]
 public class GetChartToolT1301FixtureTests
 {
     const string TestbedT1301Response = """

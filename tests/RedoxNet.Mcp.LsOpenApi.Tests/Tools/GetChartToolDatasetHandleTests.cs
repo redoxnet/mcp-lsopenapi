@@ -8,6 +8,7 @@ using Xunit;
 
 namespace RedoxNet.Mcp.LsOpenApi.Tests.Tools;
 
+[Collection(ChartDatasetCacheCollection.Name)]
 public class GetChartToolDatasetHandleTests
 {
     static Task<HttpResponseMessage> Ok(string json) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)

@@ -19,6 +19,7 @@ namespace RedoxNet.Mcp.LsOpenApi.Tests.Tools;
 ///   <item><description><c>value</c> is denominated in million won (단위 백만원).</description></item>
 /// </list>
 /// </remarks>
+[Collection(ChartDatasetCacheCollection.Name)]
 public class GetChartToolT8410FixtureTests
 {
     const string TestbedT8410Response = """

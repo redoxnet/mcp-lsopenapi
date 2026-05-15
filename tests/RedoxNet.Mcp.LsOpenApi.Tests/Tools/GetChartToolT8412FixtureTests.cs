@@ -19,6 +19,7 @@ namespace RedoxNet.Mcp.LsOpenApi.Tests.Tools;
 ///   <item><description><c>rate</c> in <c>t8412OutBlock1</c> may render as <c>"0.00"</c> or just <c>"0"</c> — the defensive reader must handle both.</description></item>
 /// </list>
 /// </remarks>
+[Collection(ChartDatasetCacheCollection.Name)]
 public class GetChartToolT8412FixtureTests
 {
     const string TestbedT8412Response = """
