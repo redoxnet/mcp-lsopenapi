@@ -9,17 +9,17 @@
 [![CI](https://github.com/redoxnet/mcp-lsopenapi/actions/workflows/ci.yml/badge.svg)](https://github.com/redoxnet/mcp-lsopenapi/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-MCP server for **LS증권 OpenAPI** — exposes Korean stock market data as MCP tools so AI assistants can query quotes, charts, and indicators in natural language.
+MCP server for **LS Securities OpenAPI** — exposes Korean stock market data as MCP tools so AI assistants can query quotes, charts, and indicators in natural language.
 
-> v1.x.x is **read-only Korean stock market data**. Realtime feeds, accounts/balances, and orders are scheduled for later releases.
+> v0.x.x is **read-only Korean stock market data**. Realtime feeds, accounts/balances, and orders are scheduled for later releases.
 
 ## Disclaimer
 
-This is an **unofficial third-party MCP server**. It is not affiliated with, endorsed by, or sponsored by LS Securities Co., Ltd. (LS증권). "LS증권" and related marks belong to their respective owners.
+This is an **unofficial third-party MCP server**. It is not affiliated with, endorsed by, or sponsored by LS Securities Co., Ltd. "LS Securities" and related marks belong to their respective owners.
 
 This tool provides **market data access for informational purposes only**. It does not constitute investment advice or a solicitation to trade. Trading carries risk, including loss of principal. All trading decisions and any resulting gains or losses are solely the user's responsibility.
 
-When using the API, please review the [LS OpenAPI usage guide](https://openapi.ls-sec.co.kr/howto-use) and comply with the Terms of Service available via the "이용약관" link in the site footer.
+When using the API, please review the [LS OpenAPI usage guide](https://openapi.ls-sec.co.kr/howto-use) and comply with the Terms of Service link in the site footer.
 
 ## Packages
 
@@ -111,8 +111,8 @@ You need an **AppKey** and **AppSecretKey** pair issued by LS Securities to use 
 ### Issuance Steps
 
 1. Log in to the [LS OpenAPI Portal](https://openapi.ls-sec.co.kr/) with your LS Securities ID.
-2. Navigate to **OpenAPI 신청 (OpenAPI Application)** → agree to the terms → submit application.
-3. After approval, find your **AppKey** and **AppSecretKey** under **MY > API Key 관리 (API Key Management)**.
+2. Navigate to **OpenAPI Application** → agree to the terms → submit application.
+3. After approval, find your **AppKey** and **AppSecretKey** under **MY > API Key Management**.
    - The **AppSecretKey is shown only once** at issuance — store it in a password manager (1Password, Bitwarden, etc.) immediately.
 4. New users are encouraged to start with the **paper trading environment** (`LS_MARKET=virtual`). Live trading (`real`) may require additional registration.
 
@@ -200,15 +200,15 @@ Pass `include_chart: true` to receive a Plotly v5 JSON spec in the response. Cli
 | Tool | TR | Purpose |
 | --- | --- | --- |
 | `ls_get_quote` | `t1101` | Current price + 10-level order book for a single Korean stock. |
-| `ls_get_multi_quote` | `t8407` | Compact price snapshot for **up to 50 stocks in one call** — price/OHLC/volume/best ask·bid/총잔량/체결강도. Use for side-by-side comparison or watchlists. |
+| `ls_get_multi_quote` | `t8407` | Compact price snapshot for **up to 50 stocks in one call** — price, OHLC, volume, best ask/bid, total ask/bid volume, trade strength. Use for side-by-side comparison or watchlists. |
 | `ls_get_top_stocks` | `t1441` / `t1444` / `t1452` / `t1463` / `t1466` | Market-wide screeners — top gainers/losers/unchanged, market cap, volume, trading value, and volume surges. |
-| `ls_get_stock_info` | `t1102` | Company profile + fundamentals: PER/PBR/EPS, quarterly financials and growth rates, 52-week + YTD ranges, top-5 buy/sell brokerages, foreign-investor activity, status flags (SPAC/관리종목). |
+| `ls_get_stock_info` | `t1102` | Company profile + fundamentals: PER/PBR/EPS, quarterly financials and growth rates, 52-week + YTD ranges, top-5 buy/sell brokerages, foreign-investor activity, status flags (SPAC / administrative issue). |
 | `ls_get_chart` | `t8410` / `t8412` / `t1301` | OHLCV charts (day/week/month/year/min/tick), optional indicators (SMA, EMA, RSI, MACD, Bollinger), token-efficient `summary` + `dataset_id`, **multi-timeframe in one call** (`period_type: "day,week,month"`). Raw bars are returned only with `output_mode: "export"`. |
 | `ls_add_indicator` | process-local handle cache + chart TR | Add an indicator to a `dataset_id` and return the updated `summary` / chart spec. Example: "add MA200 too". |
 | `ls_reframe_chart` | process-local handle cache + chart TR | Re-query the same `dataset_id` symbol with a different period/count and update the handle. Example: "switch this to daily for the last 6 months". |
-| `ls_search_stock` | `t8436` | Find KOSPI/KOSDAQ codes by name fragment; surfaces SPAC + 관리종목 flags and an `instrument` filter (`all` / `stock` / `etf`). |
-| `ls_get_etf_info` | `t1901` | ETF/ETN-specific snapshot — NAV, tracking-index value, premium/discount (괴리율), AUM, up to 5 liquidity providers, 52-week + year ranges, related futures. |
-| `ls_get_etf_holdings` | `t1904` | ETF PDF (portfolio deposit file / 구성종목) — per-holding weight, valuation, market cap, plus an ETF summary (NAV/AUM/cash). Heterogeneous holdings (bonds, cash) pass through verbatim. |
+| `ls_search_stock` | `t8436` | Find KOSPI/KOSDAQ codes by name fragment; surfaces SPAC and administrative-issue flags and an `instrument` filter (`all` / `stock` / `etf`). |
+| `ls_get_etf_info` | `t1901` | ETF/ETN-specific snapshot — NAV, tracking-index value, premium/discount, AUM, up to 5 liquidity providers, 52-week + year ranges, related futures. |
+| `ls_get_etf_holdings` | `t1904` | ETF portfolio deposit file (holdings) — per-holding weight, valuation, market cap, plus an ETF summary (NAV/AUM/cash). Heterogeneous holdings (bonds, cash) pass through verbatim. |
 
 ### `ls_get_chart` token-efficient payloads
 
@@ -292,7 +292,7 @@ Pass `include_chart: true` or `output_mode: "display"` and the response carries 
         { "type": "bar",         "name": "Volume", "x": [...], "y": [...], "marker": { "color": ["#E74C3C", "#3498DB", ...] }, "yaxis": "y2" }
       ],
       "layout": {
-        "title": { "text": "005930 — 일봉" },
+        "title": { "text": "005930 — Daily" },
         "xaxis": { "type": "category", "rangeslider": { "visible": false } },
         "yaxis":  { "title": { "text": "Price"  }, "domain": [0.3, 1.0] },
         "yaxis2": { "title": { "text": "Volume" }, "domain": [0.0, 0.25] },

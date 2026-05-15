@@ -1,4 +1,4 @@
-﻿<p align="right">
+<p align="right">
   <strong>한국어</strong> · <a href="README.en.md">English</a>
 </p>
 
@@ -9,25 +9,51 @@
 [![CI](https://github.com/redoxnet/mcp-lsopenapi/actions/workflows/ci.yml/badge.svg)](https://github.com/redoxnet/mcp-lsopenapi/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**LS증권 OpenAPI**용 MCP 서버 — AI 도우미가 한국 주식 시세, 차트, 지표를 자연어로 조회할 수 있게 합니다.
+## 한국 주식을 AI에게 그냥 물어보세요.
 
-> v1.x.x 는 **국내주식 read-only 시세 데이터** 범위입니다. 실시간 시세(WebSocket), 계좌/잔고, 주문은 필요하다면 후속 릴리스에 포함될 예정입니다.
+Claude·ChatGPT·Copilot 같은 AI 비서에 **LS증권 OpenAPI**를 붙입니다. 시세·차트·기업정보·ETF 구성·시장 스크리너를 평소 쓰던 대화창에서 자연어로 묻고 받습니다.
 
-## 면책 조항
+> *"내가 들고 있는 삼성전자, 지금 흐름이 어때?"*
+> *"오늘 많이 오른 종목 중에 이유가 있어 보이는 것만 골라줘"*
+> *"KODEX 200은 실제로 어떤 주식들을 담고 있어?"*
 
-이 프로젝트는 **비공식 third-party MCP 서버**입니다. LS증권(LS Securities Co., Ltd.)과 공식적인 제휴·후원·승인 관계가 없으며, "LS증권" 및 관련 상표는 해당 권리자의 소유입니다.
+설정 한 번이면 됩니다. 종목 코드를 외울 필요도, HTS를 따로 띄울 필요도 없습니다.
 
-본 도구는 **정보 제공 목적의 시세·차트 데이터 조회용**입니다. 투자 자문이나 매매 권유가 아니며, 주식 거래에는 원금 손실을 포함한 위험이 따릅니다. 모든 투자 결정과 그에 따른 손익은 전적으로 사용자 본인의 책임입니다.
+> 개발자용 기술 디테일(환경 변수, 자격증명 정책, 도구 시그니처, SDK 사용법 등)은 [영문 README](README.en.md)에 있습니다.
 
-API 사용 시 [LS증권 OpenAPI 이용 안내](https://openapi.ls-sec.co.kr/howto-use)를 참조하시고, 사이트 하단의 "이용약관" 링크로 표시되는 정식 약관을 확인 후 준수하시기 바랍니다.
+---
 
-## 패키지 구성
+## 이런 게 됩니다
 
-| 패키지 | 종류 | 용도 |
-| --- | --- | --- |
-| `RedoxNet.LsOpenApi.Core` | 라이브러리 | SDK: 인증(OAuth2 client_credentials), HTTP 클라이언트, TR 카탈로그, 지표. |
-| `RedoxNet.Mcp.LsOpenApi` | dotnet tool | stdio 기반 MCP 서버. |
-| `RedoxNet.LsOpenApi.Core.Catalog.Builder` | 개발 도구 | LS 문서 사이트를 스크래핑하여 내장 TR 카탈로그를 재생성. 배포되지 않습니다. |
+### 차트 + 추세 설명을 한 번에
+
+> *"SK하이닉스 일봉 차트 보여주고 추세 정렬 봐줘"*
+
+AI가 일봉을 불러와 인라인 차트로 띄우고, 이동평균선 배열·거래량·고점 대비 낙폭을 종합해 *"단기 추세는 살아있지만 60일선 근처 매물대 부담"* 같은 한 문장 진단을 자연어로 풉니다.
+
+![SK하이닉스 일봉 차트 — AssistStudio 인라인 렌더링](docs/assiststudio-chart-skhynix.png)
+
+### 시장 스크리닝 → 후보 종목 분석까지 한 대화 안에서
+
+> *"거래대금 상위 종목을 기술적으로 분석해줘"*
+
+AI가 거래대금 상위 리스트를 받고, 그 중 관심 종목 한두 개를 골라 일봉·주봉 지표로 후속 분석을 이어갑니다. 검색 결과에서 분석으로 넘어가는 데 별도 화면 전환이 없습니다.
+
+![LG이노텍 다중 시간프레임 분석 — AssistStudio](docs/assiststudio-screener-analysis.png)
+
+### 변곡점·진행 중인 swing 짚기
+
+> *"카카오 5년 월봉 보여주고 주요 변곡점들 짚어줘. 지금 진행 중인 흐름도 같이 설명해줘."*
+
+AI가 사전 계산된 ZigZag 변곡점 목록을 받아 *"2022-10 저점에서 2024-07 고점까지 +X%, 이후 조정 진입 중"* 처럼 시간순으로 풀어 설명합니다. 마지막 항목은 "아직 진행 중인 swing"으로 별도 표기됩니다.
+
+### 좁은 구간 + 장기 지표도 한 번에
+
+> *"2024년 1~6월 삼성전자 일봉만 따로 보여줘. 그 기간 안에서 MA60 추세도 같이."*
+
+좁은 기간을 명시하면서 그 안에서 60일 이동평균 추세를 묻는, 일반 도구로는 두세 번 왔다 갔다 해야 풀리는 케이스. AI가 첫 시도에 정확히 처리합니다 — 자세한 비교는 아래 v0.4 case study.
+
+---
 
 ## ⚡ v0.4 — 같은 질문, 16× 적은 컨텍스트
 
@@ -39,9 +65,11 @@ v0.4는 모델이 첫 시도에 `with_warmup=true`를 선택해 한 번에 끝�
 
 전체 7-턴 세션 분석 → [docs/case-studies/v0.4.0-token-efficiency.md](docs/case-studies/v0.4.0-token-efficiency.md)
 
-## 빠른 시작
+---
 
-서버 자체는 별도 설치 없이 `dnx` 가 매번 NuGet 에서 최신 버전을 받아 실행합니다. 호스트 설정 예시:
+## 설치 — 1분 컷
+
+LS증권 OpenAPI 키 한 쌍(`AppKey` + `AppSecretKey`) 이 필요합니다 — [LS증권 OpenAPI 포털](https://openapi.ls-sec.co.kr/)에서 발급(모의투자도 동일 절차, 자세한 단계는 [영문 README](README.en.md#getting-an-api-key)). 키를 받았으면 사용하는 AI 호스트의 MCP 설정에 아래 한 덩어리를 붙여 넣고 재시작합니다.
 
 ### Claude Desktop / Claude Code
 
@@ -56,326 +84,76 @@ v0.4는 모델이 첫 시도에 `with_warmup=true`를 선택해 한 번에 끝�
       "env": {
         "LS_APPKEY": "...",
         "LS_APPSECRETKEY": "...",
-        "LS_MARKET": "virtual"  // "virtual"(모의투자) 또는 "real"(실거래)
+        "LS_MARKET": "virtual"  // "virtual" 모의투자 / "real" 실거래
       }
     }
   }
 }
 ```
 
-### Codex CLI
+> 키는 호스트가 자식 프로세스에 환경변수로 넘기는 것 외의 경로(채팅, 도구 인자, MCP 엘리시테이션)로는 받지 않습니다 — 보안상 의도된 설계입니다. 자세한 정책은 [영문 README](README.en.md#credential-handling-policy) 참고.
 
-`%USERPROFILE%\.codex\config.toml` (Windows) 또는 `~/.codex/config.toml` (macOS / Linux):
+다른 호스트(Codex CLI / VS Code / AssistStudio)의 설정 예시는 [영문 README](README.en.md#quick-start)에 있습니다.
 
-```toml
-[mcp_servers.lsopenapi]
-command = "dnx"
-args = ["RedoxNet.Mcp.LsOpenApi", "--yes"]
+### AssistStudio (인라인 차트)
 
-[mcp_servers.lsopenapi.env]
-LS_APPKEY = "..."
-LS_APPSECRETKEY = "..."
-LS_MARKET = "virtual"  # "virtual"(모의투자) 또는 "real"(실거래)
-```
+Microsoft Store에서 *AssistStudio* 설치(Product ID `9N09D0QGSTZD`) → Settings → Connect → Add MCP Server. Command `dnx`, Arguments `RedoxNet.Mcp.LsOpenApi --yes`, 환경 변수 한 줄씩. 인라인 차트 렌더링은 AssistStudio v1.1 이상이 필요합니다.
 
-### VS Code (`mcp.json`)
+---
 
-워크스페이스 `.vscode/mcp.json`:
+## 무엇을 물어볼 수 있나
 
-```jsonc
-{
-  "servers": {
-    "lsopenapi": {
-      "type": "stdio",
-      "command": "dnx",
-      "args": ["RedoxNet.Mcp.LsOpenApi", "--yes"],
-      "env": {
-        "LS_APPKEY": "...",
-        "LS_APPSECRETKEY": "...",
-        "LS_MARKET": "virtual"  // "virtual"(모의투자) 또는 "real"(실거래)
-      }
-    }
-  }
-}
-```
+도구 시그니처가 아니라 *"어떤 질문에 답할 수 있는가"* 로 묶었습니다.
 
-## API Key 발급하기
+### 현재 시세 / 호가
+> *"삼성전자 지금 얼마야?"* / *"카카오 호가창 보여줘"* / *"내 관심종목 10개 가격 한번에 비교해줘"*
 
-LS증권 OpenAPI를 사용하려면 LS증권에서 발급한 **AppKey**와 **AppSecretKey** 한 쌍이 필요합니다.
+단일 종목의 현재가와 10단계 호가, 또는 최대 50종목 일괄 비교.
 
-### 사전 요건
+### 차트 + 기술적 분석
+> *"SK하이닉스 일·주·월봉 같이 보여줘"* / *"이동평균선이랑 RSI 같이 그려줘"* / *"여기에 MA200도 추가해줘"*
 
-- **LS증권 계좌** — 비대면 또는 영업점에서 개설 가능. 해외주식·선물옵션 등 필요한 권한은 별도 신청.
-- LS증권 홈트레이딩 ID
+일봉/주봉/월봉/년봉/분봉/틱 차트, 이동평균·RSI·MACD·볼린저밴드 같은 기술 지표, 변곡점·MA 정렬·고점 대비 낙폭 같은 사전 계산된 분석. 추가 지표나 기간 변경은 후속 대화에서 그대로.
 
-### 발급 절차
+### 종목 찾기
+> *"카카오 종목코드 뭐야?"* / *"바이오 ETF 좀 알려줘"* / *"이름에 '에너지' 들어가는 종목 찾아줘"*
 
-1. [LS증권 OpenAPI 포털](https://openapi.ls-sec.co.kr/)에 LS증권 ID로 로그인.
-2. 상단 메뉴에서 **OpenAPI 신청** → 약관 동의 → 서비스 신청.
-3. 신청 승인 후 **MY > API Key 관리** 페이지에서 **AppKey**와 **AppSecretKey** 확인.
-   - AppSecretKey는 **발급 시 한 번만 표시**되므로 즉시 안전한 곳에 보관 (1Password, Bitwarden 등).
-4. 처음 사용하시는 분은 **모의투자 환경**(`LS_MARKET=virtual`)으로 시작하길 권장합니다. 실전 거래(`real`)는 별도 신청 절차가 있을 수 있습니다.
+KOSPI/KOSDAQ 종목명 부분 검색, 일반주식/ETF 필터링, SPAC·관리종목 플래그.
 
-### 주의사항
+### 기업 정보 / 재무
+> *"삼성전자 PER이랑 분기별 매출 추이 알려줘"* / *"외국인 보유 추이는?"*
 
-- AppSecretKey는 절대 git 저장소나 채팅에 노출하지 마세요. NuGet 푸시 워크플로처럼 GitHub Secrets에 보관하시거나, 본인 머신의 환경변수로만 두세요.
-- 키가 노출된 것 같으면 즉시 LS증권 OpenAPI 포털에서 **재발급**하여 기존 키를 무효화하세요.
-- 발급되는 액세스 토큰은 24시간 유효하며, 본 패키지가 자동으로 갱신합니다.
+PER/PBR/EPS, 분기별 재무·성장률, 52주·연중 가격 범위, 상위 매수·매도 거래원, 외국인 동향, SPAC·관리종목 상태.
 
-자세한 LS 측 안내는 [OpenAPI 이용 안내](https://openapi.ls-sec.co.kr/howto-use)를 참조하세요.
+### ETF 분석
+> *"KODEX 200 NAV랑 괴리율 보여줘"* / *"TIGER 미국나스닥100 구성종목 비중 상위 10개"*
 
-## 환경 변수
+ETF/ETN 전용 정보(NAV, 추적오차율, 괴리율, AUM, LP), 구성종목(PDF) — 비중·평가금액·시가총액 순 정렬과 상위 N개 제한 옵션.
 
-| 이름 | 필수 | 설명 |
-| --- | --- | --- |
-| `LS_APPKEY` | 예 | LS OpenAPI 앱 키. |
-| `LS_APPSECRETKEY` | 예 | LS OpenAPI 앱 시크릿 키. |
-| `LS_MARKET` | 아니오 | `real` 또는 `virtual` (기본 `virtual`). |
-| `LS_BASEURL` | 아니오 | REST 베이스 URL 재정의(거의 사용되지 않습니다). |
+### 시장 스크리닝
+> *"오늘 상승률 상위 10개 종목"* / *"거래대금 상위 + 시가총액 1조 이상으로 필터"* / *"오늘 거래량 급증 종목"*
 
-토큰 캐시 위치:
-- Windows: `%LOCALAPPDATA%\RedoxNet\LsOpenApi\token.db`
-- Linux/macOS: `~/.local/share/redoxnet/lsopenapi/token.db`
+상승·하락·보합 상위, 시가총액·거래량·거래대금 상위, 전일 동시간 대비 거래 급증 — 가격·거래량 필터링, KOSPI/KOSDAQ 분리·통합 옵션.
 
-캐시는 SQLite 데이터베이스(WAL 모드)이며, 캐시 키는 `SHA256(appkey):market` 형태로 생성됩니다. 원시 앱 키는 디스크에 저장되지 않습니다. 토큰은 만료 5분 전에 자동으로 갱신됩니다.
+전체 도구의 정확한 인자·반환 스키마는 [영문 README의 Tools 섹션](README.en.md#tools) 참고.
 
-## 자격 증명 처리 정책
+---
 
-이 서버는 **환경 변수로만** `LS_APPKEY` / `LS_APPSECRETKEY`를 받습니다. 의도적인 설계로, 채팅창·툴 인자·MCP elicitation 등 **모델 컨텍스트가 닿을 수 있는 어떤 경로로도 키를 입력받지 않습니다.** 호스트(Claude Desktop, AssistStudio 등)가 OS 환경 또는 자격 저장소에서 읽어 자식 프로세스에 주입하는 구조를 전제합니다.
+## 면책 조항
 
-- **디스크 평문 저장 없음.** 위 토큰 캐시는 `SHA256(appkey):market`만 보관하며, 원시 앱 키/시크릿은 메모리 외부로 나가지 않습니다.
-- **로그·에러·툴 응답에 노출 안 됨.** 진단 출력은 `****` + 마지막 4자리만 표시하며(`AppKey`), 시크릿 키는 어떤 형태로도 로그에 찍지 않습니다.
-- **잘못된 키 입력 시 LS의 `IGW00121` 등 인증 오류**는 [`LsAuthException`](src/RedoxNet.LsOpenApi.Core/Auth/LsAuthException.cs)으로 변환되어 툴 응답의 `error` 필드에만 표시되며, 입력한 키 값은 응답에 포함되지 않습니다.
+이 프로젝트는 **비공식 third-party MCP 서버**입니다. LS증권(LS Securities Co., Ltd.)과 공식적인 제휴·후원·승인 관계가 없으며, "LS증권" 및 관련 상표는 해당 권리자의 소유입니다.
 
-이는 [MCP 스펙이 "Servers MUST NOT use elicitation to request sensitive information" 으로 권고](https://modelcontextprotocol.io/specification/2025-06-18/client/elicitation#security-considerations)하는 사항을 가장 보수적으로 해석한 결과입니다.
+본 도구는 **정보 제공 목적의 시세·차트 데이터 조회용**입니다. 투자 자문이나 매매 권유가 아니며, 주식 거래에는 원금 손실을 포함한 위험이 따릅니다. 모든 투자 결정과 그에 따른 손익은 전적으로 사용자 본인의 책임입니다.
 
-## 사용 시나리오 예시
+API 사용 시 [LS증권 OpenAPI 이용 안내](https://openapi.ls-sec.co.kr/howto-use)를 참조하시고, 사이트 하단의 "이용약관" 링크로 표시되는 정식 약관을 확인 후 준수하시기 바랍니다.
 
-#### 1. 일일 신호 리포트 자동화
+v0.x.x는 **국내주식 read-only 시세 데이터** 범위입니다. 실시간 시세(WebSocket), 계좌/잔고, 주문은 후속 릴리스에 포함될 예정입니다.
 
-매일 장 마감 후 관심종목의 매매 신호를 자동 분석하여 메신저로 받기:
+---
 
-```
-스케줄러(예: Mcp.Runner) → LLM 호출
-  → ls_get_chart(shcode, period_type="day,week,month", indicators=["ma:5","ma:20","ma:60"])
-  → context.bullish_alignment, divergence_from_ma 등을 LLM이 종합 판단
-  → 메신저 MCP(예: Mcp.Outbox)로 카톡/슬랙 리포트 전송
-```
+## 라이선스 · 관련 자료
 
-#### 2. 자연어 시세 조회
-
-```
-사용자: "삼성전자 현재가랑 호가창 보여줘"
-  → ls_get_quote(shcode="005930")
-  → 현재가 + 10단계 호가 즉시 응답
-```
-
-#### 3. 지표 기반 분석 대화
-
-```
-사용자: "코덱스 AI전력핵심설비, 12이평선 기준으로 매도 신호가 왔는지 봐줘"
-  → ls_get_chart(shcode="490090", period_type="day,week,month",
-                 indicators=["ma:12","ma:60"])
-  → LLM이 일/주/월 다중 시간프레임 context를 종합 해석
-  → "월봉으로는 매수 영역 유지 중이나, 일봉 12이평 근접 + 거래량 폭증으로 단기 경계 신호"
-```
-
-#### 4. 인터랙티브 차트
-
-`include_chart: true`로 호출하면 Plotly v5 JSON spec이 응답에 포함됩니다. [AssistStudio](https://github.com/fieldcure/fieldcure-assiststudio)처럼 Plotly.js를 임베드한 클라이언트는 인라인 차트로, 그 외 클라이언트는 구조화된 데이터(`candles`/`indicators`/`context`)로 활용 가능합니다.
-
-![AssistStudio에서 SK하이닉스 일봉 차트를 인라인 Plotly로 렌더링하고, 이동평균선 배열과 거래량 변화를 근거로 단기 추세 국면을 분석한 화면](docs/assiststudio-chart-skhynix.png)
-
-> 인라인 차트 렌더링은 **AssistStudio v1.1 이상**에서 지원됩니다. (현재 MS Store 게시 버전은 v1.0)
-
-#### 5. 시장 스크리너 기반 분석
-
-```
-사용자: "거래대금 상위 종목을 기술적으로 분석해줘"
-  → ls_get_top_stocks(kind="amount")로 상위 종목 스크리닝
-  → 후보 종목에 ls_get_chart / ls_get_stock_info를 연쇄 호출
-  → LLM이 이동평균 배열·RSI·MACD를 종합해 종목별 기술적 리포트 생성
-```
-
-![AssistStudio에서 ls_get_top_stocks로 거래대금 상위 종목을 스크리닝한 뒤, LG이노텍을 일봉·주봉 지표로 기술적 분석한 리포트 화면](docs/assiststudio-screener-analysis.png)
-
-## 도구
-
-### 메타 도구
-
-| 도구 | 용도 |
-| --- | --- |
-| `ls_search_tr` | 한국어/영어 키워드로 내장 TR 카탈로그를 검색. |
-| `ls_describe_tr` | 특정 TR 코드의 전체 입력/출력 스키마. |
-| `ls_call_tr` | 호출자가 제공한 `in_block` JSON으로 임의의 TR 호출. |
-
-### 의미 도구 (시세 데이터)
-
-| 도구 | TR | 용도 |
-| --- | --- | --- |
-| `ls_get_quote` | `t1101` | 단일 종목의 현재가 + 10단계 호가창. |
-| `ls_get_multi_quote` | `t8407` | **최대 50종목을 한 번에** 비교 — 가격/OHLC/거래량/최우선 매도·매수호가/총잔량/체결강도. 워치리스트 또는 종목 비교용. |
-| `ls_get_top_stocks` | `t1441` / `t1444` / `t1452` / `t1463` / `t1466` | 시장 스크리너 — 상승률/하락률/보합, 시가총액, 거래량, 거래대금, 거래급증 상위 종목. |
-| `ls_get_stock_info` | `t1102` | 기업 프로필 + 펀더멘털: PER/PBR/EPS, 분기별 재무·성장률, 52주 + YTD 범위, 매도·매수 상위 5개 거래원, 외국인 동향, 상태 플래그(SPAC/관리종목). |
-| `ls_get_chart` | `t8410` / `t8412` / `t1301` | OHLCV 차트(일/주/월/년/분/틱), 선택적 지표(SMA, EMA, RSI, MACD, Bollinger), 토큰 절약형 `summary` + `dataset_id`, **다중 시간프레임 한 번에 조회**(`period_type: "day,week,month"`). 원시 봉 배열은 `output_mode: "export"`에서만 반환. |
-| `ls_add_indicator` | process-local handle cache + chart TR | `dataset_id`에 지표를 추가하고 업데이트된 `summary` / 차트 spec을 반환. 예: "MA200도 추가해줘". |
-| `ls_reframe_chart` | process-local handle cache + chart TR | 기존 `dataset_id`의 종목을 다른 기간/개수로 다시 조회해 같은 핸들을 갱신. 예: "일봉으로 바꿔서 최근 6개월만". |
-| `ls_search_stock` | `t8436` | 종목명 일부로 KOSPI/KOSDAQ 종목코드 검색; SPAC + 관리종목 플래그 + `instrument` 필터(`all` / `stock` / `etf`). |
-| `ls_get_etf_info` | `t1901` | ETF/ETN 전용 스냅샷 — NAV, 추적기준지수, 괴리율, AUM, LP 5개, 52주/연중 가격 범위, 관련 선물. |
-| `ls_get_etf_holdings` | `t1904` | ETF PDF(구성종목) — 종목별 비중·평가금액·시가총액 + ETF 요약(NAV/AUM/현금). 채권/현금 구성종목도 그대로 통과. |
-
-### `ls_get_chart` 토큰 절약 응답
-
-기본 응답은 원시 OHLCV 배열을 모델 컨텍스트에 넣지 않습니다. 대신 후속 호출용 `dataset_id`, 모델 분석용 `summary`, 그리고 기존 `context`를 반환합니다. 원시 `candles` / 전체 `indicators` 배열은 사용자가 표·원본·CSV를 명시적으로 요청한 경우 `output_mode: "export"`에서만 반환됩니다.
-
-`output_mode`:
-
-- `display` — 차트 표시 목적. 텍스트에는 `summary`만, Plotly spec은 `structuredContent.chart`로 전달.
-- `analyze` — 기본 분석 목적. `summary` + `context`, 원시 봉 없음.
-- `export` — 원시 OHLCV/지표 배열 반환. 토큰 비용이 크므로 명시적 데이터 요청에만 사용.
-- `reference` — 후속 도구 호출용 `dataset_id`와 메타데이터만 반환.
-
-`summary`에는 최신가, 기간 수익률, 이동평균 스냅샷, MA60 괴리율/기울기(이동평균에 선형회귀 적합), 고점 대비 낙폭, 그리고 ZigZag로 검출한 변곡점 목록(`key_turns`)이 들어갑니다. 각 변곡점은 고점/저점 종류(`peak`/`trough`), 직전 변곡점 대비 변화율, 확정/잠정 여부(`is_confirmed`)를 가지며 — 목록의 마지막 항목은 아직 임계값만큼 반전하지 않은, 진행 중인 swing의 잠정 끝점입니다.
-
-**워밍업 정책과 `summary.coverage`** — `summary`는 디스플레이 윈도우보다 깊은 워밍업 구간까지 포함해 계산되므로, `count`가 짧아도 장기 이동평균·기울기·1년 수익률이 채워집니다. 기본 정책은 "`from` 미지정 = 자동 워밍업, `from` 명시 = 워밍업 생략"이며, `with_warmup` 파라미터로 강제 켜기/끄기가 가능합니다:
-
-| 사용자 의도 | 호출 | 동작 |
-|---|---|---|
-| "최근 흐름" | `from` 미지정 | 워밍업 자동 적용 |
-| "특정 구간만 표시" | `from` 명시 | 워밍업 생략 |
-| "특정 구간에서 추세도 분석" | `from` 명시 + `with_warmup=true` | 워밍업 강제 |
-| "가장 빠른 원본 읽기" | `with_warmup=false` | 워밍업 생략(장기 지표 null 가능) |
-
-`summary.coverage`는 모든 응답에 포함되며, 어떤 지표가 왜 null인지를 모델이 사용자에게 그대로 전달할 수 있게 합니다. `warmup_applied` 플래그, `analytical_bar_count`/`display_bar_count`, 그리고 `status` 맵(각 지표가 `ok`/`insufficient_data`/`disabled` 중 하나)을 담습니다. 부족한 지표가 있을 때는 `note` 필드에 "좁은 구간이라 장기 지표가 비어 있습니다 — `with_warmup=true`로 다시 부르거나 날짜 범위를 해제하세요" 같은 한 문장이 들어갑니다.
-
-`context` 블록은 기존 사전 계산 분석 결과입니다. 필드:
-
-- `divergence_from_ma` — 마지막 종가 대비 각 `ma:N` / `ema:N` 지표 이격률(%).
-- `volume.{latest,avg_20,ratio_20,avg_60,ratio_60}` — 거래량 대비 이동평균.
-- `drawdown.{period_high,period_high_date,current,pct}` — 기간 최고가 대비 하락폭.
-- `ma_trend` — 최근 5봉 기준 각 이동평균(MA) 방향성(`"up"` / `"down"` / `"flat"`).
-- `bullish_alignment` — 짧은 기간 MA가 긴 기간 MA보다 위에 있을 때 `true`.
-
-### 다중 시간프레임 한 번에 조회
-
-`period_type`에 쉼표로 구분된 값을 전달하면 응답이 `frames[]` 배열로 감싸지며, 각 시간프레임마다 자체적인 `summary` / `context`를 갖습니다. 원시 봉이 필요하면 `output_mode: "export"`를 명시합니다:
-
-```jsonc
-// ls_get_chart shcode=005930 period_type="day,week,month" indicators=["ma:5","ma:20","ma:60"]
-{
-  "shcode": "005930",
-  "output_mode": "analyze",
-  "dataset_id": "ds_a8f3...",
-  "period_types": ["day", "week", "month"],
-  "frames": [
-    { "period_type": "day",   "tr_cd": "t8410", "count": 60, "summary": {...}, "context": {...} },
-    { "period_type": "week",  "tr_cd": "t8410", "count": 60, "summary": {...}, "context": {...} },
-    { "period_type": "month", "tr_cd": "t8410", "count": 60, "summary": {...}, "context": {...} }
-  ]
-}
-```
-
-단일 `period_type`은 평탄한 구조(`summary`, `context`, `dataset_id`가 최상위에 위치)를 사용합니다.
-
-### 차트 렌더링 (`include_chart: true`)
-
-`include_chart: true` 또는 `output_mode: "display"`로 호출하면 Plotly v5 JSON spec이 `structuredContent.chart`에 함께 옵니다. 이 spec은 UI 렌더링용 side-channel이며 모델이 보는 텍스트에는 포함되지 않습니다. 서버는 spec만 생성하며, 서버 측 이미지 렌더링이나 차트 라이브러리 의존성이 없습니다.
-
-```jsonc
-// ls_get_chart shcode=005930 period_type=day count=60 indicators=["ma:5","ma:20"] include_chart=true
-{
-  "shcode": "005930",
-  "period_type": "day",
-  "output_mode": "display",
-  "dataset_id": "ds_a8f3...",
-  "summary": {...},
-  "context": {...},
-  "chart_available": true
-}
-
-// structuredContent
-{
-  "chart": {
-    "type": "plotly",
-    "version": "5",
-    "spec": {
-      "data": [
-        { "type": "candlestick", "name": "OHLC",   "x": [...], "open": [...], "high": [...], "low": [...], "close": [...], "increasing": { "line": { "color": "#E74C3C" } }, "decreasing": { "line": { "color": "#3498DB" } }, "yaxis": "y" },
-        { "type": "scatter",     "name": "MA:5",   "x": [...], "y": [...], "mode": "lines", "line": { "color": "#F39C12" }, "yaxis": "y" },
-        { "type": "scatter",     "name": "MA:20",  "x": [...], "y": [...], "mode": "lines", "line": { "color": "#27AE60" }, "yaxis": "y" },
-        { "type": "bar",         "name": "Volume", "x": [...], "y": [...], "marker": { "color": ["#E74C3C", "#3498DB", ...] }, "yaxis": "y2" }
-      ],
-      "layout": {
-        "title": { "text": "005930 — 일봉" },
-        "xaxis": { "type": "category", "rangeslider": { "visible": false } },
-        "yaxis":  { "title": { "text": "Price"  }, "domain": [0.3, 1.0] },
-        "yaxis2": { "title": { "text": "Volume" }, "domain": [0.0, 0.25] },
-        "hovermode": "x unified",
-        "showlegend": true
-      }
-    }
-  }
-}
-```
-
-차트의 지표 처리:
-- `ma:N`, `ema:N`, `bb:N,SD` → 가격 서브플롯에 오버레이로 그려집니다.
-- `rsi:N`, `macd:F,S,Sig` → 계산에는 사용할 수 있지만 **그려지지는 않습니다** (별도 스케일의 서브플롯이 필요하며, 향후 개선 예정). 전체 시리즈는 `output_mode: "export"`에서만 텍스트로 반환됩니다.
-
-Plotly.js로 spec을 렌더링하는 최소 HTML 스니펫:
-
-```html
-<!DOCTYPE html>
-<html>
-<head>
-  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-</head>
-<body>
-  <div id="chart" style="width: 900px; height: 500px;"></div>
-  <script>
-    // 여기서 `structuredContent`는 ls_get_chart가 반환한 UI side-channel입니다.
-    const { data, layout } = structuredContent.chart.spec;
-    Plotly.newPlot("chart", data, layout, { responsive: true });
-  </script>
-</body>
-</html>
-```
-
-Plotly.js를 임베드하지 않는 클라이언트는 `structuredContent.chart`를 무시할 수 있으며, 텍스트의 `summary` / `context` 페이로드가 모델 분석용 정보 출처(source of truth) 역할을 합니다.
-
-### 지표 명세 (`ls_get_chart` 용)
-
-| Spec | 의미 |
-| --- | --- |
-| `ma:N` | 단순이동평균(SMA), 기간 N. |
-| `ema:N` | 지수이동평균(EMA). |
-| `rsi:N` | 상대강도지수(RSI). |
-| `macd:F,S,Sig` | MACD (fast/slow/signal). `.macd`, `.signal`, `.histogram` 반환. |
-| `bb:N,SD` | 볼린저 밴드. `.lower`, `.middle`, `.upper` 반환. |
-
-## 소스에서 빌드
-
-```bash
-dotnet restore mcp-lsopenapi.slnx
-dotnet build mcp-lsopenapi.slnx -c Release
-dotnet test mcp-lsopenapi.slnx -c Release
-```
-
-로컬 실행:
-```bash
-dotnet run --project src/RedoxNet.Mcp.LsOpenApi --framework net8.0
-```
-
-## 진행 상황
-
-- ✅ M1 — Core 스캐폴드 + 인증(OAuth2 client_credentials, SQLite WAL 토큰 캐시, 시크릿 마스킹).
-- ✅ M2 — testbed로 검증된 16개 TR이 포함된 내장 TR 카탈로그(`t1101`, `t1102`, `t1441`, `t1444`, `t1452`, `t1463`, `t1466`, `t8407`, `t8410`, `t8412`, `t1301`, `t8430`, `t8436`, `t9945`, `t1901`, `t1904`).
-- ✅ M3 — TR 실행(`LsApiClient.CallTrAsync`): Polly 재시도, TR별 레이트 리미터, 헤더 + body 두 가지 페이징 모드.
-- ✅ M4 — 메타 도구 3개(`ls_search_tr`, `ls_describe_tr`, `ls_call_tr`)를 노출하는 stdio MCP 서버.
-- ✅ M5 — 의미 도구 8개: `ls_get_quote`, `ls_get_multi_quote`, `ls_get_top_stocks`, `ls_get_stock_info`, `ls_get_chart` (+ 지표, 컨텍스트 메타데이터, 다중 시간프레임, `include_chart`로 Plotly v5 spec), `ls_search_stock`, **`ls_get_etf_info`, `ls_get_etf_holdings`**.
-- ✅ LS 모의투자 서버에서 라이브 검증 완료 (v0.2.0).
-- ⏳ v2.0 — 실시간(WebSocket), 계좌/잔고, 주문.
-
-## License
-
-MIT.
+- License — [MIT](LICENSE)
+- 개발자용 기술 문서 — [README.en.md](README.en.md)
+- 릴리스 노트 — [Mcp](RELEASENOTES.Mcp.md) · [Core](RELEASENOTES.Core.md)
+- 사례 분석 — [v0.4 token efficiency](docs/case-studies/v0.4.0-token-efficiency.md)
