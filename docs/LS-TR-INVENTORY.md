@@ -4,6 +4,8 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 
 **Source:** [openapi.ls-sec.co.kr/apiservice](https://openapi.ls-sec.co.kr/apiservice) listing (captured 2026-05-13).
 
+**Implementation status last refreshed:** 2026-05-15 for v0.5.0 (added `t1531` / `t1532`; the portfolio module is layered on top of `t8407` / `t1531` rather than introducing new TRs).
+
 **Use this doc when:** deciding what to add to the catalog next, mapping a user request to an underlying TR, or scoping the next release.
 
 ---
@@ -66,8 +68,6 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 | `t1856` | 파일저장 조건 종목검색 | ⚪ | |
 
 ## [주식] 상위종목 — Rankings
-
-> Spec §15 Open Question #1 (`ls_get_top_stocks` mapping) — to be resolved here.
 
 | TR | 이름 | Status | Tool / Notes |
 | --- | --- | --- | --- |
@@ -138,8 +138,8 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 
 | TR | 이름 | Status | Tool / Notes |
 | --- | --- | --- | --- |
-| `t1531` | 테마별 종목 | ⚪ 💎 | "어떤 종목이 AI 테마야?" 같은 질의 대응 |
-| `t1532` | 종목별 테마 | ⚪ 💎 | Reverse lookup: which themes does X belong to |
+| `t1531` | 테마별 종목 | 🔵 | In catalog. Consumed by the portfolio module's sector quote enrichment (`ls_watched_sectors_list` returns each watched theme's `avgdiff` as `change_pct`); empty `tmname`/`tmcode` returns the full theme list. No dedicated semantic wrapper yet — direct calls go through `ls_call_tr`. |
+| `t1532` | 종목별 테마 | 🔵 | In catalog (`ls_call_tr` only). Reverse lookup: which themes a stock belongs to. |
 | `t1533` | 특이 테마 | ⚪ | |
 | `t1537` | 테마종목별 시세조회 | ⚪ | |
 | `t8425` | 전체 테마 | ⚪ | |
@@ -231,19 +231,25 @@ WebSocket-based stream identifiers, not REST TRs. ~50 channels including:
 
 ---
 
-## Implementation status summary (v1.0)
+## Implementation status summary (v0.5)
 
-- **16 TRs in catalog** — t1101, t1102, t1441, t1444, t1452, t1463, t1466, t8407, t8410, t8412, t1301, t8430, t8436, t9945, t1901, t1904
-- **11 MCP tools** — meta: `ls_search_tr`, `ls_describe_tr`, `ls_call_tr`; semantic: `ls_get_quote`, `ls_get_multi_quote`, `ls_get_top_stocks`, `ls_get_stock_info`, `ls_get_chart`, `ls_search_stock`, `ls_get_etf_info`, `ls_get_etf_holdings`
+- **18 TRs in catalog** — `t1101`, `t1102`, `t1301`, `t1441`, `t1444`, `t1452`, `t1463`, `t1466`, `t1531`, `t1532`, `t1901`, `t1904`, `t8407`, `t8410`, `t8412`, `t8430`, `t8436`, `t9945`.
+- **37 MCP tools**:
+  - Meta (3) — `ls_search_tr`, `ls_describe_tr`, `ls_call_tr`.
+  - Market data (10) — `ls_get_quote`, `ls_get_multi_quote`, `ls_get_top_stocks`, `ls_get_stock_info`, `ls_get_chart`, `ls_add_indicator`, `ls_reframe_chart`, `ls_search_stock`, `ls_get_etf_info`, `ls_get_etf_holdings`.
+  - Portfolio (24, v0.5, local-only) — accounts: `ls_accounts_list`, `ls_account_get`, `ls_account_upsert`, `ls_account_set_default`, `ls_account_remove`, `ls_broker_rename`; holdings: `ls_holdings_list`, `ls_holdings_set`, `ls_holdings_buy`, `ls_holdings_sell`, `ls_holdings_remove`, `ls_holdings_split`, `ls_holdings_reverse_split`, `ls_holdings_bonus`; watchlists: `ls_watchlist_groups_list`, `ls_watchlist_group_create`, `ls_watchlist_group_delete`, `ls_watchlist_group_rename`, `ls_watchlist_add`, `ls_watchlist_remove`, `ls_watchlist_list`; sectors: `ls_watched_sectors_add`, `ls_watched_sectors_remove`, `ls_watched_sectors_list`.
 
-## Recommended next batch (v1.0.x patches)
+> The portfolio module is local-only (SQLite at `%LOCALAPPDATA%\RedoxNet\LsOpenApi\portfolio.db`). It uses `t8407` for holdings/watchlist quote enrichment and `t1531` for watched-sector enrichment but does not introduce new TRs.
+
+## Recommended next batch (v0.6+ candidates)
 
 Based on 💎 markers above, in rough priority order:
 
-1. **`t3341` fundamental ranking** — new `ls_get_fundamentals_rank` tool (cross-stock screener; complements per-stock `ls_get_stock_info`).
-2. **`t1531` / `t1532` theme lookup** — `ls_get_theme_stocks` + `ls_get_stock_themes`.
+1. **`t1102` enrichment fold-in** — populate `stocks.krx_sector` automatically on portfolio writes so the v0.6 cross-domain query "내 관심 섹터에 속한 보유 종목" works without manual sector tagging.
+2. **`t3341` fundamental ranking** — new `ls_get_fundamentals_rank` tool (cross-stock screener; complements per-stock `ls_get_stock_info`).
 3. **`t1601` / `t1702` investor flow** — `ls_get_investor_flow` covering institutional/foreign net flow.
 4. **`t1442` 신고/신저가 screener** + **`t1927` short interest** for screener fold-in.
+5. **Theme semantic wrappers** — `ls_get_theme_stocks` (t1531) + `ls_get_stock_themes` (t1532). Currently callable via `ls_call_tr` only; portfolio sector enrichment consumes `t1531` internally.
 
 ## How to extend this inventory
 
