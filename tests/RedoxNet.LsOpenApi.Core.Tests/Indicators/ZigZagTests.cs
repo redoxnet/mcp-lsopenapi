@@ -123,6 +123,40 @@ public class ZigZagTests
     }
 
     [Fact]
+    public void Compute_WideRangeBarDoesNotEmitDuplicatePeak()
+    {
+        // Regression: a single wide-range bar can legitimately represent both
+        // the peak and the trough of a swing (a month where price both surged
+        // and crashed). It must not, however, get re-emitted as the same peak
+        // twice — the original asymmetric reset left `hi` stale on trough
+        // confirmation, so a later bar whose close fell threshold-far below
+        // the stale peak would confirm the same peak a second time.
+        //
+        // Hand-crafted reproducer matching the shape reported on 035720 monthly:
+        //   index 1 is a wide-range bar  (high 70000, low 42000) — emits Peak then Trough
+        //   index 2 reversal-up confirms the trough
+        //   index 3 close falls back below the stale 70000 — must NOT re-confirm
+        var candles = new List<Candle>
+        {
+            new(Origin.AddDays(0), 20000, 20500, 19500, 20000, 1000),
+            new(Origin.AddDays(1), 50000, 70000, 42000, 55000, 1000),
+            new(Origin.AddDays(2), 48000, 50000, 45000, 49000, 1000),
+            new(Origin.AddDays(3), 47000, 55000, 44000, 46000, 1000),
+        };
+
+        IReadOnlyList<ZigZagPivot> pivots = ZigZag.Compute(candles, Percent(0.12));
+
+        // A wide bar may emit one Peak and one Trough at its own index — but
+        // never the same (index, kind) pair twice.
+        var pairs = pivots.Select(p => (p.Index, p.Kind)).ToList();
+        pairs.Should().OnlyHaveUniqueItems();
+
+        // And the kinds must still strictly alternate after the fix.
+        for (int i = 1; i < pivots.Count; i++)
+            pivots[i].Kind.Should().NotBe(pivots[i - 1].Kind);
+    }
+
+    [Fact]
     public void Compute_AtrMode_DetectsAlternatingPivots()
     {
         // Oscillating closes with a small intrabar band; ATR mode should still

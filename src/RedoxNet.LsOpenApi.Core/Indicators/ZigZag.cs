@@ -102,11 +102,14 @@ public static class ZigZag
                 {
                     confirmed.Add((hiIdx, hi, PivotKind.Peak));
                     dir = -1;
-                    // Keep lo/loIdx — they already hold the lowest low since the
-                    // peak, the correct trough candidate. Restart hi as the
-                    // down-leg's bounce-high tracker so it cannot stay stale on
-                    // the just-confirmed peak.
+                    // Restart BOTH trackers from the confirmation bar so neither
+                    // can stay stale on the just-confirmed peak. Asymmetric reset
+                    // (keep lo, reset hi only) would let the next up-leg later
+                    // re-confirm a peak at the SAME index when no fresh extremes
+                    // appear in between — observed in the wild on a wide-range
+                    // monthly bar that was both peak and trough of a single swing.
                     hi = c.High; hiIdx = i;
+                    lo = c.Low; loIdx = i;
                 }
             }
             else if (dir < 0)
@@ -120,9 +123,13 @@ public static class ZigZag
                 {
                     confirmed.Add((loIdx, lo, PivotKind.Trough));
                     dir = 1;
-                    // Keep hi/hiIdx — the highest high since the trough. Restart
-                    // lo as the up-leg's pullback tracker.
+                    // Restart BOTH trackers — symmetric with the peak branch
+                    // above. Keeping `hi` here was the original bug source:
+                    // without a fresh new-low or new-high in dir<0, `hi` retains
+                    // the previous peak's value, and the next dir>0 reversal
+                    // re-confirms a duplicate peak at the same index.
                     lo = c.Low; loIdx = i;
+                    hi = c.High; hiIdx = i;
                 }
             }
             else
