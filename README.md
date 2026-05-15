@@ -1,4 +1,4 @@
-<p align="right">
+﻿<p align="right">
   <strong>한국어</strong> · <a href="README.en.md">English</a>
 </p>
 
@@ -11,7 +11,7 @@
 
 **LS증권 OpenAPI**용 MCP 서버 — AI 도우미가 한국 주식 시세, 차트, 지표를 자연어로 조회할 수 있게 합니다.
 
-> v0.1.x 는 **국내주식 read-only 시세 데이터** 범위입니다. 실시간 시세(WebSocket), 계좌/잔고, 주문은 후속 릴리스에 포함될 예정입니다.
+> v1.x.x 는 **국내주식 read-only 시세 데이터** 범위입니다. 실시간 시세(WebSocket), 계좌/잔고, 주문은 필요하다면 후속 릴리스에 포함될 예정입니다.
 
 ## 면책 조항
 
@@ -28,6 +28,16 @@ API 사용 시 [LS증권 OpenAPI 이용 안내](https://openapi.ls-sec.co.kr/how
 | `RedoxNet.LsOpenApi.Core` | 라이브러리 | SDK: 인증(OAuth2 client_credentials), HTTP 클라이언트, TR 카탈로그, 지표. |
 | `RedoxNet.Mcp.LsOpenApi` | dotnet tool | stdio 기반 MCP 서버. |
 | `RedoxNet.LsOpenApi.Core.Catalog.Builder` | 개발 도구 | LS 문서 사이트를 스크래핑하여 내장 TR 카탈로그를 재생성. 배포되지 않습니다. |
+
+## ⚡ v0.4 — 같은 질문, 16× 적은 컨텍스트
+
+![v0.3 vs v0.4 token efficiency](docs/case-studies/assets/v0.4.0-token-efficiency-hero.png)
+
+동일한 모델(`claude-sonnet-4-6`)에 *"2024년 1~6월 삼성전자 일봉 + MA60 추세"* 를 던졌을 때, v0.3은 좁은 창에 MA60을 채우기 위해 두 번의 도구 호출 (3개월 padding 시도 → 부족 인지 → `count=190`으로 재시도) 이 필요했습니다.
+
+v0.4는 모델이 첫 시도에 `with_warmup=true`를 선택해 한 번에 끝냅니다. 표시 60바, 분석 300바로 분리되어 long-period 지표가 모두 채워지고, 응답은 summary-first 구조라서 raw OHLCV 60개를 컨텍스트에 쏟지 않습니다.
+
+전체 7-턴 세션 분석 → [docs/case-studies/v0.4.0-token-efficiency.md](docs/case-studies/v0.4.0-token-efficiency.md)
 
 ## 빠른 시작
 

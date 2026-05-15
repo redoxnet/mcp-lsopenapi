@@ -1,4 +1,4 @@
-<p align="right">
+﻿<p align="right">
   <strong>English</strong> · <a href="README.md">한국어</a>
 </p>
 
@@ -11,7 +11,7 @@
 
 MCP server for **LS증권 OpenAPI** — exposes Korean stock market data as MCP tools so AI assistants can query quotes, charts, and indicators in natural language.
 
-> v0.1.x is **read-only Korean stock market data**. Realtime feeds, accounts/balances, and orders are scheduled for later releases.
+> v1.x.x is **read-only Korean stock market data**. Realtime feeds, accounts/balances, and orders are scheduled for later releases.
 
 ## Disclaimer
 
@@ -28,6 +28,16 @@ When using the API, please review the [LS OpenAPI usage guide](https://openapi.l
 | `RedoxNet.LsOpenApi.Core` | Library | SDK: auth (OAuth2 client_credentials), HTTP client, TR catalog, indicators. |
 | `RedoxNet.Mcp.LsOpenApi` | dotnet tool | MCP server over stdio. |
 | `RedoxNet.LsOpenApi.Core.Catalog.Builder` | Dev tool | Scrapes the LS docs site to (re)generate the embedded TR catalog. Not shipped. |
+
+## ⚡ v0.4 — Same question, 16× less context
+
+![v0.3 vs v0.4 token efficiency](docs/case-studies/assets/v0.4.0-token-efficiency-hero.png)
+
+Asking the same model (`claude-sonnet-4-6`) *"Samsung Electronics daily chart for 2024 Jan~Jun, plus MA60 trend within that range"*, v0.3 needed two tool calls to populate MA60 in the narrow window — first a 3-month padding attempt, then a retry with `count=190` after the model noticed the padding wasn't enough.
+
+v0.4 finishes in a single call: the model picks `with_warmup=true` on its first try. Display window (60 bars) and analytical window (300 bars) are separated so long-period indicators all populate, and the summary-first response shape keeps 60 raw OHLCV rows out of the model's context entirely.
+
+Full 7-turn analysis → [docs/case-studies/v0.4.0-token-efficiency.md](docs/case-studies/v0.4.0-token-efficiency.md)
 
 ## Quick start
 
