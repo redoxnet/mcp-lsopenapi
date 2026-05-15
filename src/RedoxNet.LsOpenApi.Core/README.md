@@ -50,6 +50,8 @@ if (response.IsSuccess)
 | **Catalog** | `TrCatalog.Default` — 13-TR seed catalog as an embedded resource (시세 / 차트 / ETF / 종목조회 / 기타). `Search` ranks by exact-code, name, category, description, and field-level matches. |
 | **Indicators** | `IndicatorService` over `Skender.Stock.Indicators` (SMA, EMA, RSI, MACD, Bollinger). Compact spec parser (`ma:5`, `bb:20,2`, `macd:12,26,9`). |
 | **Chart context** | `ChartContextBuilder` — pre-computed analysis block (divergence from each MA, volume averages, drawdown from period high, MA trend, tristate `bullish_alignment` with `null` during MA warm-up). |
+| **Analytical summary** | `AnalyticalSummaryBuilder` — token-efficient model-facing snapshot (period-aware MA snapshots, MA60 deviation + slope via least-squares fit, drawdown from peak, 1Y/5Y change, ZigZag-based `key_turns` with strict peak/trough alternation, and an `IndicatorCoverage` block that reports each indicator as `ok` / `insufficient_data` / `disabled` with a human-readable note when a window is too narrow). |
+| **ZigZag** | Threshold-reversal swing detector (`ZigZag.Compute`) with `Percent` or `AtrMultiple` modes. Triggers on the close (no intrabar self-trigger), strictly alternating peak/trough pivots, and a trailing tentative pivot at the latest bar for the in-progress swing. |
 | **Hygiene** | `SecretMasker.Mask("...XYZW") → "****XYZW"`. App secret never logged. POSIX `chmod 0600` on the token cache file + WAL/SHM siblings. |
 
 ## Credentials

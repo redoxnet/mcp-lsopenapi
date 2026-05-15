@@ -1,5 +1,21 @@
 # Release Notes — RedoxNet.LsOpenApi.Core
 
+## v0.4.0 (2026-05-15)
+
+A compact analytical-summary builder + ZigZag swing detector. Additive — the existing public surface is unchanged; the MCP server in 0.4.0 builds on this layer.
+
+### Added
+
+- **`AnalyticalSummary` + `InflectionPoint` + `PivotKind` + `IndicatorCoverage` records** (`Models`). A token-efficient model-facing snapshot for chart data: latest close + period-relative change %, period-aware moving-average snapshots, MA60 deviation/slope, drawdown from peak, a bounded ZigZag-based key-turn list, and a per-indicator availability map. Usable standalone by any consumer that wants a structured swing/trend summary instead of raw OHLCV.
+- **`AnalyticalSummaryBuilder`** (`Indicators`). Computes the summary above from a candle window. Picks MA periods by chart period (`MA5..MA200` for day; `MA20/60/120` for month/year; `MA20/60` for week), classifies MA60 slope by a **least-squares fit** over the look-back window (robust to endpoint noise), and emits an `IndicatorCoverage` with status flags (`ok` / `insufficient_data` / `disabled`) + a human-readable note when a window is too narrow. `displayBarCount` and `warmupApplied` flow through so callers can distinguish "narrow window the user pinned" from "this period doesn't support 1Y/5Y change."
+- **`ZigZag` swing detector + `ZigZagOptions` + `ZigZagPivot`** (`Indicators`). Threshold-reversal pivot detection with two modes — `Percent` (literal fraction, e.g. `0.12` = 12%) and `AtrMultiple` (Wilder ATR-normalized for adaptive volatility). Triggers on the *close* but emits pivot prices from the actual swing high/low, so a single wide-range bar cannot self-trigger. Pivots strictly alternate peak/trough; the trailing pivot is `IsConfirmed=false` at the latest bar — the in-progress swing's provisional endpoint, observable to callers.
+
+### Internal
+
+- `JsonStringEnumConverter` is wired through `RedoxNet.Mcp.LsOpenApi`'s tool serializer so `PivotKind` serializes as `"peak"` / `"trough"`; Core itself keeps its existing `LsCoreJson` options untouched.
+
+> Versioned independently from `RedoxNet.Mcp.LsOpenApi`; the shared 0.4.0 is intentional this time — both packages release together for the chart-tool reshape.
+
 ## v0.3.0 (2026-05-14)
 
 Five market-ranking TRs added to the catalog; the chart-spec builders now live here.
