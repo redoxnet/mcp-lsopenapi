@@ -1,5 +1,63 @@
 # Release Notes — RedoxNet.Mcp.LsOpenApi
 
+## v0.5.0 (2026-05-15)
+
+Local-only portfolio module — multi-account holdings, buy/sell/corporate-action semantics, watchlists, watched sectors. The biggest tool-surface expansion since v0.1: 13 → 37 tools. Stored alongside `token.db`; no broker sync, no data leaves the user's machine.
+
+### Added — Portfolio module (24 new tools)
+
+**Accounts**
+- `ls_accounts_list` — every registered account with holdings count and the default flag (empty array when no accounts exist).
+- `ls_account_get` — default account, or `null` when none registered.
+- `ls_account_upsert(account_number, nickname, broker, set_default)` — create or update by `account_number`. `nickname` is globally UNIQUE; first registration auto-promotes to default; `set_default=true` displaces the existing default within a single transaction.
+- `ls_account_set_default(account)` — promote by `account_number` or `nickname`.
+- `ls_account_remove(account, confirm)` — two-step cascade. `confirm=false` with holdings returns `RequiresConfirmation` carrying `holding_count` + `market_value` preview; `confirm=true` proceeds. When the removed account was default and others remain, the oldest account (id ASC) is auto-promoted.
+- `ls_broker_rename(from, to)` — rename a broker label across every matching account (free text; no merge conflicts since nickname is the unique key).
+
+**Holdings (account-aware)**
+- `ls_holdings_list(account?)` — grouped response: `accounts[]` with per-account `summary` + a `total_summary` roll-up across all accounts. Optional `account` filter narrows to one. Each row carries a `warning` field when `current_price/avg_price` diverges 5×+ (likely missed corporate action).
+- `ls_holdings_set` — replace state. `quantity=0` is `ValidationError` ("use ls_holdings_remove").
+- `ls_holdings_buy(shcode, quantity, price)` — incremental buy with weighted-average merge: `new_avg = (old.qty*old.avg + qty*price) / (old.qty + qty)`.
+- `ls_holdings_sell(shcode, quantity)` — partial sell; row auto-removes when remaining quantity reaches zero; raises `InsufficientQuantity` above the position with `applied_to` echo.
+- `ls_holdings_remove` — drop a row outright; `removed=false` when not held anywhere.
+- `ls_holdings_split(ratio)` / `_reverse_split(ratio)` / `_bonus(ratio)` — corporate actions. With no `account` specified, applied across **every account holding the symbol** (single corporate event affects all owners). Reverse-split rejects non-divisible quantities with `ValidationError`; bonus rejects non-integer results from a single-share holder.
+
+**Watchlists**
+- `ls_watchlist_groups_list` / `_group_create` / `_group_delete` / **`_group_rename`** (new).
+- `ls_watchlist_add` / `_remove` / `_list` — items inside groups; list enriches with live quotes when credentials are present, falls back to `quote_error` envelope otherwise.
+
+**Watched sectors / themes**
+- `ls_watched_sectors_add` / `_remove` / `_list` — `t1531` theme codes with avg percent change. 60-second in-process cache on the theme table so adding multiple watched themes doesn't burn the LS rate limit.
+
+### Added — Cross-cutting
+
+- **Multi-account ambiguity policy.** Reads fall back; writes require an explicit target when ambiguous. Documented in [docs/SPEC-portfolio-multi-account.md](docs/SPEC-portfolio-multi-account.md).
+  - 0 accounts → `RequiresAccount` error.
+  - 1 account → auto with `applied_to` echo.
+  - 2+ accounts → `AmbiguousAccount` with `candidates[]` for set/buy. For sell/remove, only ambiguous when the symbol exists in multiple accounts.
+- **`applied_to` echo on every write response.** Single `{account_number, nickname, broker, is_default}` for one-account writes; array of before/after snapshots for corporate actions across multiple accounts. Safety net for the soft single-account fallback.
+- **Typed error envelopes** — `RequiresAccount`, `AmbiguousAccount`, `AccountNotFound`, `RequiresConfirmation`, `InsufficientQuantity`, `ValidationError`. Each carries structured fields (candidates, identifier, holding count, market value, current/requested quantity) so the LLM can re-call with the correct argument without prompting the user.
+- **`LSOPENAPI_DB_PATH` env var** — override the local portfolio SQLite path. Defaults to `%LOCALAPPDATA%\RedoxNet\LsOpenApi\portfolio.db` (next to `token.db`).
+- **6-character alphanumeric stock codes.** Validation relaxed across `ls_get_multi_quote` and the portfolio tools so ETF codes with an uppercase letter (e.g. TIGER 코리아AI전력기기TOP3 = `0117V0`) are accepted. Lowercase input is uppercased on the way in so storage stays case-insensitive.
+- **Split/bonus warning on `ls_holdings_list`.** When `current_price / avg_price` diverges by 5× or more in either direction, the holding row carries `warning: "분할/무상증자 가능성: 현재가/평단 비율 N배. 분할 도구로 보정하세요."`.
+
+### Changed
+
+- **Tool count 13 → 37.** New tools listed above.
+- **`ls_holdings_list` response shape.** Always grouped (`accounts: [...]` + `total_summary`); single-account responses have length 1. Field renames: `current_value → market_value`, `total_cost → cost_basis`.
+- **Schema migration v2** on the local SQLite store. Drops the v0.4 placeholder `'UNSET' / '기본 계좌'` account when no holdings reference it, and adds `UNIQUE(nickname)`. The zero-account empty state is now valid and surfaced as `RequiresAccount` on first write.
+
+### Removed
+
+- **`ls_account_set`** (single-account default updater). Replaced by `ls_account_upsert` — same first-run UX, but explicit about creating named accounts.
+- **`ls_holdings_add`** / **`ls_holdings_update`**. Replaced by `ls_holdings_set` (replace), `_buy` (weighted-average merge), `_sell` (subtract + auto-remove). The split makes the intent explicit in the tool name so the LLM routes by meaning rather than guessing whether an "add" call meant "more shares bought" or "current state is now this".
+
+### Verified
+
+- **178 unit + fixture tests pass on net8.0** (up from 157), including new multi-account / weighted-average / split-divisibility / cascade-confirmation / default-succession cases.
+- **28-case stdio smoke** (`scripts/portfolio-smoke.py`) covers empty state, account upsert + default toggle, nickname collision, multi-account ambiguity, weighted-average buy, sell with auto-remove + over-sell guard, `set(qty=0)` validation, grouped holdings_list with total_summary, split across all holders, non-divisible reverse-split, two-step account cascade with auto succession, broker rename, watchlist group rename. Live-verified against the LS real server.
+- **E2E via Claude Code** against the live LS API (12 natural-language scenarios): multi-account registration in one turn, "유안타 LG전자 24주 익절", "민테크 10:1 분할" auto-propagated to both accounts, "유안타증권 계좌 지워줘" with `RequiresConfirmation` → confirm → cascade + auto-succession to 카카오페이.
+
 ## v0.4.0 (2026-05-15)
 
 Token-efficient chart payloads, two follow-up tools that operate on a dataset handle, a ZigZag-based swing detector for `key_turns`, and an `IndicatorCoverage` block that lets the model explain why an indicator is null.

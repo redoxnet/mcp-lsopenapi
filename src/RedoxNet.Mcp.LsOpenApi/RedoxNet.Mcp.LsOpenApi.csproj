@@ -11,7 +11,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 
-    <Version>0.4.0</Version>
+    <Version>0.5.0</Version>
     <PackageId>RedoxNet.Mcp.LsOpenApi</PackageId>
 	<Authors>Jong Hyun Kim</Authors>
     <Company>RedoxNet</Company>
@@ -24,7 +24,7 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>icon.png</PackageIcon>
     <Copyright>Copyright (c) 2026 RedoxNet</Copyright>
-    <PackageReleaseNotes>v0.4.0: ls_get_chart reshape — text payload is now summary-first (AnalyticalSummary + dataset_id; raw OHLCV only with output_mode='export'). Adds ls_add_indicator and ls_reframe_chart follow-up tools (operate on dataset_id without re-sending raw bars). New with_warmup parameter explicitly toggles the summary warm-up policy; every response carries a summary.coverage block with per-indicator status (ok/insufficient_data/disabled) and a human-readable note. key_turns now use a threshold-reversal ZigZag with strict peak/trough alternation and a trailing tentative pivot; MA60 slope uses a least-squares fit. Tool count 11 → 13. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Mcp.md for full notes.</PackageReleaseNotes>
+    <PackageReleaseNotes>v0.5.0: Adds a local-only portfolio module (24 new tools, 13 → 37 total) — multi-account holdings with set/buy/sell semantics and weighted-average cost basis on incremental buys, corporate actions (split/reverse_split/bonus) applied across every account holding the symbol by default, watchlists with group rename, watched sectors via t1531 with 60s cache, structured error envelopes (RequiresAccount / AmbiguousAccount / AccountNotFound / RequiresConfirmation / InsufficientQuantity / ValidationError) that carry candidate accounts so the model can recover automatically, and a two-step cascade confirmation on account removal with id ASC default succession. Symbol validation relaxed to 6-character alphanumeric (uppercased) so ETF codes like 0117V0 are accepted. Local SQLite store at %LOCALAPPDATA%\RedoxNet\LsOpenApi\portfolio.db (override via LSOPENAPI_DB_PATH). Tools removed: ls_account_set, ls_holdings_add, ls_holdings_update. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Mcp.md for full notes.</PackageReleaseNotes>
 
     <PackageType>McpServer</PackageType>
     <PackAsTool>true</PackAsTool>
