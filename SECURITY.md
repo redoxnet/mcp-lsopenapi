@@ -2,12 +2,12 @@
 
 ## Supported versions
 
-Active maintenance is limited to the latest `0.1.x` release on the `v0.1.x` line. Older patch versions don't receive backports.
+Active maintenance follows the **latest minor release** on the current `0.x` line. Older minors don't receive backports; security fixes ship in the next minor (or a patch release on the latest minor).
 
 | Version | Supported |
 |---|---|
-| `0.1.x` (latest) | ✅ |
-| Older `0.x` | ❌ |
+| Latest `0.x` minor (currently `0.5.x`) | ✅ |
+| Older `0.x` minors (`0.1.x` – `0.4.x`) | ❌ |
 
 `0.x` releases carry no API stability guarantee (per SemVer). Once `1.0.0` ships, this section will gain LTS columns.
 
