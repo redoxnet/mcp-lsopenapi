@@ -96,6 +96,66 @@ public class GetChartToolT8410FixtureTests
         body.Should().Contain($"\"gubun\":\"{expectedGubun}\"");
     }
 
+    /// <summary>
+    /// Builds a synthetic t8410 response with <paramref name="candleCount"/>
+    /// candles in ascending date order (oldest first), as t8410 returns them.
+    /// </summary>
+    static string BuildT8410Response(int candleCount)
+    {
+        var rows = new List<string>(candleCount);
+        DateTime d = new(2024, 1, 1);
+        for (int i = 0; i < candleCount; i++)
+        {
+            d = d.AddDays(1);
+            long close = 1000 + i;
+            rows.Add($$"""
+                { "date": "{{d:yyyyMMdd}}", "open": {{close}}, "high": {{close + 5}}, "low": {{close - 5}}, "close": {{close}}, "jdiff_vol": {{10000 + i}}, "value": {{100 + i}}, "sign": "2", "rate": "000.00", "ratevalue": 0, "jongchk": 0, "pricechk": 0 }
+                """);
+        }
+        return $$"""
+            {
+              "rsp_cd": "00000",
+              "rsp_msg": "정상적으로 조회가 완료되었습니다.",
+              "t8410OutBlock": { "shcode": "078020", "cts_date": "", "rec_count": {{candleCount}} },
+              "t8410OutBlock1": [ {{string.Join(",", rows)}} ]
+            }
+            """;
+    }
+
+    [Fact]
+    public async Task GetChart_WithLongPeriodIndicator_FetchesWarmupAndTrimsToCount()
+    {
+        // count=60 + ma:60 must fetch 60 warm-up candles ahead of the display
+        // window so the ma:60 series is populated across every displayed bar.
+        var (client, handler) = TestClientFactory.Create((_, _) => Ok(BuildT8410Response(130)));
+
+        string result = await GetChartTool.GetChart(
+            client, "078020", "day", count: 60, indicators: new[] { "ma:60" }).TextContent();
+
+        string sent = await handler.Requests[0].Content!.ReadAsStringAsync();
+        sent.Should().Contain("\"qrycnt\":120");
+
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+        root.GetProperty("count").GetInt32().Should().Be(60);
+
+        JsonElement ma60 = root.GetProperty("indicators").GetProperty("ma:60");
+        ma60.GetArrayLength().Should().Be(60);
+        ma60.EnumerateArray().Should().OnlyContain(
+            v => v.ValueKind == JsonValueKind.Number,
+            "the warm-up lead is trimmed, so every displayed bar carries an ma:60 value");
+    }
+
+    [Fact]
+    public async Task GetChart_NoIndicators_DoesNotPadTheFetch()
+    {
+        var (client, handler) = TestClientFactory.Create((_, _) => Ok(BuildT8410Response(130)));
+
+        await GetChartTool.GetChart(client, "078020", "day", count: 60);
+
+        string sent = await handler.Requests[0].Content!.ReadAsStringAsync();
+        sent.Should().Contain("\"qrycnt\":60");
+    }
+
     [Fact]
     public async Task CallTr_T8410Fixture_SurfacesBodyBasedContinuationKeys()
     {

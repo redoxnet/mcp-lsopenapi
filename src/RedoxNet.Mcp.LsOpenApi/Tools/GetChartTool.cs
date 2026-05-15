@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -34,6 +34,15 @@ public static class GetChartTool
 
     static readonly HashSet<string> KnownPeriodTypes =
         new(StringComparer.OrdinalIgnoreCase) { "day", "week", "month", "year", "min", "tick" };
+
+    /// <summary>
+    /// Upper bound on candles fetched in one TR call (display window +
+    /// indicator warm-up). LS's chart TRs cap a single page at ~500 rows, so
+    /// asking for more is silently truncated. When <c>count + warmup</c> exceeds
+    /// this, the warm-up lead is squeezed first; long-period indicators then
+    /// keep some leading nulls at very high <c>count</c> values.
+    /// </summary>
+    const int MaxFetchCount = 500;
 
     /// <summary>
     /// Returns the chart(s) with optional indicators and analysis context.
@@ -248,14 +257,22 @@ public static class GetChartTool
         IReadOnlyList<IndicatorSpec> specs,
         CancellationToken ct)
     {
+        // Fetch extra leading candles so long-period / recursive indicators are
+        // fully warmed up across the display window. The warm-up lead is
+        // trimmed off below, so the caller sees at most `count` candles,
+        // but with indicator series populated from the very first one.
+        int warmup = RequiredWarmup(specs);
+        int fetchCount = Math.Min(count + warmup, MaxFetchCount);
+        int effectiveWarmup = Math.Max(0, fetchCount - count);
+
         (List<Candle> candles, string trCode) = period switch
         {
-            "day" => (await FetchDailyAsync(apiClient, shcode, "2", count, from, to, ct), "t8410"),
-            "week" => (await FetchDailyAsync(apiClient, shcode, "3", count, from, to, ct), "t8410"),
-            "month" => (await FetchDailyAsync(apiClient, shcode, "4", count, from, to, ct), "t8410"),
-            "year" => (await FetchDailyAsync(apiClient, shcode, "5", count, from, to, ct), "t8410"),
-            "min" => (await FetchMinuteAsync(apiClient, shcode, minuteUnit, count, from, to, ct), "t8412"),
-            "tick" => (await FetchTickAsync(apiClient, shcode, count, ct), "t1301"),
+            "day" => (await FetchDailyAsync(apiClient, shcode, "2", fetchCount, effectiveWarmup, from, to, ct), "t8410"),
+            "week" => (await FetchDailyAsync(apiClient, shcode, "3", fetchCount, effectiveWarmup, from, to, ct), "t8410"),
+            "month" => (await FetchDailyAsync(apiClient, shcode, "4", fetchCount, effectiveWarmup, from, to, ct), "t8410"),
+            "year" => (await FetchDailyAsync(apiClient, shcode, "5", fetchCount, effectiveWarmup, from, to, ct), "t8410"),
+            "min" => (await FetchMinuteAsync(apiClient, shcode, minuteUnit, fetchCount, effectiveWarmup, from, to, ct), "t8412"),
+            "tick" => (await FetchTickAsync(apiClient, shcode, fetchCount, ct), "t1301"),
             _ => throw new InvalidOperationException($"Unknown period '{period}'."),
         };
 
@@ -264,8 +281,48 @@ public static class GetChartTool
                 ? new Dictionary<string, IReadOnlyList<double?>>()
                 : Indicators.Compute(candles, specs);
 
+        // Trim the warm-up lead. Indicators were computed over the full fetched
+        // series, so the trimmed series stay fully populated across `count`.
+        if (candles.Count > count)
+        {
+            int drop = candles.Count - count;
+            candles = candles.GetRange(drop, count);
+            if (indicatorResults.Count > 0)
+            {
+                indicatorResults = indicatorResults.ToDictionary(
+                    kv => kv.Key,
+                    kv => (IReadOnlyList<double?>)kv.Value.Skip(drop).ToList(),
+                    StringComparer.Ordinal);
+            }
+        }
+
         ChartContext context = ChartContextBuilder.Build(candles, indicatorResults, specs);
         return new FrameResult(period, trCode, candles, indicatorResults, context);
+    }
+
+    /// <summary>
+    /// Largest look-back, in candles, needed before the display window so every
+    /// requested indicator is fully populated across the candles the caller
+    /// sees. SMA and Bollinger get one full period of leading bars; EMA, RSI,
+    /// and MACD smooth recursively, so they get a larger convergence window.
+    /// </summary>
+    /// <param name="specs">Parsed indicator specs.</param>
+    /// <returns>Warm-up candle count; 0 when no indicators are requested.</returns>
+    static int RequiredWarmup(IReadOnlyList<IndicatorSpec> specs)
+    {
+        int warmup = 0;
+        foreach (IndicatorSpec spec in specs)
+        {
+            int need = spec.Kind switch
+            {
+                "ma" or "bb" => (int)spec.Args[0],
+                "ema" or "rsi" => (int)spec.Args[0] * 3,
+                "macd" => ((int)spec.Args[1] + (int)spec.Args[2]) * 3,
+                _ => 0,
+            };
+            warmup = Math.Max(warmup, need);
+        }
+        return warmup;
     }
 
     /// <summary>Number of trailing candles surfaced when <c>summary_only=true</c>.</summary>
@@ -330,7 +387,8 @@ public static class GetChartTool
     /// <param name="apiClient">LS API client.</param>
     /// <param name="shcode">Stock code.</param>
     /// <param name="gubun">t8410 period gubun (<c>2</c>=day / <c>3</c>=week / <c>4</c>=month / <c>5</c>=year).</param>
-    /// <param name="count">Number of candles to request.</param>
+    /// <param name="count">Total candles to request (display window + warm-up).</param>
+    /// <param name="warmup">Leading warm-up portion of <paramref name="count"/>; pushes an explicit <paramref name="from"/> back so indicators are populated from the first displayed candle. Zero leaves <paramref name="from"/> untouched.</param>
     /// <param name="from">Optional explicit start (yyyyMMdd).</param>
     /// <param name="to">Optional explicit end (yyyyMMdd).</param>
     /// <param name="ct">Cancellation token.</param>
@@ -340,6 +398,7 @@ public static class GetChartTool
         string shcode,
         string gubun,
         int count,
+        int warmup,
         string? from,
         string? to,
         CancellationToken ct)
@@ -351,9 +410,23 @@ public static class GetChartTool
         string effectiveEnd = !string.IsNullOrWhiteSpace(to)
             ? to
             : today.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
-        string effectiveStart = !string.IsNullOrWhiteSpace(from)
-            ? from
-            : ComputeDefaultDailyStart(today, gubun, count).ToString("yyyyMMdd", CultureInfo.InvariantCulture);
+
+        string effectiveStart;
+        if (!string.IsNullOrWhiteSpace(from))
+        {
+            // Push the explicit start back by the warm-up window so indicators
+            // are populated from the first displayed candle. warmup==0 (no
+            // indicators) leaves `from` exactly as the caller gave it.
+            effectiveStart = warmup > 0
+                && DateTime.TryParseExact(from, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime fromDate)
+                ? fromDate.AddDays(-CalendarDaysBack(gubun, warmup)).ToString("yyyyMMdd", CultureInfo.InvariantCulture)
+                : from;
+        }
+        else
+        {
+            effectiveStart = ComputeDefaultDailyStart(today, gubun, count)
+                .ToString("yyyyMMdd", CultureInfo.InvariantCulture);
+        }
 
         var inBlock = new JsonObject
         {
@@ -372,28 +445,32 @@ public static class GetChartTool
     }
 
     /// <summary>
+    /// Generous calendar-day span that safely covers <paramref name="count"/>
+    /// candles of the given period, even across weekends and holidays.
+    /// </summary>
+    static int CalendarDaysBack(string gubun, int count) => gubun switch
+    {
+        "2" => Math.Max(count * 3 + 7, 14),    // day: ~70% busy days + buffer
+        "3" => Math.Max(count * 8, 30),        // week
+        "4" => Math.Max(count * 32, 60),       // month
+        "5" => Math.Max(count * 367, 365 * 2), // year
+        _ => Math.Max(count * 3 + 7, 14),
+    };
+
+    /// <summary>
     /// Generous lookback window for the t8410 InBlock. Returns a date that is
     /// safely far enough back to cover <paramref name="count"/> candles of the
     /// given period, even with weekends + holidays.
     /// </summary>
     static DateTime ComputeDefaultDailyStart(DateTime end, string gubun, int count)
-    {
-        int daysBack = gubun switch
-        {
-            "2" => Math.Max(count * 3 + 7, 14),    // day: ~70% busy days + buffer
-            "3" => Math.Max(count * 8, 30),        // week
-            "4" => Math.Max(count * 32, 60),       // month
-            "5" => Math.Max(count * 367, 365 * 2), // year
-            _ => Math.Max(count * 3 + 7, 14),
-        };
-        return end.AddDays(-daysBack);
-    }
+        => end.AddDays(-CalendarDaysBack(gubun, count));
 
     /// <summary>Fetches minute candles via TR <c>t8412</c>.</summary>
     /// <param name="apiClient">LS API client.</param>
     /// <param name="shcode">Stock code.</param>
     /// <param name="minuteUnit">Minute interval (1/3/5/10/15/30/60).</param>
-    /// <param name="count">Candle count.</param>
+    /// <param name="count">Total candles to request (display window + warm-up).</param>
+    /// <param name="warmup">Leading warm-up portion of <paramref name="count"/>; pushes an explicit <paramref name="from"/> back so indicators are populated from the first displayed candle.</param>
     /// <param name="from">Optional start date (yyyyMMdd).</param>
     /// <param name="to">Optional end date (yyyyMMdd).</param>
     /// <param name="ct">Cancellation token.</param>
@@ -403,10 +480,19 @@ public static class GetChartTool
         string shcode,
         int minuteUnit,
         int count,
+        int warmup,
         string? from,
         string? to,
         CancellationToken ct)
     {
+        string? effectiveStart = from;
+        if (warmup > 0
+            && !string.IsNullOrWhiteSpace(from)
+            && DateTime.TryParseExact(from, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime fromDate))
+        {
+            effectiveStart = fromDate.AddDays(-CalendarDaysBack("2", warmup)).ToString("yyyyMMdd", CultureInfo.InvariantCulture);
+        }
+
         var inBlock = new JsonObject
         {
             ["shcode"] = shcode,
@@ -415,7 +501,7 @@ public static class GetChartTool
             ["nday"] = "0",
             ["comp_yn"] = "N",
         };
-        if (!string.IsNullOrWhiteSpace(from)) inBlock["sdate"] = from;
+        if (!string.IsNullOrWhiteSpace(effectiveStart)) inBlock["sdate"] = effectiveStart;
         if (!string.IsNullOrWhiteSpace(to)) inBlock["edate"] = to;
 
         LsTrResponse response = await apiClient.CallTrAsync("t8412", inBlock, cancellationToken: ct);

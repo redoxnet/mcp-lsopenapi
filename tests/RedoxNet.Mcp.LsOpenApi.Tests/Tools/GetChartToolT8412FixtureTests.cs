@@ -49,6 +49,32 @@ public class GetChartToolT8412FixtureTests
             Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json"),
         });
 
+    /// <summary>
+    /// Builds a synthetic t8412 response with <paramref name="candleCount"/>
+    /// minute candles in ascending datetime order (oldest first).
+    /// </summary>
+    static string BuildT8412Response(int candleCount)
+    {
+        var rows = new List<string>(candleCount);
+        DateTime t = new(2024, 9, 6, 9, 0, 0);
+        for (int i = 0; i < candleCount; i++)
+        {
+            t = t.AddMinutes(1);
+            long close = 1000 + i;
+            rows.Add($$"""
+                { "date": "{{t:yyyyMMdd}}", "time": "{{t:HHmmss}}", "open": {{close}}, "high": {{close + 5}}, "low": {{close - 5}}, "close": {{close}}, "jdiff_vol": {{10000 + i}}, "value": {{100 + i}}, "sign": "2", "rate": "0.00", "jongchk": 0 }
+                """);
+        }
+        return $$"""
+            {
+              "rsp_cd": "00000",
+              "rsp_msg": "정상적으로 조회가 완료되었습니다.",
+              "t8412OutBlock": { "shcode": "078020", "cts_date": "", "cts_time": "", "rec_count": {{candleCount}} },
+              "t8412OutBlock1": [ {{string.Join(",", rows)}} ]
+            }
+            """;
+    }
+
     [Fact]
     public async Task GetChart_T8412Fixture_DispatchesT8412AndParsesMinuteCandles()
     {
@@ -69,6 +95,33 @@ public class GetChartToolT8412FixtureTests
         first.GetProperty("date").GetString().Should().Be("2024-09-06T11:13:00");
         first.GetProperty("close").GetDecimal().Should().Be(4470m);
         first.GetProperty("volume").GetInt64().Should().Be(2317);
+    }
+
+    [Fact]
+    public async Task GetChart_T8412WithFromAndLongPeriodIndicator_PadsStartAndTrimsToCount()
+    {
+        var (client, handler) = TestClientFactory.Create((_, _) => Ok(BuildT8412Response(130)));
+
+        string result = await GetChartTool.GetChart(
+            client,
+            "078020",
+            "min",
+            count: 60,
+            from: "20240906",
+            to: "20240909",
+            minute_unit: 1,
+            indicators: new[] { "ma:60" }).TextContent();
+
+        string sent = await handler.Requests[0].Content!.ReadAsStringAsync();
+        string expectedWarmupStart = new DateTime(2024, 9, 6).AddDays(-187).ToString("yyyyMMdd");
+        sent.Should().Contain("\"qrycnt\":120");
+        sent.Should().Contain($"\"sdate\":\"{expectedWarmupStart}\"");
+        sent.Should().Contain("\"edate\":\"20240909\"");
+
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+        root.GetProperty("count").GetInt32().Should().Be(60);
+        root.GetProperty("indicators").GetProperty("ma:60").EnumerateArray()
+            .Should().OnlyContain(v => v.ValueKind == JsonValueKind.Number);
     }
 
     [Fact]
