@@ -9,9 +9,9 @@
 [![CI](https://github.com/redoxnet/mcp-lsopenapi/actions/workflows/ci.yml/badge.svg)](https://github.com/redoxnet/mcp-lsopenapi/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-MCP server for **LS Securities OpenAPI** — exposes Korean stock market data as MCP tools so AI assistants can query quotes, charts, and indicators in natural language.
+MCP server for **LS Securities OpenAPI** — exposes Korean stock market data as MCP tools so AI assistants can query quotes, charts, and indicators in natural language. **v0.5 adds a local-only portfolio module** for tracking holdings across multiple brokerage accounts, watchlists, and themed sectors — all through conversation.
 
-> v0.x.x is **read-only Korean stock market data**. Realtime feeds, accounts/balances, and orders are scheduled for later releases.
+> v0.x.x is **read-only Korean market data + local portfolio notes**. The v0.5 portfolio tools persist user-supplied entries to a local SQLite store; they do not sync with brokerage accounts or place orders. Realtime feeds (WebSocket), live account queries, and trade execution are scheduled for later releases.
 
 ## Disclaimer
 
@@ -28,6 +28,21 @@ When using the API, please review the [LS OpenAPI usage guide](https://openapi.l
 | `RedoxNet.LsOpenApi.Core` | Library | SDK: auth (OAuth2 client_credentials), HTTP client, TR catalog, indicators. |
 | `RedoxNet.Mcp.LsOpenApi` | dotnet tool | MCP server over stdio. |
 | `RedoxNet.LsOpenApi.Core.Catalog.Builder` | Dev tool | Scrapes the LS docs site to (re)generate the embedded TR catalog. Not shipped. |
+
+## 🆕 v0.5 — Portfolio tracking, multi-account
+
+Record holdings across multiple brokerage accounts, manage watchlists and themed sectors, and apply corporate actions — all through natural language. Stored locally only (`portfolio.db` next to `token.db`); no broker sync, no data leaves your machine.
+
+> *"한투에 LG전자 64주 평단 115,801원, 카카오페이엔 10주 98,450원"* — register across two accounts in one go
+> *"5 more shares at 80,000"* — weighted-average cost basis merge
+> *"민테크 10:1 분할됐대. 두 계좌 다 반영"* — split applied to every account holding the symbol
+> *"내 포트폴리오 평가손익 보여줘"* — grouped per-account holdings + total summary
+
+The grouped-list response carries `accounts[]` (each with `holdings`, per-account `summary`, `is_default`) plus a `total_summary`. When the same symbol exists in two accounts, sell / remove require an explicit `account`; ambiguity is surfaced as a structured error envelope with the candidate accounts so the model can re-call without prompting the user. Sells that exceed the current position raise `InsufficientQuantity`; account removal requires a two-step confirm when holdings would cascade.
+
+Full surface and policy details in [Tools › Portfolio](#portfolio-local-only-no-broker-sync) below.
+
+---
 
 ## ⚡ v0.4 — Same question, 16× less context
 
@@ -132,12 +147,14 @@ For more details from LS, see the [official usage guide](https://openapi.ls-sec.
 | `LS_APPSECRETKEY` | yes | LS OpenAPI app secret key. |
 | `LS_MARKET` | no | `real` or `virtual` (default `virtual`). |
 | `LS_BASEURL` | no | Override REST base URL (rarely needed). |
+| `LS_LOG_LEVEL` | no | Minimum log level: `Trace`/`Debug`/`Information`/`Warning`/`Error`/`Critical`/`None`. Default `Information`. |
+| `LSOPENAPI_DB_PATH` | no | Override the local portfolio SQLite path. Default: alongside `token.db`. |
 
-Tokens are cached at:
-- Windows: `%LOCALAPPDATA%\RedoxNet\LsOpenApi\token.db`
-- Linux/macOS: `~/.local/share/redoxnet/lsopenapi/token.db`
+Local storage lives at:
+- Windows: `%LOCALAPPDATA%\RedoxNet\LsOpenApi\` (`token.db` + `portfolio.db`)
+- Linux/macOS: `~/.local/share/redoxnet/lsopenapi/`
 
-The cache is a SQLite database (WAL mode). Cache keys are `SHA256(appkey):market`, so the raw app key never lives on disk. Tokens auto-refresh 5 minutes before expiry.
+Both files are SQLite (WAL mode). Token cache keys are `SHA256(appkey):market`, so the raw app key never lives on disk; tokens auto-refresh 5 minutes before expiry. The portfolio file holds user-supplied holdings and watchlist entries only — it is never read or written by tools other than the portfolio family below.
 
 ## Credential handling policy
 
@@ -331,6 +348,77 @@ Minimal HTML snippet to render the spec with Plotly.js:
 
 Clients that don't embed Plotly.js can ignore `structuredContent.chart` — the text `summary` / `context` payload remains the model-facing source of truth.
 
+### Portfolio (local-only, no broker sync)
+
+These tools persist user-supplied data to a SQLite store at `%LOCALAPPDATA%\RedoxNet\LsOpenApi\portfolio.db` (override with `LSOPENAPI_DB_PATH`). They do not read or write any brokerage account; every entry is manual. Quote-enriching list responses fall back to a `quote_error` envelope when LS credentials are unavailable, but saved data still returns.
+
+#### Accounts
+
+| Tool | Purpose |
+| --- | --- |
+| `ls_accounts_list` | List registered accounts with holdings counts and the default flag. Empty array when no accounts exist. |
+| `ls_account_get` | Get the default account, or `null` when none are registered. |
+| `ls_account_upsert` | Create or update an account by `account_number`. `nickname` must be unique. `set_default=true` promotes the account; if no default exists yet, the upserted account auto-promotes regardless. |
+| `ls_account_set_default` | Promote an account to default (by `account_number` or `nickname`). Exactly one default whenever ≥1 account exists. |
+| `ls_account_remove` | Two-step cascade. `confirm=false` returns `RequiresConfirmation` with the holding count + market value preview when holdings exist. `confirm=true` proceeds. When removing the default account, the oldest remaining account (id ASC) is auto-promoted to default. |
+| `ls_broker_rename` | Rename a broker label across every account using it (free text). |
+
+#### Holdings
+
+| Tool | Purpose |
+| --- | --- |
+| `ls_holdings_list` | Holdings grouped by account with per-account `summary` and `total_summary`. Optional `account` filter narrows the result to one account. |
+| `ls_holdings_set` | Replace a position with `(quantity, avg_price)`. Use for initial registration. `quantity=0` is rejected — use `ls_holdings_remove`. |
+| `ls_holdings_buy` | Record an incremental buy. Cost basis merges via `new_avg = (old.qty*old.avg + qty*price) / (old.qty + qty)`. |
+| `ls_holdings_sell` | Subtract from the position. Auto-removes the row when remaining quantity reaches zero. Raises `InsufficientQuantity` when the requested quantity exceeds the current position. |
+| `ls_holdings_remove` | Drop a holding row outright. Returns `removed=false` when the symbol is not held in any account. |
+| `ls_holdings_split` | Apply a forward split: `qty *= ratio, avg /= ratio`. With no `account`, applied across every account holding the symbol (corporate events affect all owners). |
+| `ls_holdings_reverse_split` | Reverse split: `qty /= ratio, avg *= ratio`. Rejects non-divisible quantities with `ValidationError` (no fractional shares). |
+| `ls_holdings_bonus` | Bonus issue (무상증자): `qty *= (1 + ratio), avg /= (1 + ratio)`. |
+
+#### Watchlists & sectors
+
+| Tool | Purpose |
+| --- | --- |
+| `ls_watchlist_groups_list` | List groups with item counts. |
+| `ls_watchlist_group_create` | Create or update a group. |
+| `ls_watchlist_group_delete` | Delete a group; cascades items. |
+| `ls_watchlist_group_rename` | Rename a group. Rejects when the new name collides. |
+| `ls_watchlist_add` | Add or update a saved stock entry (lazy `t8407` metadata fetch when credentials are present). |
+| `ls_watchlist_remove` | Remove an entry from a group. |
+| `ls_watchlist_list` | List entries grouped by watchlist group, enriched with live quotes when credentials are present. |
+| `ls_watched_sectors_add` / `_remove` / `_list` | Track theme/sector codes (`t1531` tmcode such as `0012`); list response carries each theme's `change_pct` (avgdiff) when credentials are present. |
+
+#### Ambiguity policy
+
+When a write tool does not specify `account`:
+
+| Tool | 0 accounts | 1 account | 2+ accounts |
+| --- | --- | --- | --- |
+| `ls_holdings_list` / `ls_accounts_list` | empty | auto | grouped (default first) |
+| `ls_holdings_set` / `_buy` | `RequiresAccount` | auto + `applied_to` echo | `AmbiguousAccount` (writes need an explicit target) |
+| `ls_holdings_sell` / `_remove` | error / `removed=false` | auto + echo when the symbol is held in exactly one account | `AmbiguousAccount` when the symbol is in multiple accounts |
+| `ls_holdings_split` / `_reverse_split` / `_bonus` | n/a | auto + echo | applies across every account holding the symbol; explicit `account` narrows to one |
+
+Every write response includes `applied_to` — a single `{account_number, nickname, broker, is_default}` for one-account writes, or an array of before/after snapshots for corporate actions across multiple accounts.
+
+#### Error envelopes
+
+| `error` | Carries | When |
+| --- | --- | --- |
+| `RequiresAccount` | `message` | No accounts registered. |
+| `AmbiguousAccount` | `message`, `candidates[]` | More than one valid target. |
+| `AccountNotFound` | `message`, `identifier`, `candidates[]` | Account identifier did not resolve. |
+| `RequiresConfirmation` | `message`, `account`, `holding_count`, `market_value` | `ls_account_remove` without `confirm=true` when holdings exist. |
+| `InsufficientQuantity` | `message`, `shcode`, `current_quantity`, `requested_quantity`, `applied_to` | `_sell` requested more shares than held. |
+| `ValidationError` | `message` | Schema or domain rule violation (zero quantity, malformed shcode, non-divisible reverse split, nickname collision, …). |
+
+Every envelope is structured so the LLM can recover automatically — `candidates` is populated wherever an account had to be selected, so the model can immediately re-call with a valid identifier without prompting the user.
+
+#### Split / bonus warning
+
+When `current_price / avg_price` diverges by 5× or more in either direction, the holding row carries a `warning` field hinting at a missed corporate action ("분할/무상증자 가능성: 현재가/평단 비율 N배"). The model can then suggest `ls_holdings_split` or a manual `_set` correction.
+
 ### Indicator specs (for `ls_get_chart`)
 
 | Spec | Effect |
@@ -357,12 +445,13 @@ dotnet run --project src/RedoxNet.Mcp.LsOpenApi --framework net8.0
 ## Status
 
 - ✅ M1 — Core scaffold + auth (OAuth2 client_credentials, SQLite WAL token cache, secret masking).
-- ✅ M2 — Embedded TR catalog with 16 testbed-verified seed entries (`t1101`, `t1102`, `t1441`, `t1444`, `t1452`, `t1463`, `t1466`, `t8407`, `t8410`, `t8412`, `t1301`, `t8430`, `t8436`, `t9945`, `t1901`, `t1904`).
+- ✅ M2 — Embedded TR catalog with 18 testbed-verified seed entries (`t1101`, `t1102`, `t1301`, `t1441`, `t1444`, `t1452`, `t1463`, `t1466`, `t1531`, `t1532`, `t1901`, `t1904`, `t8407`, `t8410`, `t8412`, `t8430`, `t8436`, `t9945`).
 - ✅ M3 — TR execution (`LsApiClient.CallTrAsync`) with Polly retries, per-TR rate limiter, header + body continuation modes.
 - ✅ M4 — MCP stdio server with 3 meta tools (`ls_search_tr`, `ls_describe_tr`, `ls_call_tr`).
 - ✅ M5 — 8 semantic tools: `ls_get_quote`, `ls_get_multi_quote`, `ls_get_top_stocks`, `ls_get_stock_info`, `ls_get_chart` (+ indicators, context metadata, multi-timeframe, Plotly v5 spec via `include_chart`), `ls_search_stock`, **`ls_get_etf_info`, `ls_get_etf_holdings`**.
 - ✅ Live verified against the LS virtual server (v0.2.0).
-- ⏳ v2.0 — Realtime (WebSocket), accounts/balances, orders.
+- ✅ M6 — **Local portfolio module (v0.5)**: multi-account holdings with `set`/`buy`/`sell` semantics (weighted-average merge, auto-remove on zero), watchlists, watched sectors, corporate actions (`split` / `reverse_split` / `bonus`) across all holders, structured error envelopes with candidate accounts. SQLite-backed; no broker sync.
+- ⏳ v2.0 — Realtime (WebSocket), live accounts/balances, orders.
 
 ## License
 
