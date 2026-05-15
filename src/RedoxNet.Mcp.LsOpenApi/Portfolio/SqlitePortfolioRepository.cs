@@ -79,6 +79,18 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
             CREATE INDEX IF NOT EXISTS idx_watchlist_items_symbol ON watchlist_items(symbol);
             CREATE INDEX IF NOT EXISTS idx_holdings_symbol ON holdings(symbol);
             """),
+        (2, """
+            -- v0.5: enforce unique nickname so account identifiers stay deterministic.
+            -- The seeded 'UNSET' placeholder from v1 is removed unless it actually
+            -- owns holdings; v0.5 allows the zero-account empty state and surfaces
+            -- it via RequiresAccount errors at the service layer.
+            DELETE FROM accounts
+            WHERE account_no = 'UNSET'
+              AND nickname = '기본 계좌'
+              AND id NOT IN (SELECT account_id FROM holdings);
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_nickname ON accounts(nickname);
+            """),
     ];
 
     readonly string _databasePath;
@@ -234,6 +246,30 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
     }
 
     /// <inheritdoc />
+    public async Task<RenameGroupResult> RenameGroupAsync(string oldName, string newName, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        string normalizedOld = NormalizeName(oldName, nameof(oldName));
+        string normalizedNew = NormalizeName(newName, nameof(newName));
+        await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        long? groupId = await GetGroupIdAsync(connection, normalizedOld, cancellationToken).ConfigureAwait(false);
+        if (groupId is null)
+            throw new InvalidOperationException($"Watchlist group '{normalizedOld}' does not exist.");
+        if (string.Equals(normalizedOld, normalizedNew, StringComparison.Ordinal))
+            return new RenameGroupResult(normalizedOld, normalizedNew);
+
+        long? collision = await GetGroupIdAsync(connection, normalizedNew, cancellationToken).ConfigureAwait(false);
+        if (collision is not null)
+            throw new InvalidOperationException($"Watchlist group '{normalizedNew}' already exists.");
+
+        await connection.ExecuteAsync(new CommandDefinition(
+            "UPDATE watchlist_groups SET name = @NewName WHERE id = @Id;",
+            new { NewName = normalizedNew, Id = groupId.Value },
+            cancellationToken: cancellationToken)).ConfigureAwait(false);
+        return new RenameGroupResult(normalizedOld, normalizedNew);
+    }
+
+    /// <inheritdoc />
     public async Task<WatchlistItem> AddWatchlistItemAsync(string symbol, string group, string? notes, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
@@ -346,7 +382,35 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
     }
 
     /// <inheritdoc />
-    public async Task<Account> GetDefaultAccountAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<AccountSummary>> ListAccountSummariesAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        const string sql = """
+            SELECT a.account_no AS AccountNumber, a.nickname AS Nickname, a.broker AS Broker,
+                   a.is_default AS IsDefault,
+                   (SELECT COUNT(*) FROM holdings h WHERE h.account_id = a.id) AS HoldingsCount
+            FROM accounts a
+            ORDER BY a.is_default DESC, a.id ASC;
+            """;
+        IEnumerable<AccountSummary> rows = await connection.QueryAsync<AccountSummary>(
+            new CommandDefinition(sql, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        return rows.ToList();
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<Account>> ListAccountsAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        IEnumerable<Account> rows = await connection.QueryAsync<Account>(
+            new CommandDefinition(AccountSelectSql + " ORDER BY a.is_default DESC, a.id ASC;",
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+        return rows.ToList();
+    }
+
+    /// <inheritdoc />
+    public async Task<Account?> GetDefaultAccountAsync(CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
         await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -354,41 +418,154 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
     }
 
     /// <inheritdoc />
-    public async Task<Account> SetDefaultAccountAsync(string accountNo, string? nickname, CancellationToken cancellationToken = default)
+    public async Task<Account?> GetAccountByIdentifierAsync(string identifier, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
-        string normalizedAccountNo = NormalizeName(accountNo, nameof(accountNo));
+        string trimmed = NormalizeName(identifier, nameof(identifier));
+        await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        return await GetAccountByIdentifierAsync(connection, trimmed, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<Account> UpsertAccountAsync(string accountNumber, string nickname, string? broker, bool setDefault, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        string normalizedAccountNumber = NormalizeName(accountNumber, nameof(accountNumber));
+        string normalizedNickname = NormalizeName(nickname, nameof(nickname));
+        string normalizedBroker = NullIfWhiteSpace(broker) ?? "LS";
+
         await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        Account current = await GetDefaultAccountAsync(connection, cancellationToken, transaction).ConfigureAwait(false);
 
-        await connection.ExecuteAsync(new CommandDefinition(
-            "UPDATE accounts SET is_default = 0;",
-            transaction: transaction,
-            cancellationToken: cancellationToken)).ConfigureAwait(false);
         await connection.ExecuteAsync(new CommandDefinition(
             """
-            UPDATE accounts
-            SET account_no = @AccountNo,
-                nickname = COALESCE(@Nickname, nickname),
-                is_default = 1
-            WHERE id = @Id;
+            INSERT INTO accounts(account_no, nickname, broker, is_default)
+            VALUES (@AccountNumber, @Nickname, @Broker, 0)
+            ON CONFLICT(account_no) DO UPDATE SET
+                nickname = excluded.nickname,
+                broker = excluded.broker;
             """,
-            new { AccountNo = normalizedAccountNo, Nickname = NullIfWhiteSpace(nickname), current.Id },
-            transaction,
-            cancellationToken: cancellationToken)).ConfigureAwait(false);
+            new { AccountNumber = normalizedAccountNumber, Nickname = normalizedNickname, Broker = normalizedBroker },
+            transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-        Account updated = await GetDefaultAccountAsync(connection, cancellationToken, transaction).ConfigureAwait(false);
+        // Promote to default if requested OR if no default currently exists.
+        int existingDefaults = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+            "SELECT COUNT(*) FROM accounts WHERE is_default = 1;",
+            transaction: transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        bool promote = setDefault || existingDefaults == 0;
+        if (promote)
+        {
+            await connection.ExecuteAsync(new CommandDefinition(
+                "UPDATE accounts SET is_default = CASE WHEN account_no = @AccountNumber THEN 1 ELSE 0 END;",
+                new { AccountNumber = normalizedAccountNumber },
+                transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+
+        Account result = await connection.QuerySingleAsync<Account>(new CommandDefinition(
+            AccountSelectSql + " WHERE a.account_no = @AccountNumber;",
+            new { AccountNumber = normalizedAccountNumber }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return result;
+    }
+
+    /// <inheritdoc />
+    public async Task<RemoveAccountResult> RemoveAccountAsync(Account account, bool confirm, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(account);
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        int holdingCount = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+            "SELECT COUNT(*) FROM holdings WHERE account_id = @Id;",
+            new { account.Id }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        if (holdingCount > 0 && !confirm)
+        {
+            // Caller must escalate. Service translates this into RequiresConfirmationException.
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return new RemoveAccountResult(false, holdingCount, null);
+        }
+
+        await connection.ExecuteAsync(new CommandDefinition(
+            "DELETE FROM accounts WHERE id = @Id;",
+            new { account.Id }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        // Default succession: if removed account was default and others remain, promote id ASC.
+        AccountInfo? newDefault = null;
+        if (account.IsDefault)
+        {
+            Account? heir = await connection.QuerySingleOrDefaultAsync<Account>(new CommandDefinition(
+                AccountSelectSql + " ORDER BY a.id ASC LIMIT 1;",
+                transaction: transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            if (heir is not null)
+            {
+                await connection.ExecuteAsync(new CommandDefinition(
+                    "UPDATE accounts SET is_default = CASE WHEN id = @Id THEN 1 ELSE 0 END;",
+                    new { heir.Id }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+                newDefault = new AccountInfo(heir.AccountNo, heir.Nickname, heir.Broker, IsDefault: true);
+            }
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return new RemoveAccountResult(true, holdingCount, newDefault);
+    }
+
+    /// <inheritdoc />
+    public async Task<Account> SetDefaultAccountAsync(Account account, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(account);
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        await connection.ExecuteAsync(new CommandDefinition(
+            "UPDATE accounts SET is_default = CASE WHEN id = @Id THEN 1 ELSE 0 END;",
+            new { account.Id }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        Account updated = await connection.QuerySingleAsync<Account>(new CommandDefinition(
+            AccountSelectSql + " WHERE a.id = @Id;",
+            new { account.Id }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         return updated;
     }
 
     /// <inheritdoc />
-    public async Task<Holding> UpsertHoldingAsync(long accountId, string symbol, int quantity, double avgPrice, string? notes, CancellationToken cancellationToken = default)
+    public async Task<RenameBrokerResult> RenameBrokerAsync(string fromBroker, string toBroker, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
-        if (quantity < 0)
-            throw new ArgumentOutOfRangeException(nameof(quantity), "Quantity must be non-negative.");
+        string normalizedFrom = NormalizeName(fromBroker, nameof(fromBroker));
+        string normalizedTo = NormalizeName(toBroker, nameof(toBroker));
+        await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        int affected = await connection.ExecuteAsync(new CommandDefinition(
+            "UPDATE accounts SET broker = @To WHERE broker = @From;",
+            new { From = normalizedFrom, To = normalizedTo },
+            cancellationToken: cancellationToken)).ConfigureAwait(false);
+        return new RenameBrokerResult(normalizedFrom, normalizedTo, affected);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<Account>> FindAccountsHoldingAsync(string symbol, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        string normalizedSymbol = NormalizeSymbol(symbol);
+        await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        IEnumerable<Account> rows = await connection.QueryAsync<Account>(new CommandDefinition(
+            AccountSelectSql + """
+             JOIN holdings h ON h.account_id = a.id
+             WHERE h.symbol = @Symbol
+             ORDER BY a.is_default DESC, a.id ASC;
+            """,
+            new { Symbol = normalizedSymbol }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        return rows.ToList();
+    }
+
+    /// <inheritdoc />
+    public async Task<Holding> SetHoldingAsync(long accountId, string symbol, int quantity, double avgPrice, string? notes, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        if (quantity <= 0)
+            throw new ArgumentOutOfRangeException(nameof(quantity), "Quantity must be positive; use RemoveHoldingAsync to delete a holding.");
         if (avgPrice < 0)
             throw new ArgumentOutOfRangeException(nameof(avgPrice), "Average price must be non-negative.");
 
@@ -409,6 +586,98 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
             cancellationToken: cancellationToken)).ConfigureAwait(false);
         return await GetHoldingAsync(connection, accountId, normalizedSymbol, cancellationToken).ConfigureAwait(false)
                ?? throw new InvalidOperationException("Failed to upsert holding.");
+    }
+
+    /// <inheritdoc />
+    public async Task<Holding> BuyHoldingAsync(long accountId, string symbol, int quantity, double price, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        if (quantity <= 0)
+            throw new ArgumentOutOfRangeException(nameof(quantity), "Buy quantity must be positive.");
+        if (price < 0)
+            throw new ArgumentOutOfRangeException(nameof(price), "Buy price must be non-negative.");
+
+        string normalizedSymbol = NormalizeSymbol(symbol);
+        await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await EnsureStockAsync(connection, normalizedSymbol, cancellationToken).ConfigureAwait(false);
+
+        Holding? existing = await GetHoldingAsync(connection, accountId, normalizedSymbol, cancellationToken, transaction).ConfigureAwait(false);
+        int newQty;
+        double newAvg;
+        if (existing is null)
+        {
+            newQty = quantity;
+            newAvg = price;
+        }
+        else
+        {
+            newQty = existing.Quantity + quantity;
+            double existingCost = existing.Quantity * existing.AvgPrice;
+            double buyCost = quantity * price;
+            newAvg = newQty == 0 ? 0 : (existingCost + buyCost) / newQty;
+        }
+
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            INSERT INTO holdings(account_id, symbol, quantity, avg_price, updated_at)
+            VALUES (@AccountId, @Symbol, @Quantity, @AvgPrice, datetime('now'))
+            ON CONFLICT(account_id, symbol) DO UPDATE SET
+                quantity = excluded.quantity,
+                avg_price = excluded.avg_price,
+                updated_at = datetime('now');
+            """,
+            new { AccountId = accountId, Symbol = normalizedSymbol, Quantity = newQty, AvgPrice = newAvg },
+            transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        Holding result = await GetHoldingAsync(connection, accountId, normalizedSymbol, cancellationToken, transaction).ConfigureAwait(false)
+                         ?? throw new InvalidOperationException("Failed to record buy.");
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return result;
+    }
+
+    /// <inheritdoc />
+    public async Task<Holding?> SellHoldingAsync(long accountId, string symbol, int quantity, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        if (quantity <= 0)
+            throw new ArgumentOutOfRangeException(nameof(quantity), "Sell quantity must be positive.");
+
+        string normalizedSymbol = NormalizeSymbol(symbol);
+        await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        Holding? existing = await GetHoldingAsync(connection, accountId, normalizedSymbol, cancellationToken, transaction).ConfigureAwait(false);
+        if (existing is null)
+            throw new InvalidOperationException($"Symbol '{normalizedSymbol}' is not held in this account.");
+        if (quantity > existing.Quantity)
+            throw new ArgumentOutOfRangeException(nameof(quantity),
+                $"Cannot sell {quantity} share(s); current quantity is {existing.Quantity}.");
+
+        int newQty = existing.Quantity - quantity;
+        if (newQty == 0)
+        {
+            await connection.ExecuteAsync(new CommandDefinition(
+                "DELETE FROM holdings WHERE account_id = @AccountId AND symbol = @Symbol;",
+                new { AccountId = accountId, Symbol = normalizedSymbol },
+                transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return null;
+        }
+
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE holdings
+            SET quantity = @Quantity, updated_at = datetime('now')
+            WHERE account_id = @AccountId AND symbol = @Symbol;
+            """,
+            new { AccountId = accountId, Symbol = normalizedSymbol, Quantity = newQty },
+            transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        Holding result = await GetHoldingAsync(connection, accountId, normalizedSymbol, cancellationToken, transaction).ConfigureAwait(false)
+                         ?? throw new InvalidOperationException("Failed to record sell.");
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return result;
     }
 
     /// <inheritdoc />
@@ -451,6 +720,70 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<Holding>> ListAllHoldingsAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        IEnumerable<Holding> rows = await connection.QueryAsync<Holding>(new CommandDefinition(
+            """
+            SELECT h.id AS Id, h.account_id AS AccountId, h.symbol AS Symbol,
+                   s.name AS Name, s.market AS Market,
+                   h.quantity AS Quantity, h.avg_price AS AvgPrice, h.notes AS Notes, h.updated_at AS UpdatedAt
+            FROM holdings h
+            JOIN stocks s ON s.symbol = h.symbol
+            ORDER BY h.account_id, h.updated_at DESC, h.symbol;
+            """,
+            cancellationToken: cancellationToken)).ConfigureAwait(false);
+        return rows.ToList();
+    }
+
+    /// <inheritdoc />
+    public async Task<Holding?> ApplyCorporateActionAsync(long accountId, string symbol, double qtyMultiplier, double priceMultiplier, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        if (qtyMultiplier <= 0)
+            throw new ArgumentOutOfRangeException(nameof(qtyMultiplier), "Quantity multiplier must be positive.");
+        if (priceMultiplier <= 0)
+            throw new ArgumentOutOfRangeException(nameof(priceMultiplier), "Price multiplier must be positive.");
+
+        string normalizedSymbol = NormalizeSymbol(symbol);
+        await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        Holding? existing = await GetHoldingAsync(connection, accountId, normalizedSymbol, cancellationToken, transaction).ConfigureAwait(false);
+        if (existing is null)
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return null;
+        }
+
+        double scaledQty = existing.Quantity * qtyMultiplier;
+        int newQty = (int)Math.Round(scaledQty, MidpointRounding.AwayFromZero);
+        if (Math.Abs(scaledQty - newQty) > 1e-9)
+            throw new ArgumentOutOfRangeException(nameof(qtyMultiplier),
+                $"Corporate action produces non-integer share count ({scaledQty:G}). Reverse-split ratios must evenly divide the current quantity.");
+        if (newQty <= 0)
+            throw new ArgumentOutOfRangeException(nameof(qtyMultiplier),
+                "Corporate action would zero or invert the position.");
+
+        double newAvg = existing.AvgPrice * priceMultiplier;
+
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE holdings
+            SET quantity = @Quantity, avg_price = @AvgPrice, updated_at = datetime('now')
+            WHERE account_id = @AccountId AND symbol = @Symbol;
+            """,
+            new { AccountId = accountId, Symbol = normalizedSymbol, Quantity = newQty, AvgPrice = newAvg },
+            transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        Holding result = await GetHoldingAsync(connection, accountId, normalizedSymbol, cancellationToken, transaction).ConfigureAwait(false)
+                         ?? throw new InvalidOperationException("Corporate action failed.");
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return result;
+    }
+
+    /// <inheritdoc />
     public async Task UpsertStockAsync(string symbol, string name, string market, string? krxSector, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
@@ -483,7 +816,9 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
     }
 
     /// <summary>
-    /// Inserts default seed rows if they are absent.
+    /// Inserts default seed rows if they are absent. The default watchlist group is preserved
+    /// because group-less items would be awkward; accounts are no longer auto-seeded in v0.5 —
+    /// the zero-account empty state is a valid first-run state.
     /// </summary>
     static async Task SeedAsync(SqliteConnection connection, System.Data.IDbTransaction transaction, CancellationToken cancellationToken)
     {
@@ -494,19 +829,6 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
             ON CONFLICT(name) DO NOTHING;
             """,
             transaction: transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
-
-        int defaultAccounts = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
-            "SELECT COUNT(*) FROM accounts WHERE is_default = 1;",
-            transaction: transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
-        if (defaultAccounts == 0)
-        {
-            await connection.ExecuteAsync(new CommandDefinition(
-                """
-                INSERT INTO accounts(account_no, nickname, broker, is_default)
-                VALUES ('UNSET', '기본 계좌', 'LS', 1);
-                """,
-                transaction: transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
-        }
     }
 
     /// <summary>
@@ -546,25 +868,48 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
             new { Symbol = symbol, Group = group }, cancellationToken: cancellationToken));
 
     /// <summary>
-    /// Gets the default account from an open connection.
+    /// Shared SELECT prefix for account queries. Append the WHERE / ORDER BY clause inline.
     /// </summary>
-    static Task<Account> GetDefaultAccountAsync(SqliteConnection connection, CancellationToken cancellationToken, System.Data.IDbTransaction? transaction = null) =>
-        connection.QuerySingleAsync<Account>(new CommandDefinition(
-            """
-            SELECT id AS Id, account_no AS AccountNo, nickname AS Nickname, broker AS Broker,
-                   is_default AS IsDefault, created_at AS CreatedAt
-            FROM accounts
-            WHERE is_default = 1
-            ORDER BY id
-            LIMIT 1;
-            """,
+    const string AccountSelectSql = """
+        SELECT a.id AS Id, a.account_no AS AccountNo, a.nickname AS Nickname, a.broker AS Broker,
+               a.is_default AS IsDefault, a.created_at AS CreatedAt
+        FROM accounts a
+        """;
+
+    /// <summary>
+    /// Gets the default account from an open connection. Returns null when no accounts exist.
+    /// </summary>
+    static Task<Account?> GetDefaultAccountAsync(SqliteConnection connection, CancellationToken cancellationToken, System.Data.IDbTransaction? transaction = null) =>
+        connection.QuerySingleOrDefaultAsync<Account>(new CommandDefinition(
+            AccountSelectSql + " WHERE a.is_default = 1 ORDER BY a.id LIMIT 1;",
             transaction: transaction,
             cancellationToken: cancellationToken));
 
     /// <summary>
+    /// Resolves an account by account_number, falling back to nickname when no number matches.
+    /// </summary>
+    static async Task<Account?> GetAccountByIdentifierAsync(SqliteConnection connection, string identifier, CancellationToken cancellationToken, System.Data.IDbTransaction? transaction = null)
+    {
+        Account? byNumber = await connection.QuerySingleOrDefaultAsync<Account>(new CommandDefinition(
+            AccountSelectSql + " WHERE a.account_no = @Identifier;",
+            new { Identifier = identifier }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        if (byNumber is not null)
+            return byNumber;
+        return await connection.QuerySingleOrDefaultAsync<Account>(new CommandDefinition(
+            AccountSelectSql + " WHERE a.nickname = @Identifier;",
+            new { Identifier = identifier }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Converts a repository Account to the MCP-facing AccountInfo shape.
+    /// </summary>
+    internal static AccountInfo ToAccountInfo(Account account) =>
+        new(account.AccountNo, account.Nickname, account.Broker, account.IsDefault);
+
+    /// <summary>
     /// Gets a holding from an open connection.
     /// </summary>
-    static Task<Holding?> GetHoldingAsync(SqliteConnection connection, long accountId, string symbol, CancellationToken cancellationToken) =>
+    static Task<Holding?> GetHoldingAsync(SqliteConnection connection, long accountId, string symbol, CancellationToken cancellationToken, System.Data.IDbTransaction? transaction = null) =>
         connection.QuerySingleOrDefaultAsync<Holding>(new CommandDefinition(
             """
             SELECT h.id AS Id, h.account_id AS AccountId, h.symbol AS Symbol,
@@ -574,7 +919,7 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
             JOIN stocks s ON s.symbol = h.symbol
             WHERE h.account_id = @AccountId AND h.symbol = @Symbol;
             """,
-            new { AccountId = accountId, Symbol = symbol }, cancellationToken: cancellationToken));
+            new { AccountId = accountId, Symbol = symbol }, transaction, cancellationToken: cancellationToken));
 
     /// <summary>
     /// Ensures placeholder stock metadata exists for a referenced symbol.

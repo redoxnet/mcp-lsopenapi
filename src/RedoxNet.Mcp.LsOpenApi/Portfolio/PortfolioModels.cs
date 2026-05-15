@@ -122,9 +122,23 @@ internal sealed record DeleteGroupResult(bool Deleted, int CascadedItems);
 internal sealed record RemoveResult(bool Removed);
 
 /// <summary>
-/// Account metadata returned to MCP hosts.
+/// Account metadata returned to MCP hosts. Used inside <c>applied_to</c> echoes and error envelope candidates.
 /// </summary>
-internal sealed record AccountInfo(string AccountNo, string Nickname, string Broker);
+internal sealed record AccountInfo(string AccountNumber, string Nickname, string Broker, bool IsDefault);
+
+/// <summary>
+/// Per-account summary row for the accounts_list response. Class form so Dapper can
+/// materialize from a SELECT with a COUNT(*) subquery (positional records fail when
+/// Dapper cannot find a constructor that matches the inferred column types).
+/// </summary>
+internal sealed class AccountSummary
+{
+    public string AccountNumber { get; init; } = "";
+    public string Nickname { get; init; } = "";
+    public string Broker { get; init; } = "";
+    public bool IsDefault { get; init; }
+    public int HoldingsCount { get; init; }
+}
 
 /// <summary>
 /// Lightweight watchlist add/update result without a quote field.
@@ -147,6 +161,11 @@ internal sealed record WatchlistGroupItems(string Name, string? Description, int
 internal sealed record WatchlistListResult(string? GroupName, IReadOnlyList<WatchlistGroupItems> Groups, string? QuoteError);
 
 /// <summary>
+/// Result of renaming a watchlist group.
+/// </summary>
+internal sealed record RenameGroupResult(string OldName, string NewName);
+
+/// <summary>
 /// Watched sector/theme plus optional t1531 quote enrichment.
 /// </summary>
 internal sealed record WatchedSectorWithQuote(string SectorCode, string SectorName, string? Note, string AddedAt, SectorQuote? Quote);
@@ -159,25 +178,84 @@ internal sealed record SectorListResult(IReadOnlyList<WatchedSectorWithQuote> It
 /// <summary>
 /// Holding plus optional current quote and derived valuation fields.
 /// </summary>
-internal sealed record HoldingWithQuote(string Shcode, string? Name, int Quantity, double AvgPrice, string? Note, StockQuote? Quote, double? CurrentValue, double? Pnl, double? PnlPct);
+internal sealed record HoldingWithQuote(
+    string Shcode,
+    string? Name,
+    int Quantity,
+    double AvgPrice,
+    string? Note,
+    StockQuote? Quote,
+    double? MarketValue,
+    double? CostBasis,
+    double? Pnl,
+    double? PnlPct,
+    string? Warning);
 
 /// <summary>
-/// Portfolio valuation summary derived from saved holdings and current quotes.
+/// Portfolio valuation summary used both per-account and at the total roll-up.
 /// </summary>
-internal sealed record PortfolioSummary(double TotalCost, double? TotalValue, double? TotalPnl, double? TotalPnlPct);
+internal sealed record PortfolioSummary(double CostBasis, double? MarketValue, double? Pnl, double? PnlPct);
 
 /// <summary>
-/// Holding add result.
+/// Result of a single-account write echo (set/buy/sell/remove).
 /// </summary>
-internal sealed record HoldingAddedResult(string Shcode, string Name, int Quantity, double AvgPrice);
+internal sealed record HoldingWriteResult(
+    string Shcode,
+    string? Name,
+    int Quantity,
+    double AvgPrice,
+    AccountInfo AppliedTo);
 
 /// <summary>
-/// Holding update result.
+/// Before/after snapshot for one account inside a corporate action result.
 /// </summary>
-internal sealed record HoldingUpdatedResult(string Shcode, int Quantity, double AvgPrice);
+internal sealed record CorporateActionAccountResult(
+    AccountInfo Account,
+    HoldingSnapshot Before,
+    HoldingSnapshot After);
 
 /// <summary>
-/// Holdings list response for the local default account.
+/// Holding state at a point in time.
 /// </summary>
-internal sealed record HoldingListResult(AccountInfo Account, IReadOnlyList<HoldingWithQuote> Items, PortfolioSummary Summary, string? QuoteError);
+internal sealed record HoldingSnapshot(int Quantity, double AvgPrice);
 
+/// <summary>
+/// Result of a corporate action (split/reverse_split/bonus). Lists every account that was touched.
+/// </summary>
+internal sealed record CorporateActionResult(
+    string Shcode,
+    string Action,
+    double Ratio,
+    IReadOnlyList<CorporateActionAccountResult> AppliedTo);
+
+/// <summary>
+/// Per-account holdings group inside the holdings_list response.
+/// </summary>
+internal sealed record AccountHoldings(
+    string AccountNumber,
+    string Nickname,
+    string Broker,
+    bool IsDefault,
+    IReadOnlyList<HoldingWithQuote> Holdings,
+    PortfolioSummary Summary);
+
+/// <summary>
+/// Holdings list response. Always grouped — single-account responses have <c>accounts</c> of length 1.
+/// </summary>
+internal sealed record HoldingListResult(
+    IReadOnlyList<AccountHoldings> Accounts,
+    PortfolioSummary TotalSummary,
+    string? QuoteError);
+
+/// <summary>
+/// Result of removing an account. Reports whether holdings were cascaded and who inherited default, if anyone.
+/// </summary>
+internal sealed record RemoveAccountResult(
+    bool Removed,
+    int CascadedHoldings,
+    AccountInfo? NewDefault);
+
+/// <summary>
+/// Result of renaming a broker across all matching accounts.
+/// </summary>
+internal sealed record RenameBrokerResult(string From, string To, int AccountsAffected);

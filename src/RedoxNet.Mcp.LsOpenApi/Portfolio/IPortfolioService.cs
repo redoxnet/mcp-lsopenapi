@@ -1,53 +1,44 @@
 namespace RedoxNet.Mcp.LsOpenApi.Portfolio;
 
 /// <summary>
-/// Coordinates local portfolio persistence with optional quote enrichment.
+/// Coordinates local portfolio persistence with optional live quote enrichment, ambiguity policy,
+/// and applied_to echoes for the MCP-facing tool layer.
 /// </summary>
 internal interface IPortfolioService
 {
-    /// <summary>Lists local watchlist groups.</summary>
+    // -------- Watchlist groups --------
     Task<IReadOnlyList<WatchlistGroupSummary>> ListGroupsAsync(CancellationToken cancellationToken = default);
-
-    /// <summary>Creates or updates a local watchlist group.</summary>
     Task<WatchlistGroup> CreateGroupAsync(string name, string? description, CancellationToken cancellationToken = default);
-
-    /// <summary>Deletes a local watchlist group and returns the cascade count.</summary>
     Task<DeleteGroupResult> DeleteGroupAsync(string name, CancellationToken cancellationToken = default);
+    Task<RenameGroupResult> RenameGroupAsync(string oldName, string newName, CancellationToken cancellationToken = default);
 
-    /// <summary>Adds a stock to a local watchlist group.</summary>
+    // -------- Watchlist items --------
     Task<WatchlistItemAdded> AddWatchlistAsync(string symbol, string group, string? notes, CancellationToken cancellationToken = default);
-
-    /// <summary>Removes a stock from a local watchlist group.</summary>
     Task<RemoveResult> RemoveWatchlistAsync(string symbol, string group, CancellationToken cancellationToken = default);
-
-    /// <summary>Lists watchlist groups and items with optional quote enrichment.</summary>
     Task<WatchlistListResult> ListWatchlistAsync(string? group, CancellationToken cancellationToken = default);
 
-    /// <summary>Adds or updates a watched sector/theme.</summary>
+    // -------- Sectors --------
     Task<WatchedSector> WatchSectorAsync(string sectorCode, string? sectorName, string? notes, CancellationToken cancellationToken = default);
-
-    /// <summary>Removes a watched sector/theme.</summary>
     Task<RemoveResult> UnwatchSectorAsync(string sectorCode, CancellationToken cancellationToken = default);
-
-    /// <summary>Lists watched sectors/themes with optional quote enrichment.</summary>
     Task<SectorListResult> ListSectorsAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Gets the local default portfolio account.</summary>
-    Task<AccountInfo> GetAccountAsync(CancellationToken cancellationToken = default);
+    // -------- Accounts --------
+    Task<IReadOnlyList<AccountSummary>> ListAccountsAsync(CancellationToken cancellationToken = default);
+    Task<AccountInfo?> GetDefaultAccountAsync(CancellationToken cancellationToken = default);
+    Task<AccountInfo> UpsertAccountAsync(string accountNumber, string nickname, string? broker, bool setDefault, CancellationToken cancellationToken = default);
+    Task<RemoveAccountResult> RemoveAccountAsync(string accountIdentifier, bool confirm, CancellationToken cancellationToken = default);
+    Task<AccountInfo> SetDefaultAccountAsync(string accountIdentifier, CancellationToken cancellationToken = default);
+    Task<RenameBrokerResult> RenameBrokerAsync(string fromBroker, string toBroker, CancellationToken cancellationToken = default);
 
-    /// <summary>Updates the local default portfolio account.</summary>
-    Task<AccountInfo> SetAccountAsync(string accountNo, string? nickname, CancellationToken cancellationToken = default);
+    // -------- Holdings --------
+    Task<HoldingWriteResult> SetHoldingAsync(string symbol, int quantity, double avgPrice, string? notes, string? accountIdentifier, CancellationToken cancellationToken = default);
+    Task<HoldingWriteResult> BuyHoldingAsync(string symbol, int quantity, double price, string? accountIdentifier, CancellationToken cancellationToken = default);
+    Task<HoldingWriteResult> SellHoldingAsync(string symbol, int quantity, string? accountIdentifier, CancellationToken cancellationToken = default);
+    Task<HoldingWriteResult?> RemoveHoldingAsync(string symbol, string? accountIdentifier, CancellationToken cancellationToken = default);
+    Task<HoldingListResult> ListHoldingsAsync(string? accountIdentifier, CancellationToken cancellationToken = default);
 
-    /// <summary>Adds or replaces a manually-entered holding.</summary>
-    Task<HoldingAddedResult> AddHoldingAsync(string symbol, int quantity, double avgPrice, string? notes, CancellationToken cancellationToken = default);
-
-    /// <summary>Partially updates a manually-entered holding.</summary>
-    Task<HoldingUpdatedResult> UpdateHoldingAsync(string symbol, int? quantity, double? avgPrice, string? notes, CancellationToken cancellationToken = default);
-
-    /// <summary>Removes a manually-entered holding.</summary>
-    Task<RemoveResult> RemoveHoldingAsync(string symbol, CancellationToken cancellationToken = default);
-
-    /// <summary>Lists manually-entered holdings with optional quote enrichment.</summary>
-    Task<HoldingListResult> ListHoldingsAsync(CancellationToken cancellationToken = default);
+    // -------- Corporate actions --------
+    Task<CorporateActionResult> SplitHoldingAsync(string symbol, int ratio, string? accountIdentifier, CancellationToken cancellationToken = default);
+    Task<CorporateActionResult> ReverseSplitHoldingAsync(string symbol, int ratio, string? accountIdentifier, CancellationToken cancellationToken = default);
+    Task<CorporateActionResult> BonusHoldingAsync(string symbol, double ratio, string? accountIdentifier, CancellationToken cancellationToken = default);
 }
-
