@@ -98,7 +98,7 @@ directly in the conversation.
 
 Credentials are accepted **only** through the process environment — never through chat, tool arguments, or MCP elicitation. Prompting for them in conversation would either log them or train callers to share them in transcripts, so that input path is intentionally closed off.
 
-## Tools (v0.3.0)
+## Tools (v0.4.0)
 
 | Tool | TR | Purpose |
 |---|---|---|
@@ -109,7 +109,9 @@ Credentials are accepted **only** through the process environment — never thro
 | `ls_get_multi_quote` | `t8407` | Up to 50 stocks per call. |
 | `ls_get_top_stocks` | `t1441` / `t1444` / `t1452` / `t1463` / `t1466` | Top gainers/losers, market cap, volume, trading value, and volume-surge screeners. |
 | `ls_get_stock_info` | `t1102` | PER/PBR/EPS, quarterly financials, 52-week + YTD ranges, top-5 brokerages, foreign-investor activity, SPAC / 관리종목 flags. |
-| `ls_get_chart` | `t8410` / `t8412` / `t1301` | OHLCV (day/week/month/year/min/tick), indicators (SMA/EMA/RSI/MACD/BB), pre-computed analysis context, multi-timeframe in one call, optional Plotly v5 chart spec. |
+| `ls_get_chart` | `t8410` / `t8412` / `t1301` | OHLCV (day/week/month/year/min/tick), indicators (SMA/EMA/RSI/MACD/BB), token-efficient `summary` + `dataset_id`, multi-timeframe in one call, optional Plotly v5 chart spec. Raw bars only with `output_mode='export'`; `with_warmup` toggles the summary warm-up; `summary.coverage` explains any null indicators. |
+| `ls_add_indicator` | (handle cache + chart TR) | Adds an indicator to a `dataset_id` returned by `ls_get_chart` and returns the updated `summary` + chart spec. Example: *"add MA200 too"*. |
+| `ls_reframe_chart` | (handle cache + chart TR) | Reframes a `dataset_id` to a new period/count using the cached symbol. Example: *"이걸 일봉으로 바꿔서 최근 6개월만 보여줘"*. |
 | `ls_search_stock` | `t8436` | Name → code search with `instrument` filter (`all` / `stock` / `etf`). |
 | `ls_get_etf_info` | `t1901` | ETF/ETN snapshot — NAV, 괴리율, 추적오차율, reference index, AUM, LP list. |
 | `ls_get_etf_holdings` | `t1904` | ETF PDF (구성종목) with optional `top_n` cap. |
