@@ -4,6 +4,65 @@
   "source": "manual-seed",
   "trs": [
     {
+      "tr_code": "t1531",
+      "name": "테마별종목",
+      "category": "주식시세",
+      "path": "/stock/sector",
+      "description": "테마코드/테마명별 평균등락률과 테마 목록을 조회합니다. tmname/tmcode를 비우면 전체 테마 목록을 반환합니다.",
+      "in_blocks": [
+        {
+          "name": "t1531InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "tmname", "type": "char", "description": "테마명", "required": false, "length": 36 },
+            { "name": "tmcode", "type": "char", "description": "테마코드", "required": false, "length": 4 }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t1531OutBlock",
+          "is_array": true,
+          "fields": [
+            { "name": "tmname", "type": "char", "description": "테마명", "length": 36 },
+            { "name": "avgdiff", "type": "double", "description": "평균등락율" },
+            { "name": "tmcode", "type": "char", "description": "테마코드", "length": 4 }
+          ]
+        }
+      ],
+      "continuation": { "supported": false },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t1532",
+      "name": "종목별테마",
+      "category": "주식시세",
+      "path": "/stock/sector",
+      "description": "지정 종목이 속한 테마와 각 테마의 평균등락률을 조회합니다.",
+      "in_blocks": [
+        {
+          "name": "t1532InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "shcode", "type": "char", "description": "단축종목코드", "required": true, "length": 6, "example": "078020" }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t1532OutBlock",
+          "is_array": true,
+          "fields": [
+            { "name": "tmname", "type": "char", "description": "테마명", "length": 36 },
+            { "name": "avgdiff", "type": "double", "description": "평균등락율" },
+            { "name": "tmcode", "type": "char", "description": "테마코드", "length": 4 }
+          ]
+        }
+      ],
+      "continuation": { "supported": false },
+      "rate_limit_per_sec": 1
+    },
+    {
       "tr_code": "t1101",
       "name": "주식 현재가호가조회",
       "category": "주식시세",
@@ -1191,3 +1250,4 @@
     }
   ]
 }
+
