@@ -5,6 +5,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using RedoxNet.LsOpenApi.Core;
 using RedoxNet.Mcp.LsOpenApi.Apps;
+using RedoxNet.Mcp.LsOpenApi.Portfolio;
 using RedoxNet.Mcp.LsOpenApi.Server;
 
 // CLI subcommand dispatch (one-shot mode for diagnostics).
@@ -42,6 +43,8 @@ if (!string.IsNullOrWhiteSpace(logLevelEnv) &&
 builder.Services
     .AddLsOpenApiCore()
     .ConfigureLsOptionsFromEnvironment();
+
+builder.Services.AddPortfolio();
 
 builder.Services
     .AddMcpServer(options =>
@@ -106,6 +109,7 @@ static int PrintUsage()
     Console.Error.WriteLine("  LS_MARKET          'real' or 'virtual' (default: virtual).");
     Console.Error.WriteLine("  LS_BASEURL         Override REST base URL (optional).");
     Console.Error.WriteLine("  LS_LOG_LEVEL       Minimum log level: Trace|Debug|Information|Warning|Error|Critical|None (default: Information).");
+    Console.Error.WriteLine("  LSOPENAPI_DB_PATH  Override local portfolio SQLite path (optional).");
     return 0;
 }
 
@@ -120,3 +124,4 @@ static string GetPublicVersion()
     int plus = info.IndexOf('+');
     return plus > 0 ? info[..plus] : info;
 }
+

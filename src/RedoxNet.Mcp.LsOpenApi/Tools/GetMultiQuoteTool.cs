@@ -42,7 +42,7 @@ public static class GetMultiQuoteTool
         """)]
     public static async Task<string> GetMultiQuote(
         LsApiClient apiClient,
-        [Description("Array of 6-digit Korean short codes, e.g. ['005930','000660','078020']. Max 50.")]
+        [Description("Array of 6-character Korean short codes (usually 6 digits, some ETFs include an uppercase letter, e.g. ['005930','000660','0117V0']). Max 50.")]
         string[] shcodes,
         CancellationToken cancellationToken = default)
     {
@@ -56,9 +56,9 @@ public static class GetMultiQuoteTool
         {
             if (string.IsNullOrWhiteSpace(raw))
                 return McpJson.Error("shcodes contains an empty entry.");
-            string trimmed = raw.Trim();
-            if (trimmed.Length != 6 || !trimmed.All(char.IsDigit))
-                return McpJson.Error($"shcode '{raw}' is not a 6-digit numeric code.");
+            string trimmed = raw.Trim().ToUpperInvariant();
+            if (trimmed.Length != 6 || !trimmed.All(char.IsLetterOrDigit))
+                return McpJson.Error($"shcode '{raw}' is not a valid 6-character stock/ETF code.");
             normalized.Add(trimmed);
         }
 
