@@ -201,7 +201,7 @@
         }
       ],
       "continuation": { "supported": false },
-      "rate_limit_per_sec": 1
+      "rate_limit_per_sec": 10
     },
     {
       "tr_code": "t1485",

@@ -493,18 +493,17 @@ ls_holdings_list(account?, industry?, theme_code?, theme_keyword?)   // v0.7 —
 ## 7. 함정 / 리스크
 
 - **t1511 `upcode` 별칭 dict의 sparse 노출.** 가이드 기준 `001`/`101`/`301`/`501` 4종만 v0.6에 명시. KOSPI 50/KRX 300 등 추가 코드는 testbed로 확인 후 dict에 추가 — 사용자가 *"오늘 KRX 300"* 요청 시 모르는 별칭이면 LS 에러를 friendly envelope으로 변환.
-- **`ls_get_industry_indices` cold-cache fanout 비용 — 미확정 두 변수.** 첫 호출 latency는 `N × (1 / TPS)`로 결정. 
+- **`ls_get_industry_indices` cold-cache fanout 비용.** 첫 호출 latency는 `N × (1 / TPS)`로 결정.
+  - **TPS = LS 사이드 t1511 rate limit = 10/sec** (LS API 가이드 [업종] 시세 페이지 확인 — 이 카테고리에서 t1511만 10/sec, 나머지 t8424/t1485/t1514/t1516는 1/sec). v0.6 카탈로그에 반영됨. ~~"testbed로 측정 필요"~~ 해결.
   - **N = t8424 반환 upcode 수**. 가이드 example이 3개(001/002/820)만 보여줘 분포 모름. `market="kospi"`로 좁히면 KOSPI 업종 ~20-30개 추정, `all`은 800+까지 갈 수 있음 (`820` "KQ150 L KP200 0.5 S" 같은 합성지수 포함).
-  - **TPS = LS 사이드 t1511 rate limit**. 우리 catalog default는 1 TPS (보수적). 실제 LS는 보통 더 관대(3~10 TPS). testbed로 측정 필요.
-  - 시나리오 표 (KOSPI 25개 코드 가정):
+  - 시나리오 표 (KOSPI 25개 코드 가정, t1511 = 10/sec):
 
-    | LS 실제 TPS | cold-cache latency | steady-state (60s 캐시) |
-    |---|---|---|
-    | 1 (catalog default) | ~25s | 0 |
-    | 5 | ~5s | 0 |
-    | 10 | ~3s | 0 |
+    | 시점 | latency |
+    |---|---|
+    | cold-cache 첫 호출 | ~2.5s |
+    | 60s 캐시 hit | 0 |
 
-  완화책: (1) 60s 캐시 (`SectorCacheEntry` v0.5 패턴 재사용) — 첫 호출만 비용, 분석 세션 안 4~5번 호출에서 1번만 부담, (2) `market` default = `kospi` — 사용자가 명시적으로 `all` 줘야 전체 fanout, (3) testbed에서 LS 실제 TPS 측정 후 병렬화 강화 여부 결정. 첫 출시는 catalog의 rate_limiter가 직렬화하므로 보수적으로 두고, 측정 후 catalog의 `rate_limit_per_sec`를 실측값으로 갱신.
+  완화책: (1) 60s 캐시 — 첫 호출만 비용, 분석 세션 안 4~5번 호출에서 1번만 부담, (2) `market` default = `kospi` — 사용자가 명시적으로 `all` 줘야 전체 fanout.
 - **t8424 upcode 범위 미확정.** 가이드 example response가 001/002/820만 보여줘서 실제 범위 불명. 추정: 1xx KOSPI 지수계, 2xx 코스피 업종(섹터), 3xx KOSDAQ 지수계, 4xx KOSDAQ 업종(섹터), 5xx KRX·테마성, 800+ 합성/레버리지. testbed 호출로 분포 확정 + `ls_get_industry_indices`의 default 필터 범위 결정.
 - **`ls_get_theme_stocks`의 stock_count 페이징.** t1537이 한 테마에 200+ 종목 있는 케이스(e.g. *"2차전지"*)에서 continuation 지원하는지 미확인. 일단 `top_n=50` 클라이언트 측 캡으로 v0.6 통과, 페이징은 testbed 보고 결정.
 - **Export/import 파일 크기.** 사용자가 수년 누적 시 holdings/watchlist 수백 행 가능 — 압축은 v0.6 out, 단일 JSON으로 충분.

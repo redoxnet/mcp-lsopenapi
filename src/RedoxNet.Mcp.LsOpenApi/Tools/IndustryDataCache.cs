@@ -145,10 +145,11 @@ internal sealed class IndustryDataCache
         if (catalogEntry.Rows.Count == 0)
             return new IndicesEntry(Array.Empty<IndustryIndexRow>(), now, null);
 
-        // Serial fanout: t1511 rate_limit_per_sec=1 (catalog default). The
-        // rate limiter on LsApiClient throttles us regardless of parallelism,
-        // so a sequential loop produces the same wall-clock as parallel tasks
-        // without burning thread-pool slots.
+        // Serial fanout: t1511 rate_limit_per_sec=10 (confirmed from LS API
+        // 업종 시세 guide page). The rate limiter on LsApiClient throttles us
+        // regardless of parallelism, so a sequential loop produces the same
+        // wall-clock as parallel tasks without burning thread-pool slots
+        // (KOSPI ~25 upcodes / 10 TPS ≈ 2.5s cold-cache cost).
         var rows = new List<IndustryIndexRow>(catalogEntry.Rows.Count);
         string? firstError = null;
         foreach (IndustryCatalogRow catalogRow in catalogEntry.Rows)
