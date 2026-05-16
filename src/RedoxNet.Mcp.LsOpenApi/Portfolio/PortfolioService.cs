@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Reflection;
 
 namespace RedoxNet.Mcp.LsOpenApi.Portfolio;
@@ -16,6 +17,25 @@ internal sealed class PortfolioService : IPortfolioService
 
     readonly IPortfolioRepository _repository;
     readonly IQuoteService _quoteService;
+
+    // Per-process enrichment scheduler state. v0.6: fire-and-forget runs on
+    // every holdings/watchlist write *and* on import + on holdings_list cache
+    // misses. Without dedup that storms LS (t1532 rate_limit_per_sec=1) when
+    // a 100-symbol import or repeated list calls land in quick succession.
+    //
+    // - _enrichInFlight: symbol currently being fetched. Skip duplicate fires.
+    // - _enrichRecentlyDone: symbol fetched within EnrichCooldown. Skip until TTL.
+    // Both keyed by upper-cased symbol so casing differences fold together.
+    readonly ConcurrentDictionary<string, byte> _enrichInFlight = new(StringComparer.Ordinal);
+    readonly ConcurrentDictionary<string, DateTimeOffset> _enrichRecentlyDone = new(StringComparer.Ordinal);
+    static readonly TimeSpan EnrichCooldown = TimeSpan.FromSeconds(60);
+
+    // Test-only: tracks tasks for deterministic await in unit tests. We append
+    // on dispatch and prune on completion in the same finally block that
+    // updates _enrichRecentlyDone, so the snapshot grows bounded by in-flight
+    // count, not lifetime call count.
+    readonly object _enrichTasksLock = new();
+    readonly List<Task> _enrichTasks = new();
 
     public PortfolioService(IPortfolioRepository repository, IQuoteService quoteService)
     {
@@ -274,20 +294,38 @@ internal sealed class PortfolioService : IPortfolioService
         IReadOnlyDictionary<string, IReadOnlyList<StockTheme>> themesMap =
             await _repository.GetStockThemesBatchAsync(distinctSymbols, cancellationToken).ConfigureAwait(false);
 
+        // Fix A: lazy enrichment dispatch on cache miss. Holdings registered
+        // in prior sessions or imported via ls_portfolio_import never had a
+        // write-path FireAndForgetEnrich fire — without this, the cache stays
+        // empty forever for read-only users. Dedup + cooldown in
+        // FireAndForgetEnrich prevent storming when the same list call repeats.
+        foreach (string symbol in distinctSymbols)
+        {
+            if (!themesMap.ContainsKey(symbol))
+                FireAndForgetEnrich(symbol);
+        }
+
         // Apply theme filters at the holdings level. Per spec §4.6 multiple
         // filters AND-combine; matched_themes echoes the unique theme names
         // (across the filtered set) so LIKE false positives are visible.
+        // Fix B: track filterCacheMissCount separately so metadata_freshness
+        // doesn't lie about "fully_enriched=true" just because every holding
+        // was filtered out for missing the cache.
         HashSet<string>? matchedThemes = hasFilter
             ? new HashSet<string>(StringComparer.Ordinal)
             : null;
         IReadOnlyList<Holding> filteredHoldings;
+        int filterCacheMissCount = 0;
         if (hasFilter)
         {
             var keep = new List<Holding>(allHoldings.Count);
             foreach (Holding h in allHoldings)
             {
                 if (!themesMap.TryGetValue(h.Symbol, out IReadOnlyList<StockTheme>? holdingThemes))
+                {
+                    filterCacheMissCount++;
                     continue; // un-enriched stocks can't satisfy a theme filter
+                }
 
                 bool codeOk = normalizedThemeCode is null
                     || holdingThemes.Any(t => string.Equals(t.ThemeCode, normalizedThemeCode, StringComparison.Ordinal));
@@ -340,12 +378,18 @@ internal sealed class PortfolioService : IPortfolioService
                 summary));
         }
 
+        // Fix B: freshness reflects the *full* picture of pending enrichment,
+        // not just what survived the filter. Without filterCacheMissCount,
+        // a list call that drops every holding due to empty cache would
+        // report fully_enriched=true (themesPending=0 over the empty filtered
+        // set) — which contradicts the empty matched_themes that the model
+        // sees right next to it.
         return new HoldingListResult(
             perAccount,
             BuildSummary(totalCost, totalValue, totalAllQuoted),
             quoteResult.TopLevelError)
         {
-            MetadataFreshness = BuildFreshness(themesPending),
+            MetadataFreshness = BuildFreshness(themesPending + filterCacheMissCount),
             Filter = filterEcho,
             MatchedThemes = matchedThemes is null ? null : matchedThemes.OrderBy(s => s, StringComparer.Ordinal).ToList(),
         };
@@ -458,6 +502,16 @@ internal sealed class PortfolioService : IPortfolioService
         }
 
         ApplyImportResult applied = await _repository.ApplyImportAsync(dto, normalizedMode, cancellationToken).ConfigureAwait(false);
+
+        // Fix A: kick off theme enrichment for every symbol the import touched.
+        // Without this, a fresh DB populated only via import would have an
+        // empty stock_themes cache forever — holdings_list theme filters
+        // would return matched_themes=[] even though the live t1532 data
+        // exists. Dedup + cooldown in FireAndForgetEnrich prevent storming
+        // even when the file carries hundreds of symbols.
+        foreach (string symbol in CollectImportSymbols(dto))
+            FireAndForgetEnrich(symbol);
+
         return new PortfolioImportResult(
             Mode: normalizedMode,
             SourcePath: sourcePath,
@@ -465,6 +519,34 @@ internal sealed class PortfolioService : IPortfolioService
             Imported: applied.Imported,
             Skipped: applied.Skipped,
             AutoBackupPath: autoBackupPath);
+    }
+
+    /// <summary>
+    /// Collects the distinct stock symbols touched by an import — both
+    /// holdings rows and watchlist items. Used to dispatch theme enrichment
+    /// in <see cref="ImportPortfolioAsync"/>.
+    /// </summary>
+    static IEnumerable<string> CollectImportSymbols(PortfolioExportDto dto)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (AccountExportDto acc in dto.Accounts)
+        {
+            foreach (HoldingExportDto h in acc.Holdings)
+            {
+                if (string.IsNullOrWhiteSpace(h.Shcode)) continue;
+                string key = h.Shcode.Trim().ToUpperInvariant();
+                if (seen.Add(key)) yield return key;
+            }
+        }
+        foreach (WatchlistGroupExportDto g in dto.WatchlistGroups)
+        {
+            foreach (WatchlistItemExportDto item in g.Items)
+            {
+                if (string.IsNullOrWhiteSpace(item.Shcode)) continue;
+                string key = item.Shcode.Trim().ToUpperInvariant();
+                if (seen.Add(key)) yield return key;
+            }
+        }
     }
 
     /// <summary>
@@ -661,12 +743,68 @@ internal sealed class PortfolioService : IPortfolioService
     /// <summary>
     /// Posts <see cref="EnrichStockMetadataAsync"/> to the thread pool so the
     /// HTTP write response returns immediately. Per spec §7 the task is
-    /// intentionally not awaited: on stdio shutdown a half-finished enrichment
-    /// just retries on the next session's first write.
+    /// intentionally not awaited.
     /// </summary>
-    void FireAndForgetEnrich(string symbol)
+    /// <remarks>
+    /// Two backstops prevent storming LS when the dispatch sites multiply
+    /// (every write + import + every cache-missing list row):
+    /// <list type="bullet">
+    /// <item>In-flight dedup: a symbol already being fetched is not re-fired.</item>
+    /// <item>60s cooldown: a symbol fetched recently is not re-fired until the
+    /// TTL expires. Protects against repeated list calls when the cache
+    /// stays empty (e.g. credentials missing or LS error).</item>
+    /// </list>
+    /// On stdio shutdown a half-finished enrichment retries on next session.
+    /// </remarks>
+    internal void FireAndForgetEnrich(string symbol)
     {
-        _ = Task.Run(() => EnrichStockMetadataAsync(symbol, CancellationToken.None));
+        if (string.IsNullOrWhiteSpace(symbol))
+            return;
+        string key = symbol.Trim().ToUpperInvariant();
+
+        if (_enrichInFlight.ContainsKey(key))
+            return;
+        if (_enrichRecentlyDone.TryGetValue(key, out DateTimeOffset last)
+            && DateTimeOffset.UtcNow - last < EnrichCooldown)
+            return;
+
+        // TryAdd races with another caller — first writer wins, second skips.
+        if (!_enrichInFlight.TryAdd(key, 0))
+            return;
+
+        Task task = Task.Run(async () =>
+        {
+            try
+            {
+                await EnrichStockMetadataAsync(key, CancellationToken.None).ConfigureAwait(false);
+            }
+            finally
+            {
+                // Record completion timestamp regardless of success — a failed
+                // fetch should still cool down so we don't hammer LS retries.
+                _enrichRecentlyDone[key] = DateTimeOffset.UtcNow;
+                _enrichInFlight.TryRemove(key, out _);
+            }
+        });
+        lock (_enrichTasksLock)
+        {
+            _enrichTasks.RemoveAll(t => t.IsCompleted);
+            _enrichTasks.Add(task);
+        }
+    }
+
+    /// <summary>
+    /// Test-only deterministic await for fire-and-forget enrichment tasks
+    /// dispatched since the last call. Production code never awaits — the
+    /// stdio response returns before this completes. <c>InternalsVisibleTo</c>
+    /// on the test project keeps this out of the public surface.
+    /// </summary>
+    internal Task WaitForPendingEnrichmentsAsync()
+    {
+        Task[] snapshot;
+        lock (_enrichTasksLock)
+            snapshot = _enrichTasks.ToArray();
+        return Task.WhenAll(snapshot);
     }
 
     async Task<StockQuote?> TryCacheStockMetadataAsync(string symbol, CancellationToken cancellationToken)

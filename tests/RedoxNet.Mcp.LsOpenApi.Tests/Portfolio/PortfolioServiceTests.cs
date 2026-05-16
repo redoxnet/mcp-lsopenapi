@@ -441,12 +441,162 @@ public sealed class PortfolioServiceTests
         await act.Should().ThrowAsync<PortfolioValidationException>();
     }
 
+    // ---------- v0.6.0 hot-fix coverage (dedup + Fix A + Fix B) ----------
+
+    [Fact]
+    public async Task FireAndForgetEnrich_RepeatedFiresForSameSymbol_DispatchesOnlyOneFetch()
+    {
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        var quoteService = new FakeQuoteService
+        {
+            // Block the in-flight fetch so subsequent fires see _enrichInFlight populated.
+            StockThemesGate = new TaskCompletionSource(),
+        };
+        var service = new PortfolioService(repository, quoteService);
+
+        // Fire 5 times in rapid succession — only the first should dispatch.
+        for (int i = 0; i < 5; i++)
+            service.FireAndForgetEnrich("005930");
+
+        // Give the first Task.Run a moment to enter EnrichStockMetadataAsync.
+        // We can't await the in-flight set yet because the gate holds it open.
+        await Task.Delay(50);
+
+        quoteService.GetStockThemesCallCount("005930").Should().Be(1,
+            "in-flight dedup must collapse simultaneous fires for the same symbol");
+
+        // Release the gate and let the single dispatched task finish cleanly.
+        quoteService.StockThemesGate!.SetResult();
+        await service.WaitForPendingEnrichmentsAsync();
+    }
+
+    [Fact]
+    public async Task FireAndForgetEnrich_AfterCompletion_CooldownSkipsRefire()
+    {
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        var quoteService = new FakeQuoteService();
+        var service = new PortfolioService(repository, quoteService);
+
+        service.FireAndForgetEnrich("005930");
+        await service.WaitForPendingEnrichmentsAsync();
+        int afterFirst = quoteService.GetStockThemesCallCount("005930");
+
+        // Immediately re-fire — well within the 60s cooldown window.
+        service.FireAndForgetEnrich("005930");
+        await service.WaitForPendingEnrichmentsAsync();
+
+        afterFirst.Should().Be(1);
+        quoteService.GetStockThemesCallCount("005930").Should().Be(1,
+            "the cooldown must skip a refire that lands within EnrichCooldown of the previous completion");
+    }
+
+    [Fact]
+    public async Task ImportPortfolioAsync_FiresEnrichmentForImportedSymbols()
+    {
+        // Phase 1: build an export file from a populated DB.
+        await using TestDatabase source = new();
+        var sourceRepo = new SqlitePortfolioRepository(source.Path);
+        await sourceRepo.InitializeAsync();
+        Account acc = await sourceRepo.UpsertAccountAsync("AAA", "main", null, setDefault: false);
+        await sourceRepo.SetHoldingAsync(acc.Id, "005930", 10, 70000, null);
+        await sourceRepo.SetHoldingAsync(acc.Id, "000660", 5, 100000, null);
+        var sourceService = new PortfolioService(sourceRepo, new FakeQuoteService());
+        string exportPath = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(source.Path)!, "export.json");
+        await sourceService.ExportPortfolioAsync(exportPath);
+
+        // Phase 2: import into a fresh DB with a counting FakeQuoteService.
+        await using TestDatabase target = new();
+        var targetRepo = new SqlitePortfolioRepository(target.Path);
+        await targetRepo.InitializeAsync();
+        var targetQuotes = new FakeQuoteService(themesPerSymbol: new Dictionary<string, IReadOnlyList<ThemeCatalogRow>>(StringComparer.Ordinal)
+        {
+            ["005930"] = new[] { new ThemeCatalogRow("0011", "반도체") },
+            ["000660"] = new[] { new ThemeCatalogRow("0011", "반도체") },
+        });
+        var targetService = new PortfolioService(targetRepo, targetQuotes);
+
+        await targetService.ImportPortfolioAsync(exportPath, "merge", confirm: false);
+        await targetService.WaitForPendingEnrichmentsAsync();
+
+        targetQuotes.GetStockThemesCallCount("005930").Should().Be(1,
+            "import must dispatch fire-and-forget enrichment for each imported holding symbol");
+        targetQuotes.GetStockThemesCallCount("000660").Should().Be(1);
+
+        // Verify the cache actually got populated.
+        var cached = await targetRepo.GetStockThemesBatchAsync(new[] { "005930", "000660" });
+        cached.Should().ContainKeys("005930", "000660");
+    }
+
+    [Fact]
+    public async Task ListHoldingsAsync_CacheMissOnUnenrichedHoldings_DispatchesLazyEnrichment()
+    {
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        Account account = await repository.UpsertAccountAsync("AAA", "main", null, setDefault: false);
+        // Insert holdings directly via the repo — no FireAndForgetEnrich
+        // dispatch from the service. Simulates pre-existing DB state.
+        await repository.SetHoldingAsync(account.Id, "005930", 10, 70000, null);
+        await repository.SetHoldingAsync(account.Id, "000660", 5, 100000, null);
+        var quoteService = new FakeQuoteService(themesPerSymbol: new Dictionary<string, IReadOnlyList<ThemeCatalogRow>>(StringComparer.Ordinal)
+        {
+            ["005930"] = new[] { new ThemeCatalogRow("0011", "반도체") },
+            ["000660"] = new[] { new ThemeCatalogRow("0011", "반도체") },
+        });
+        var service = new PortfolioService(repository, quoteService);
+        // Reset the counter that SetHoldingAsync did NOT touch (this repo
+        // doesn't fire-and-forget; the assertion is that *listing* triggers).
+        quoteService.TotalGetStockThemesCalls.Should().Be(0, "sanity: no dispatches before listing");
+
+        await service.ListHoldingsAsync(accountIdentifier: null);
+        await service.WaitForPendingEnrichmentsAsync();
+
+        quoteService.GetStockThemesCallCount("005930").Should().Be(1,
+            "list must dispatch enrichment for each holding missing from the stock_themes cache");
+        quoteService.GetStockThemesCallCount("000660").Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ListHoldingsAsync_ThemeFilterWithEmptyCache_ReportsNotFullyEnriched()
+    {
+        // Regression for Test_v0.6.0 finding: metadata_freshness was reporting
+        // fully_enriched=true when every holding was filtered out for cache
+        // miss, contradicting the empty matched_themes alongside it.
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        Account account = await repository.UpsertAccountAsync("AAA", "main", null, setDefault: false);
+        await repository.SetHoldingAsync(account.Id, "005930", 10, 70000, null);
+        await repository.SetHoldingAsync(account.Id, "000660", 5, 100000, null);
+        // No ReplaceStockThemesAsync — stock_themes is empty for both symbols.
+        var service = new PortfolioService(repository, new FakeQuoteService());
+
+        HoldingListResult result = await service.ListHoldingsAsync(
+            accountIdentifier: null, themeKeyword: "반도체");
+
+        result.Accounts[0].Holdings.Should().BeEmpty("filter drops every cache-miss holding");
+        result.MatchedThemes.Should().BeEmpty();
+        result.MetadataFreshness.Should().NotBeNull();
+        result.MetadataFreshness!.FullyEnriched.Should().BeFalse(
+            "two holdings are missing the cache; freshness must NOT claim fully enriched");
+        result.MetadataFreshness.Pending.Should().ContainKey("themes")
+            .WhoseValue.Should().Be(2, "both cache misses should count toward pending");
+    }
+
     sealed class FakeQuoteService : IQuoteService
     {
         readonly string? _stockError;
         readonly IReadOnlyDictionary<string, StockQuote?> _quotes;
         readonly IReadOnlyDictionary<string, IReadOnlyList<ThemeCatalogRow>> _themesPerSymbol;
         readonly string? _stockThemesError;
+
+        readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _getStockThemesCalls = new(StringComparer.Ordinal);
+        /// <summary>Optional gate — when set, GetStockThemesAsync blocks until completed. Used by dedup tests.</summary>
+        public TaskCompletionSource? StockThemesGate { get; set; }
 
         public FakeQuoteService(
             string? stockError = null,
@@ -459,6 +609,10 @@ public sealed class PortfolioServiceTests
             _themesPerSymbol = themesPerSymbol ?? new Dictionary<string, IReadOnlyList<ThemeCatalogRow>>();
             _stockThemesError = stockThemesError;
         }
+
+        public int GetStockThemesCallCount(string symbol) =>
+            _getStockThemesCalls.TryGetValue(symbol, out int n) ? n : 0;
+        public int TotalGetStockThemesCalls => _getStockThemesCalls.Values.Sum();
 
         public Task<QuoteBatchResult<StockQuote>> GetStockQuotesAsync(IReadOnlyCollection<string> symbols, CancellationToken cancellationToken = default)
         {
@@ -481,14 +635,17 @@ public sealed class PortfolioServiceTests
         public Task<ThemeCatalogResult> GetThemeCatalogAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(new ThemeCatalogResult(Array.Empty<ThemeCatalogRow>(), null));
 
-        public Task<StockThemesFetchResult> GetStockThemesAsync(string symbol, CancellationToken cancellationToken = default)
+        public async Task<StockThemesFetchResult> GetStockThemesAsync(string symbol, CancellationToken cancellationToken = default)
         {
+            _getStockThemesCalls.AddOrUpdate(symbol, 1, (_, v) => v + 1);
+            if (StockThemesGate is { } gate)
+                await gate.Task.ConfigureAwait(false);
             if (_stockThemesError is not null)
-                return Task.FromResult(new StockThemesFetchResult(Array.Empty<ThemeCatalogRow>(), _stockThemesError));
+                return new StockThemesFetchResult(Array.Empty<ThemeCatalogRow>(), _stockThemesError);
             IReadOnlyList<ThemeCatalogRow> themes = _themesPerSymbol.TryGetValue(symbol, out IReadOnlyList<ThemeCatalogRow>? rows)
                 ? rows
                 : Array.Empty<ThemeCatalogRow>();
-            return Task.FromResult(new StockThemesFetchResult(themes, null));
+            return new StockThemesFetchResult(themes, null);
         }
     }
 
