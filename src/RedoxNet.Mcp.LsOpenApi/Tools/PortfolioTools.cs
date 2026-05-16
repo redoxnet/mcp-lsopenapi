@@ -342,6 +342,38 @@ internal static class PortfolioTools
         CancellationToken cancellationToken = default) =>
         await SerializeAsync(() => portfolio.BonusHoldingAsync(shcode, ratio, account, cancellationToken)).ConfigureAwait(false);
 
+    // ---------------------- Portfolio I/O ----------------------
+
+    [McpServerTool(Name = "ls_portfolio_export")]
+    [Description("""
+        Exports the local portfolio (accounts, holdings, watchlists, watched themes) to a single versioned JSON file. Default path is a timestamped file under the exports/ directory next to portfolio.db; pass an absolute path to override.
+
+        USE WHEN: the user asks to back up, export, save, "백업해줘", "내보내기", or wants to move data between machines. Stocks metadata cache (names, themes) is intentionally not exported — it rebuilds from quote enrichment after import.
+        """)]
+    public static async Task<string> PortfolioExport(
+        IPortfolioService portfolio,
+        [Description("Optional absolute path for the export file. When omitted, writes 'exports/portfolio-YYYY-MM-DDTHHmmss.json' next to portfolio.db.")]
+        string? path = null,
+        CancellationToken cancellationToken = default) =>
+        await SerializeAsync(() => portfolio.ExportPortfolioAsync(path, cancellationToken)).ConfigureAwait(false);
+
+    [McpServerTool(Name = "ls_portfolio_import")]
+    [Description("""
+        Imports a previously-exported portfolio JSON file. Two modes: 'merge' (default — skips rows that already exist by account_number / group name / theme_code / (group, shcode) / (account, shcode)), and 'replace' (wipes accounts/holdings/watchlists/themes first, requires confirm=true, and writes a before-import-* auto-backup to the same exports/ directory).
+
+        USE WHEN: the user wants to restore from a backup, migrate to a new machine, or "가져오기 / 복원해줘". After import, themes/quotes are re-enriched on next list/write call.
+        """)]
+    public static async Task<string> PortfolioImport(
+        IPortfolioService portfolio,
+        [Description("Absolute path to the previously-exported JSON file.")]
+        string path,
+        [Description("Import mode. 'merge' (default) skips duplicates. 'replace' wipes export-covered domains first and requires confirm=true.")]
+        string mode = "merge",
+        [Description("Must be true to proceed with replace mode. Ignored for merge mode.")]
+        bool confirm = false,
+        CancellationToken cancellationToken = default) =>
+        await SerializeAsync(() => portfolio.ImportPortfolioAsync(path, mode, confirm, cancellationToken)).ConfigureAwait(false);
+
     // ---------------------- Serialization + error envelopes ----------------------
 
     /// <summary>
@@ -404,6 +436,26 @@ internal static class PortfolioTools
                 current_quantity = insufficient.CurrentQuantity,
                 requested_quantity = insufficient.RequestedQuantity,
                 applied_to = insufficient.AppliedTo,
+            },
+            McpJson.Tool),
+        ImportSchemaMismatchException schemaMismatch => JsonSerializer.Serialize(
+            new
+            {
+                error = schemaMismatch.Code,
+                message = schemaMismatch.Message,
+                file_schema_version = schemaMismatch.FileSchemaVersion,
+                supported_schema_version = schemaMismatch.SupportedSchemaVersion,
+            },
+            McpJson.Tool),
+        ImportReplaceRequiresConfirmationException needsImportConfirm => JsonSerializer.Serialize(
+            new
+            {
+                error = needsImportConfirm.Code,
+                message = needsImportConfirm.Message,
+                source_path = needsImportConfirm.SourcePath,
+                accounts_in_file = needsImportConfirm.AccountsInFile,
+                holdings_in_file = needsImportConfirm.HoldingsInFile,
+                mode = "replace",
             },
             McpJson.Tool),
         _ => JsonSerializer.Serialize(new { error = ex.Code, message = ex.Message }, McpJson.Tool),

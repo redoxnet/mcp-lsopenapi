@@ -1,3 +1,5 @@
+using System.Reflection;
+
 namespace RedoxNet.Mcp.LsOpenApi.Portfolio;
 
 /// <summary>
@@ -371,6 +373,123 @@ internal sealed class PortfolioService : IPortfolioService
             throw new PortfolioValidationException("bonus ratio must be positive.");
         double multiplier = 1.0 + ratio;
         return ApplyCorporateActionAsync(symbol, "bonus", ratio, qtyMultiplier: multiplier, priceMultiplier: 1.0 / multiplier, accountIdentifier, cancellationToken);
+    }
+
+    // -------- Portfolio I/O --------
+
+    /// <summary>JSON schema version this build supports for portfolio export/import.</summary>
+    internal const int SupportedExportSchemaVersion = 1;
+
+    /// <inheritdoc />
+    public async Task<PortfolioExportResult> ExportPortfolioAsync(string? path, CancellationToken cancellationToken = default)
+    {
+        string resolvedPath = string.IsNullOrWhiteSpace(path)
+            ? ResolveDefaultExportPath("portfolio")
+            : path.Trim();
+
+        string? dir = System.IO.Path.GetDirectoryName(resolvedPath);
+        if (!string.IsNullOrEmpty(dir))
+            Directory.CreateDirectory(dir);
+
+        PortfolioExportDto dto = await _repository.ExportSnapshotAsync(GetExporterVersion(), cancellationToken).ConfigureAwait(false);
+
+        string json = System.Text.Json.JsonSerializer.Serialize(dto, McpJson.Tool);
+        await File.WriteAllTextAsync(resolvedPath, json, System.Text.Encoding.UTF8, cancellationToken).ConfigureAwait(false);
+        long size = new FileInfo(resolvedPath).Length;
+
+        var counts = new PortfolioIoCounts(
+            Accounts: dto.Accounts.Count,
+            Holdings: dto.Accounts.Sum(a => a.Holdings.Count),
+            WatchlistGroups: dto.WatchlistGroups.Count,
+            WatchlistItems: dto.WatchlistGroups.Sum(g => g.Items.Count),
+            WatchedThemes: dto.WatchedThemes.Count);
+        return new PortfolioExportResult(resolvedPath, dto.SchemaVersion, counts, size);
+    }
+
+    /// <inheritdoc />
+    public async Task<PortfolioImportResult> ImportPortfolioAsync(string path, string mode, bool confirm, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            throw new PortfolioValidationException("path must not be empty.");
+        string sourcePath = path.Trim();
+        if (!File.Exists(sourcePath))
+            throw new PortfolioValidationException($"Import file not found: {sourcePath}");
+
+        string normalizedMode = (mode ?? "merge").Trim().ToLowerInvariant();
+        if (normalizedMode is "")
+            normalizedMode = "merge";
+        if (normalizedMode is not ("merge" or "replace"))
+            throw new PortfolioValidationException($"mode must be 'merge' or 'replace', got '{mode}'.");
+
+        string json = await File.ReadAllTextAsync(sourcePath, System.Text.Encoding.UTF8, cancellationToken).ConfigureAwait(false);
+
+        PortfolioExportDto dto;
+        try
+        {
+            dto = System.Text.Json.JsonSerializer.Deserialize<PortfolioExportDto>(json, McpJson.Tool)
+                  ?? throw new PortfolioValidationException("Import file is empty or invalid JSON.");
+        }
+        catch (System.Text.Json.JsonException ex)
+        {
+            throw new PortfolioValidationException($"Failed to parse import file: {ex.Message}");
+        }
+
+        if (dto.SchemaVersion != SupportedExportSchemaVersion)
+            throw new ImportSchemaMismatchException(dto.SchemaVersion, SupportedExportSchemaVersion);
+
+        string? autoBackupPath = null;
+        if (normalizedMode == "replace")
+        {
+            int accountsInFile = dto.Accounts.Count;
+            int holdingsInFile = dto.Accounts.Sum(a => a.Holdings.Count);
+            if (!confirm)
+                throw new ImportReplaceRequiresConfirmationException(sourcePath, accountsInFile, holdingsInFile);
+
+            // Snapshot the current state before we wipe — gives the user a
+            // recovery path if they imported the wrong file. Lives in the
+            // same exports/ dir with a 'before-import-' prefix.
+            autoBackupPath = ResolveDefaultExportPath("before-import");
+            string? backupDir = System.IO.Path.GetDirectoryName(autoBackupPath);
+            if (!string.IsNullOrEmpty(backupDir))
+                Directory.CreateDirectory(backupDir);
+            PortfolioExportDto backupDto = await _repository.ExportSnapshotAsync(GetExporterVersion(), cancellationToken).ConfigureAwait(false);
+            string backupJson = System.Text.Json.JsonSerializer.Serialize(backupDto, McpJson.Tool);
+            await File.WriteAllTextAsync(autoBackupPath, backupJson, System.Text.Encoding.UTF8, cancellationToken).ConfigureAwait(false);
+        }
+
+        ApplyImportResult applied = await _repository.ApplyImportAsync(dto, normalizedMode, cancellationToken).ConfigureAwait(false);
+        return new PortfolioImportResult(
+            Mode: normalizedMode,
+            SourcePath: sourcePath,
+            SchemaVersion: dto.SchemaVersion,
+            Imported: applied.Imported,
+            Skipped: applied.Skipped,
+            AutoBackupPath: autoBackupPath);
+    }
+
+    /// <summary>
+    /// Resolves a timestamped path under the platform's default exports
+    /// directory (next to portfolio.db). Prefix lets callers distinguish
+    /// user exports from before-import auto-backups.
+    /// </summary>
+    static string ResolveDefaultExportPath(string prefix)
+    {
+        string dbPath = SqlitePortfolioRepository.ResolveDatabasePath();
+        string parentDir = System.IO.Path.GetDirectoryName(dbPath) ?? Environment.CurrentDirectory;
+        string exportsDir = System.IO.Path.Combine(parentDir, "exports");
+        string timestamp = DateTime.Now.ToString("yyyy-MM-ddTHHmmss", System.Globalization.CultureInfo.InvariantCulture);
+        return System.IO.Path.Combine(exportsDir, $"{prefix}-{timestamp}.json");
+    }
+
+    static string GetExporterVersion()
+    {
+        string? info = typeof(PortfolioService).Assembly
+            .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion;
+        if (string.IsNullOrEmpty(info))
+            return "0.0.0";
+        int plus = info.IndexOf('+');
+        return plus > 0 ? info[..plus] : info;
     }
 
     async Task<CorporateActionResult> ApplyCorporateActionAsync(

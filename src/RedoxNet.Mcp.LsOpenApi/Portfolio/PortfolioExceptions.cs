@@ -103,3 +103,42 @@ internal sealed class PortfolioValidationException : PortfolioException
 {
     public PortfolioValidationException(string message) : base("ValidationError", message) { }
 }
+
+/// <summary>
+/// Thrown when an import file declares a <c>schema_version</c> outside the
+/// range this build supports.
+/// </summary>
+internal sealed class ImportSchemaMismatchException : PortfolioException
+{
+    public ImportSchemaMismatchException(int fileSchemaVersion, int supportedSchemaVersion)
+        : base("ImportSchemaMismatch",
+               $"Import file declares schema_version={fileSchemaVersion}; this build supports up to {supportedSchemaVersion}.")
+    {
+        FileSchemaVersion = fileSchemaVersion;
+        SupportedSchemaVersion = supportedSchemaVersion;
+    }
+
+    public int FileSchemaVersion { get; }
+    public int SupportedSchemaVersion { get; }
+}
+
+/// <summary>
+/// Thrown when <c>ls_portfolio_import(mode=replace)</c> is invoked without
+/// <c>confirm=true</c>. Replace mode wipes accounts/holdings/watchlist/watched_themes
+/// so it always requires an explicit confirmation flag.
+/// </summary>
+internal sealed class ImportReplaceRequiresConfirmationException : PortfolioException
+{
+    public ImportReplaceRequiresConfirmationException(string sourcePath, int accountsInFile, int holdingsInFile)
+        : base("RequiresConfirmation",
+               $"replace mode wipes existing accounts/holdings/watchlists/themes. Re-call with confirm=true to proceed.")
+    {
+        SourcePath = sourcePath;
+        AccountsInFile = accountsInFile;
+        HoldingsInFile = holdingsInFile;
+    }
+
+    public string SourcePath { get; }
+    public int AccountsInFile { get; }
+    public int HoldingsInFile { get; }
+}

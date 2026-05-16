@@ -54,4 +54,21 @@ internal interface IPortfolioService
     /// cache as-is for the next retry.
     /// </summary>
     Task EnrichStockMetadataAsync(string symbol, CancellationToken cancellationToken = default);
+
+    // -------- Portfolio I/O --------
+
+    /// <summary>
+    /// Exports the portfolio to a single JSON file. <paramref name="path"/>
+    /// is optional — when omitted, a timestamped file is written under the
+    /// OS-specific default <c>exports/</c> directory next to portfolio.db.
+    /// </summary>
+    Task<PortfolioExportResult> ExportPortfolioAsync(string? path, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Imports a previously-exported JSON file. <paramref name="mode"/> is
+    /// "merge" (default — duplicates skip) or "replace" (requires
+    /// <paramref name="confirm"/>=true; wipes export-covered domains first
+    /// and writes a before-import auto-backup).
+    /// </summary>
+    Task<PortfolioImportResult> ImportPortfolioAsync(string path, string mode, bool confirm, CancellationToken cancellationToken = default);
 }

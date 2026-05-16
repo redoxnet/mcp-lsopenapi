@@ -854,6 +854,387 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
     }
 
     /// <inheritdoc />
+    public async Task<PortfolioExportDto> ExportSnapshotAsync(string exporterVersion, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        IEnumerable<Account> accounts = await connection.QueryAsync<Account>(new CommandDefinition(
+            AccountSelectSql + " ORDER BY a.id;",
+            cancellationToken: cancellationToken)).ConfigureAwait(false);
+        var accountList = accounts.ToList();
+
+        IEnumerable<Holding> holdings = await connection.QueryAsync<Holding>(new CommandDefinition(
+            """
+            SELECT h.id AS Id, h.account_id AS AccountId, h.symbol AS Symbol,
+                   s.name AS Name, s.market AS Market,
+                   h.quantity AS Quantity, h.avg_price AS AvgPrice, h.notes AS Notes, h.updated_at AS UpdatedAt
+            FROM holdings h
+            JOIN stocks s ON s.symbol = h.symbol
+            ORDER BY h.account_id, h.id;
+            """,
+            cancellationToken: cancellationToken)).ConfigureAwait(false);
+        var holdingsByAccount = holdings.GroupBy(h => h.AccountId).ToDictionary(g => g.Key, g => g.ToList());
+
+        IEnumerable<WatchlistGroup> groups = await connection.QueryAsync<WatchlistGroup>(new CommandDefinition(
+            """
+            SELECT id AS Id, name AS Name, description AS Description, sort_order AS SortOrder, created_at AS CreatedAt
+            FROM watchlist_groups
+            ORDER BY sort_order, id;
+            """,
+            cancellationToken: cancellationToken)).ConfigureAwait(false);
+        var groupList = groups.ToList();
+
+        IEnumerable<WatchlistItemRow> items = await connection.QueryAsync<WatchlistItemRow>(new CommandDefinition(
+            """
+            SELECT i.group_id AS GroupId, i.symbol AS Symbol, i.notes AS Notes, i.added_at AS AddedAt
+            FROM watchlist_items i
+            ORDER BY i.group_id, i.id;
+            """,
+            cancellationToken: cancellationToken)).ConfigureAwait(false);
+        var itemsByGroup = items.GroupBy(t => t.GroupId).ToDictionary(g => g.Key, g => g.ToList());
+
+        IEnumerable<WatchedTheme> themes = await connection.QueryAsync<WatchedTheme>(new CommandDefinition(
+            """
+            SELECT id AS Id, theme_code AS ThemeCode, theme_name AS ThemeName, notes AS Notes, added_at AS AddedAt
+            FROM watched_themes
+            ORDER BY added_at, theme_code;
+            """,
+            cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        var dto = new PortfolioExportDto
+        {
+            SchemaVersion = 1,
+            ExportedAt = DateTimeOffset.Now.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+            ExporterVersion = exporterVersion,
+            Accounts = accountList.Select(a => new AccountExportDto
+            {
+                AccountNumber = a.AccountNo,
+                Nickname = a.Nickname,
+                Broker = a.Broker,
+                IsDefault = a.IsDefault,
+                CreatedAt = a.CreatedAt,
+                Holdings = holdingsByAccount.TryGetValue(a.Id, out List<Holding>? hs)
+                    ? hs.Select(h => new HoldingExportDto
+                    {
+                        Shcode = h.Symbol,
+                        Quantity = h.Quantity,
+                        AvgPrice = h.AvgPrice,
+                        Notes = h.Notes,
+                        UpdatedAt = h.UpdatedAt,
+                    }).ToList()
+                    : new(),
+            }).ToList(),
+            WatchlistGroups = groupList.Select(g => new WatchlistGroupExportDto
+            {
+                Name = g.Name,
+                Description = g.Description,
+                SortOrder = g.SortOrder,
+                CreatedAt = g.CreatedAt,
+                Items = itemsByGroup.TryGetValue(g.Id, out var its)
+                    ? its.Select(t => new WatchlistItemExportDto
+                    {
+                        Shcode = t.Symbol,
+                        Notes = t.Notes,
+                        AddedAt = t.AddedAt,
+                    }).ToList()
+                    : new(),
+            }).ToList(),
+            WatchedThemes = themes.Select(t => new WatchedThemeExportDto
+            {
+                ThemeCode = t.ThemeCode,
+                ThemeName = t.ThemeName,
+                Notes = t.Notes,
+                AddedAt = t.AddedAt,
+            }).ToList(),
+        };
+        return dto;
+    }
+
+    /// <inheritdoc />
+    public async Task<ApplyImportResult> ApplyImportAsync(PortfolioExportDto dto, string mode, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(dto);
+        ArgumentException.ThrowIfNullOrWhiteSpace(mode);
+        string normalizedMode = mode.Trim().ToLowerInvariant();
+        if (normalizedMode is not ("merge" or "replace"))
+            throw new ArgumentException($"mode must be 'merge' or 'replace', got '{mode}'.", nameof(mode));
+
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        var accountSkips = new List<AccountSkip>();
+        var holdingSkips = new List<HoldingSkip>();
+        var groupSkips = new List<WatchlistGroupSkip>();
+        var itemSkips = new List<WatchlistItemSkip>();
+        var themeSkips = new List<WatchedThemeSkip>();
+        int importedAccounts = 0, importedHoldings = 0, importedGroups = 0, importedItems = 0, importedThemes = 0;
+
+        if (normalizedMode == "replace")
+        {
+            // Wipe export-covered domains. stocks/stock_themes caches are
+            // intentionally preserved (spec §4.3.2) so quote/theme enrichment
+            // doesn't need a full re-fetch after import.
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                DELETE FROM holdings;
+                DELETE FROM watchlist_items;
+                DELETE FROM watchlist_groups WHERE name != 'default';
+                DELETE FROM watched_themes;
+                DELETE FROM accounts;
+                """,
+                transaction: transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+
+        // Track existing keys for merge-mode skip detection. For replace mode
+        // these lookups still happen but every set is empty post-wipe, so the
+        // duplicate paths short-circuit naturally.
+        HashSet<string> existingAccountNumbers = new(StringComparer.Ordinal);
+        HashSet<string> existingNicknames = new(StringComparer.Ordinal);
+        Dictionary<string, long> accountIdByNumber = new(StringComparer.Ordinal);
+
+        IEnumerable<AccountIdentityRow> accountRows = await connection.QueryAsync<AccountIdentityRow>(new CommandDefinition(
+            "SELECT account_no AS AccountNo, nickname AS Nickname, id AS Id FROM accounts;",
+            transaction: transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        foreach (AccountIdentityRow row in accountRows)
+        {
+            existingAccountNumbers.Add(row.AccountNo);
+            existingNicknames.Add(row.Nickname);
+            accountIdByNumber[row.AccountNo] = row.Id;
+        }
+
+        // ----- Accounts + nested holdings -----
+        foreach (AccountExportDto acc in dto.Accounts)
+        {
+            if (string.IsNullOrWhiteSpace(acc.AccountNumber) || string.IsNullOrWhiteSpace(acc.Nickname))
+            {
+                accountSkips.Add(new AccountSkip(acc.AccountNumber, acc.Nickname, "invalid_account_row"));
+                continue;
+            }
+
+            if (existingAccountNumbers.Contains(acc.AccountNumber))
+            {
+                accountSkips.Add(new AccountSkip(acc.AccountNumber, acc.Nickname, "duplicate_account_number"));
+                // Even when the account row is skipped, nested holdings still
+                // need a skip note so the model can explain "we kept your old
+                // account; the file's holdings were not merged into it".
+                foreach (HoldingExportDto h in acc.Holdings)
+                    holdingSkips.Add(new HoldingSkip(acc.AccountNumber, h.Shcode, "skipped_account_holdings_kept"));
+                continue;
+            }
+            if (existingNicknames.Contains(acc.Nickname))
+            {
+                accountSkips.Add(new AccountSkip(acc.AccountNumber, acc.Nickname, "duplicate_nickname"));
+                foreach (HoldingExportDto h in acc.Holdings)
+                    holdingSkips.Add(new HoldingSkip(acc.AccountNumber, h.Shcode, "skipped_account_holdings_kept"));
+                continue;
+            }
+
+            string createdAt = string.IsNullOrWhiteSpace(acc.CreatedAt) ? CurrentSqliteTimestamp() : acc.CreatedAt;
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                INSERT INTO accounts(account_no, nickname, broker, is_default, created_at)
+                VALUES (@AccountNumber, @Nickname, @Broker, @IsDefault, @CreatedAt);
+                """,
+                new
+                {
+                    acc.AccountNumber,
+                    acc.Nickname,
+                    Broker = string.IsNullOrWhiteSpace(acc.Broker) ? "LS" : acc.Broker,
+                    IsDefault = acc.IsDefault ? 1 : 0,
+                    CreatedAt = createdAt,
+                },
+                transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            importedAccounts++;
+            existingAccountNumbers.Add(acc.AccountNumber);
+            existingNicknames.Add(acc.Nickname);
+
+            long accountId = await connection.ExecuteScalarAsync<long>(new CommandDefinition(
+                "SELECT id FROM accounts WHERE account_no = @AccountNumber;",
+                new { acc.AccountNumber }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            accountIdByNumber[acc.AccountNumber] = accountId;
+
+            foreach (HoldingExportDto h in acc.Holdings)
+            {
+                if (string.IsNullOrWhiteSpace(h.Shcode) || h.Quantity <= 0 || h.AvgPrice < 0)
+                {
+                    holdingSkips.Add(new HoldingSkip(acc.AccountNumber, h.Shcode, "invalid_holding_row"));
+                    continue;
+                }
+                string normalizedSymbol = h.Shcode.Trim().ToUpperInvariant();
+                await UpsertStockAsync(connection, normalizedSymbol, normalizedSymbol, "unknown", null, cancellationToken, updateExisting: false).ConfigureAwait(false);
+                string updatedAt = string.IsNullOrWhiteSpace(h.UpdatedAt) ? CurrentSqliteTimestamp() : h.UpdatedAt;
+                await connection.ExecuteAsync(new CommandDefinition(
+                    """
+                    INSERT INTO holdings(account_id, symbol, quantity, avg_price, notes, updated_at)
+                    VALUES (@AccountId, @Symbol, @Quantity, @AvgPrice, @Notes, @UpdatedAt);
+                    """,
+                    new
+                    {
+                        AccountId = accountId,
+                        Symbol = normalizedSymbol,
+                        h.Quantity,
+                        h.AvgPrice,
+                        h.Notes,
+                        UpdatedAt = updatedAt,
+                    },
+                    transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+                importedHoldings++;
+            }
+        }
+
+        // ----- Watchlist groups + nested items -----
+        HashSet<string> existingGroupNames = new(StringComparer.Ordinal);
+        Dictionary<string, long> groupIdByName = new(StringComparer.Ordinal);
+        IEnumerable<GroupIdentityRow> groupRows = await connection.QueryAsync<GroupIdentityRow>(new CommandDefinition(
+            "SELECT name AS Name, id AS Id FROM watchlist_groups;",
+            transaction: transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        foreach (GroupIdentityRow g in groupRows)
+        {
+            existingGroupNames.Add(g.Name);
+            groupIdByName[g.Name] = g.Id;
+        }
+
+        foreach (WatchlistGroupExportDto g in dto.WatchlistGroups)
+        {
+            if (string.IsNullOrWhiteSpace(g.Name))
+            {
+                groupSkips.Add(new WatchlistGroupSkip(g.Name, "invalid_group_row"));
+                continue;
+            }
+            long groupId;
+            if (existingGroupNames.Contains(g.Name))
+            {
+                // The seeded 'default' group survives replace-mode wipes, so a
+                // file that re-declares 'default' will merge into it rather
+                // than fail. Items under it get the dup-or-add logic below.
+                groupSkips.Add(new WatchlistGroupSkip(g.Name, "duplicate_group_name"));
+                groupId = groupIdByName[g.Name];
+            }
+            else
+            {
+                string createdAt = string.IsNullOrWhiteSpace(g.CreatedAt) ? CurrentSqliteTimestamp() : g.CreatedAt;
+                await connection.ExecuteAsync(new CommandDefinition(
+                    """
+                    INSERT INTO watchlist_groups(name, description, sort_order, created_at)
+                    VALUES (@Name, @Description, @SortOrder, @CreatedAt);
+                    """,
+                    new { g.Name, g.Description, g.SortOrder, CreatedAt = createdAt },
+                    transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+                importedGroups++;
+                groupId = await connection.ExecuteScalarAsync<long>(new CommandDefinition(
+                    "SELECT id FROM watchlist_groups WHERE name = @Name;",
+                    new { g.Name }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+                existingGroupNames.Add(g.Name);
+                groupIdByName[g.Name] = groupId;
+            }
+
+            HashSet<string> existingItemSymbols = new(
+                (await connection.QueryAsync<string>(new CommandDefinition(
+                    "SELECT symbol FROM watchlist_items WHERE group_id = @GroupId;",
+                    new { GroupId = groupId }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false))
+                .ToList(),
+                StringComparer.Ordinal);
+
+            foreach (WatchlistItemExportDto item in g.Items)
+            {
+                if (string.IsNullOrWhiteSpace(item.Shcode))
+                {
+                    itemSkips.Add(new WatchlistItemSkip(g.Name, item.Shcode, "invalid_item_row"));
+                    continue;
+                }
+                string normalizedSymbol = item.Shcode.Trim().ToUpperInvariant();
+                if (existingItemSymbols.Contains(normalizedSymbol))
+                {
+                    itemSkips.Add(new WatchlistItemSkip(g.Name, normalizedSymbol, "duplicate_group_symbol"));
+                    continue;
+                }
+                await UpsertStockAsync(connection, normalizedSymbol, normalizedSymbol, "unknown", null, cancellationToken, updateExisting: false).ConfigureAwait(false);
+                string addedAt = string.IsNullOrWhiteSpace(item.AddedAt) ? CurrentSqliteTimestamp() : item.AddedAt;
+                await connection.ExecuteAsync(new CommandDefinition(
+                    """
+                    INSERT INTO watchlist_items(group_id, symbol, notes, added_at)
+                    VALUES (@GroupId, @Symbol, @Notes, @AddedAt);
+                    """,
+                    new { GroupId = groupId, Symbol = normalizedSymbol, item.Notes, AddedAt = addedAt },
+                    transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+                importedItems++;
+                existingItemSymbols.Add(normalizedSymbol);
+            }
+        }
+
+        // ----- Watched themes -----
+        HashSet<string> existingThemeCodes = new(
+            (await connection.QueryAsync<string>(new CommandDefinition(
+                "SELECT theme_code FROM watched_themes;",
+                transaction: transaction, cancellationToken: cancellationToken)).ConfigureAwait(false))
+            .ToList(),
+            StringComparer.Ordinal);
+
+        foreach (WatchedThemeExportDto t in dto.WatchedThemes)
+        {
+            if (string.IsNullOrWhiteSpace(t.ThemeCode))
+            {
+                themeSkips.Add(new WatchedThemeSkip(t.ThemeCode, "invalid_theme_row"));
+                continue;
+            }
+            string normalizedCode = t.ThemeCode.Trim().ToUpperInvariant();
+            if (existingThemeCodes.Contains(normalizedCode))
+            {
+                themeSkips.Add(new WatchedThemeSkip(normalizedCode, "duplicate_theme_code"));
+                continue;
+            }
+            string addedAt = string.IsNullOrWhiteSpace(t.AddedAt) ? CurrentSqliteTimestamp() : t.AddedAt;
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                INSERT INTO watched_themes(theme_code, theme_name, notes, added_at)
+                VALUES (@Code, @Name, @Notes, @AddedAt);
+                """,
+                new
+                {
+                    Code = normalizedCode,
+                    Name = string.IsNullOrWhiteSpace(t.ThemeName) ? normalizedCode : t.ThemeName,
+                    t.Notes,
+                    AddedAt = addedAt,
+                },
+                transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            importedThemes++;
+            existingThemeCodes.Add(normalizedCode);
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+        return new ApplyImportResult(
+            new PortfolioIoCounts(importedAccounts, importedHoldings, importedGroups, importedItems, importedThemes),
+            new PortfolioImportSkipped(accountSkips, holdingSkips, groupSkips, itemSkips, themeSkips));
+    }
+
+    static string CurrentSqliteTimestamp() =>
+        DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
+
+    sealed class WatchlistItemRow
+    {
+        public long GroupId { get; init; }
+        public string Symbol { get; init; } = "";
+        public string? Notes { get; init; }
+        public string AddedAt { get; init; } = "";
+    }
+
+    sealed class AccountIdentityRow
+    {
+        public string AccountNo { get; init; } = "";
+        public string Nickname { get; init; } = "";
+        public long Id { get; init; }
+    }
+
+    sealed class GroupIdentityRow
+    {
+        public string Name { get; init; } = "";
+        public long Id { get; init; }
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyDictionary<string, IReadOnlyList<StockTheme>>> GetStockThemesBatchAsync(
         IReadOnlyCollection<string> symbols,
         CancellationToken cancellationToken = default)

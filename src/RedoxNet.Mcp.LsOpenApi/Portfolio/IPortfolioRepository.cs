@@ -135,4 +135,22 @@ internal interface IPortfolioRepository
     Task<IReadOnlyDictionary<string, IReadOnlyList<StockTheme>>> GetStockThemesBatchAsync(
         IReadOnlyCollection<string> symbols,
         CancellationToken cancellationToken = default);
+
+    // -------- Portfolio I/O --------
+
+    /// <summary>
+    /// Assembles a complete export snapshot. The DTO is fully populated from the
+    /// current database state — accounts/holdings/watchlist groups+items/watched
+    /// themes. <c>stocks</c> and <c>stock_themes</c> caches are intentionally
+    /// excluded per spec §3.3 (rebuilt by quote enrichment).
+    /// </summary>
+    Task<PortfolioExportDto> ExportSnapshotAsync(string exporterVersion, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Applies an import DTO to the database atomically (single transaction).
+    /// <paramref name="mode"/> is "merge" (skip duplicates) or "replace" (wipe
+    /// the export-covered domains first; stocks/stock_themes caches survive).
+    /// Returns import counts and per-domain skip lists.
+    /// </summary>
+    Task<ApplyImportResult> ApplyImportAsync(PortfolioExportDto dto, string mode, CancellationToken cancellationToken = default);
 }
