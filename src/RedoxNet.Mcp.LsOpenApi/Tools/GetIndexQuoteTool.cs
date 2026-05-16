@@ -28,6 +28,10 @@ public static class GetIndexQuoteTool
         AVOID WHEN: the user wants ETFs that track an index — use ls_get_quote with the ETF shcode. For per-sector ranking across many industries use ls_get_industry_indices.
 
         index_code aliases: kospi→001, kosdaq→301, kospi200→101, krx100→501. Numeric codes (3-char) are passed through.
+
+        Envelope semantics:
+        - open/high/low.change_pct: percent vs *previous session's close*, NOT vs current. So low.change_pct=-8.14 means "intraday low reached −8.14% from yesterday's close" — i.e. the day's maximum drawdown.
+        - related_indices: 4 auxiliary indices LS attaches to the response. When the first entry is the queried index itself, its change_pct is normalized against the top-level value to bypass a known LS-side scale bug (observed for KRX 100).
         """)]
     public static async Task<string> GetIndexQuote(
         LsApiClient apiClient,
@@ -67,15 +71,17 @@ public static class GetIndexQuoteTool
             string? sign = b.ReadString("sign");
             double rawChange = b.ReadDouble("change");
             double rawPct = b.ReadDouble("diffjisu");
+            double signedChange = IndustryDataCache.ApplySign(rawChange, sign);
+            double signedPct = IndustryDataCache.ApplySign(rawPct, sign);
 
             var payload = new IndexQuotePayload
             {
                 IndexCode = upcode,
-                Name = (b.ReadString("hname") ?? "").Trim(),
+                Name = CompactName(b.ReadString("hname")),
                 Value = b.ReadDouble("pricejisu"),
                 PreviousClose = b.ReadDouble("jniljisu"),
-                Change = IndustryDataCache.ApplySign(rawChange, sign),
-                ChangePct = IndustryDataCache.ApplySign(rawPct, sign),
+                Change = signedChange,
+                ChangePct = signedPct,
                 Open = new IndexOhlcPoint(
                     Value: b.ReadDouble("openjisu"),
                     ChangePct: b.ReadDouble("opendiff"),
@@ -110,7 +116,7 @@ public static class GetIndexQuoteTool
                     Unchanged: b.ReadLong("unchgjo"),
                     Down: b.ReadLong("lowjo"),
                     LimitDown: b.ReadLong("downjo")),
-                RelatedIndices = ReadRelatedIndices(b),
+                RelatedIndices = ReadRelatedIndices(b, upcode, signedChange, signedPct),
                 Timestamp = SeoulNowIsoString(),
             };
 
@@ -147,13 +153,13 @@ public static class GetIndexQuoteTool
         };
     }
 
-    static List<RelatedIndexRow> ReadRelatedIndices(JsonElement b)
+    static List<RelatedIndexRow> ReadRelatedIndices(JsonElement b, string queriedUpcode, double topLevelChange, double topLevelChangePct)
     {
         var related = new List<RelatedIndexRow>(4);
-        AddIfPresent(related, b, "firstjcode", "firstjname", "firstjisu", "firsign", "firchange", "firdiff");
-        AddIfPresent(related, b, "secondjcode", "secondjname", "secondjisu", "secsign", "secchange", "secdiff");
-        AddIfPresent(related, b, "thirdjcode", "thirdjname", "thirdjisu", "thrsign", "thrchange", "thrdiff");
-        AddIfPresent(related, b, "fourthjcode", "fourthjname", "fourthjisu", "forsign", "forchange", "fordiff");
+        AddIfPresent(related, b, "firstjcode", "firstjname", "firstjisu", "firsign", "firchange", "firdiff", queriedUpcode, topLevelChange, topLevelChangePct);
+        AddIfPresent(related, b, "secondjcode", "secondjname", "secondjisu", "secsign", "secchange", "secdiff", queriedUpcode, topLevelChange, topLevelChangePct);
+        AddIfPresent(related, b, "thirdjcode", "thirdjname", "thirdjisu", "thrsign", "thrchange", "thrdiff", queriedUpcode, topLevelChange, topLevelChangePct);
+        AddIfPresent(related, b, "fourthjcode", "fourthjname", "fourthjisu", "forsign", "forchange", "fordiff", queriedUpcode, topLevelChange, topLevelChangePct);
         return related;
     }
 
@@ -165,7 +171,10 @@ public static class GetIndexQuoteTool
         string valueKey,
         string signKey,
         string changeKey,
-        string diffKey)
+        string diffKey,
+        string queriedUpcode,
+        double topLevelChange,
+        double topLevelChangePct)
     {
         string? code = b.ReadString(codeKey)?.Trim();
         if (string.IsNullOrEmpty(code))
@@ -173,12 +182,45 @@ public static class GetIndexQuoteTool
         string? sign = b.ReadString(signKey);
         double rawChange = b.ReadDouble(changeKey);
         double rawPct = b.ReadDouble(diffKey);
+        double signedChange = IndustryDataCache.ApplySign(rawChange, sign);
+        double signedPct = IndustryDataCache.ApplySign(rawPct, sign);
+
+        // LS-side data inconsistency: when the related index is the same as
+        // the queried index (firstj* is almost always "self"), the diff
+        // field is sometimes shipped with a wrong scale — verified for
+        // KRX 100 (upcode=501) where firdiff=-0.65 vs the correct
+        // diffjisu=-6.59 on the same response. The four other diff fields
+        // (sec/thr/for) are math-consistent with their respective indices.
+        // Mitigation: substitute the known-good top-level values for the
+        // self entry. Same-index logical invariant — these MUST agree.
+        if (string.Equals(code, queriedUpcode, StringComparison.Ordinal))
+        {
+            signedChange = topLevelChange;
+            signedPct = topLevelChangePct;
+        }
+
         list.Add(new RelatedIndexRow(
             Code: code,
-            Name: (b.ReadString(nameKey) ?? "").Trim(),
+            Name: CompactName(b.ReadString(nameKey)),
             Value: b.ReadDouble(valueKey),
-            Change: IndustryDataCache.ApplySign(rawChange, sign),
-            ChangePct: IndustryDataCache.ApplySign(rawPct, sign)));
+            Change: signedChange,
+            ChangePct: signedPct));
+    }
+
+    /// <summary>
+    /// Normalizes the LS-padded index/industry name. The t1511 / t8424
+    /// <c>hname</c> column is fixed-width 20 chars with the actual name
+    /// padded by spacing between every character (e.g. "K R X 1 0 0",
+    /// "종       합"). Strip all internal whitespace so the model sees
+    /// "KRX100" / "종합". Edge trim covers the trailing pad.
+    /// </summary>
+    internal static string CompactName(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return "";
+        // string.Concat over a filtering enumerable avoids regex and any
+        // allocation in the (rare) already-compact case.
+        return string.Concat(raw.Where(c => !char.IsWhiteSpace(c)));
     }
 
     internal static string SeoulNowIsoString()
@@ -220,6 +262,15 @@ public static class GetIndexQuoteTool
         public string Timestamp { get; init; } = "";
     }
 
+    /// <param name="Value">Index value at this OHLC point.</param>
+    /// <param name="ChangePct">
+    /// <b>Percent change vs the previous session's close</b> (not vs the
+    /// current value). Mirrors LS's <c>opendiff/highdiff/lowdiff</c>
+    /// semantics: <c>lowdiff=-8.14</c> on a session that closed at
+    /// −6.59% means "the intraday low reached −8.14% relative to
+    /// yesterday's close" — i.e. the maximum drawdown of the day.
+    /// </param>
+    /// <param name="Time">HHmmss timestamp when this point was set.</param>
     sealed record IndexOhlcPoint(double Value, double ChangePct, string? Time);
     sealed record IndexFlow(long Today, long Previous, long Change, double Ratio);
     sealed record IndexRangePoint(double Value, string? Date, double Change);
