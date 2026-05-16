@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using System.Reflection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace RedoxNet.Mcp.LsOpenApi.Portfolio;
 
@@ -17,6 +19,7 @@ internal sealed class PortfolioService : IPortfolioService
 
     readonly IPortfolioRepository _repository;
     readonly IQuoteService _quoteService;
+    readonly ILogger<PortfolioService> _logger;
 
     // Per-process enrichment scheduler state. v0.6: fire-and-forget runs on
     // every holdings/watchlist write *and* on import + on holdings_list cache
@@ -37,10 +40,14 @@ internal sealed class PortfolioService : IPortfolioService
     readonly object _enrichTasksLock = new();
     readonly List<Task> _enrichTasks = new();
 
-    public PortfolioService(IPortfolioRepository repository, IQuoteService quoteService)
+    public PortfolioService(
+        IPortfolioRepository repository,
+        IQuoteService quoteService,
+        ILogger<PortfolioService>? logger = null)
     {
         _repository = repository;
         _quoteService = quoteService;
+        _logger = logger ?? NullLogger<PortfolioService>.Instance;
     }
 
     // -------- Watchlist groups --------
@@ -721,22 +728,35 @@ internal sealed class PortfolioService : IPortfolioService
         {
             fetched = await _quoteService.GetStockThemesAsync(normalized, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             // Best-effort. Leave cache as-is; the next write retries.
+            // Logged so "왜 enrichment가 안 되지?" surfaces in stderr.
+            _logger.LogWarning(ex,
+                "Theme enrichment fetch threw for {Symbol}; leaving stock_themes cache as-is (next write retries).",
+                normalized);
             return;
         }
 
         if (fetched.Error is not null)
+        {
+            // LS-side business error (e.g. missing credentials, unknown shcode).
+            // Expected during offline runs — Debug is the right level.
+            _logger.LogDebug(
+                "Theme enrichment for {Symbol} skipped: {Error}",
+                normalized, fetched.Error);
             return;
+        }
 
         try
         {
             await _repository.ReplaceStockThemesAsync(normalized, fetched.Themes, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // Swallow — fire-and-forget contract per spec §7.
+            _logger.LogWarning(ex,
+                "Theme enrichment cache write failed for {Symbol} ({Count} themes).",
+                normalized, fetched.Themes.Count);
         }
     }
 
@@ -777,6 +797,19 @@ internal sealed class PortfolioService : IPortfolioService
             try
             {
                 await EnrichStockMetadataAsync(key, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // EnrichStockMetadataAsync catches its own LS / repo errors,
+                // so an exception escaping here is genuinely unexpected
+                // (thread-pool failure, AppDomain shutdown mid-flight, etc.).
+                // Without this explicit catch the exception lands on the
+                // Task as UnobservedTaskException — silently swallowed on
+                // finalization, which is exactly the "왜 enrichment가
+                // 안 되지?" debug black hole we want to avoid.
+                _logger.LogWarning(ex,
+                    "Unexpected error in fire-and-forget theme enrichment for {Symbol}.",
+                    key);
             }
             finally
             {
