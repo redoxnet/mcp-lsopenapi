@@ -9,7 +9,7 @@
 [![CI](https://github.com/redoxnet/mcp-lsopenapi/actions/workflows/ci.yml/badge.svg)](https://github.com/redoxnet/mcp-lsopenapi/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-## 한국 주식을 AI에게 물어보세요.
+## AI 에이전트에게 내가 가진 종목을 물어보세요.
 
 Claude·ChatGPT·Copilot 같은 AI 비서에 **LS증권 OpenAPI**를 붙입니다. 시세·차트·기업정보·ETF 구성·시장 스크리너를 평소 쓰던 대화창에서 자연어로 묻고 받습니다. **v0.5부터는 내 보유 종목·관심종목·관심테마**를, **v0.6부터는 코스피/업종/테마 시장 컨텍스트와 포트폴리오 백업/복원까지** 대화로 처리합니다.
 
@@ -24,7 +24,7 @@ Claude·ChatGPT·Copilot 같은 AI 비서에 **LS증권 OpenAPI**를 붙입니�
 
 ---
 
-## 이런 게 됩니다
+## 이런 활용이 가능합니다
 
 ### 차트 + 추세 설명을 한 번에
 
@@ -142,7 +142,7 @@ Microsoft Store에서 *AssistStudio* 설치(Product ID `9N09D0QGSTZD`) → Setti
 
 ---
 
-## 무엇을 물어볼 수 있나
+## 이렇게 질문해 보세요!
 
 도구 시그니처가 아니라 *"어떤 질문에 답할 수 있는가"* 로 묶었습니다.
 
@@ -199,6 +199,21 @@ ETF/ETN 전용 정보(NAV, 추적오차율, 괴리율, AUM, LP), 구성종목(PD
 단일 JSON(schema v1) 백업·복원. `mode=merge` 기본 (중복 skip), `mode=replace` 시 `confirm=true` 필수 + 자동 백업 생성.
 
 전체 도구의 정확한 인자·반환 스키마는 [영문 README의 Tools 섹션](README.en.md#tools) 참고.
+
+---
+
+## 진행 상황
+
+- [x] **v0.1.0** — MCP 서버 초기 공개. LS증권 OpenAPI 인증 + 10개 시세 도구.
+- [x] **v0.2.0** — MCP 호스트 호환성 정비 (도구 surface 변경 없음). 스키마·UI 리소스 메타데이터 정리.
+- [x] **v0.3.0** — 시장 스크리너 도구 + 검색 파라미터 정리 + 차트 표시 다듬기.
+- [x] **v0.4.0** — 토큰 효율 차트 페이로드, dataset handle 후속 도구 2종, ZigZag 기반 swing 감지, indicator coverage 블록.
+- [x] **v0.5.0** — 로컬 포트폴리오 모듈. 멀티 계좌·매수/매도/액면조정·관심종목·관심 테마. 13 → 37 도구. 로컬 SQLite 저장(브로커 동기화 없음).
+- [x] **v0.6.0** — 시장 컨텍스트(지수/업종/테마) + 포트폴리오 JSON 백업/복원 + 테마 자동 enrich + Tier 1 도구 압축. 37 → 39 도구.
+- [ ] **v0.7+** — `krx_sector` enrichment, 펀더멘털/투자자/이벤트 도구, 동기 메타데이터 refresh.
+- [ ] **v2.0.0** — 실시간 시세 (WebSocket), 실 계좌 조회·잔고, 주문 발주.
+
+상세 변경 내역은 [RELEASENOTES.Mcp.md](RELEASENOTES.Mcp.md) · [RELEASENOTES.Core.md](RELEASENOTES.Core.md) 참고.
 
 ---
 

@@ -66,8 +66,6 @@ Full surface and policy details in [Tools › Portfolio](#portfolio-local-only-n
 
 ## ⚡ v0.4 — Same question, 16× less context
 
-![v0.3 vs v0.4 token efficiency](docs/case-studies/assets/v0.4.0-token-efficiency-hero.png)
-
 Asking the same model (`claude-sonnet-4-6`) *"Samsung Electronics daily chart for 2024 Jan~Jun, plus MA60 trend within that range"*, v0.3 needed two tool calls to populate MA60 in the narrow window — first a 3-month padding attempt, then a retry with `count=190` after the model noticed the padding wasn't enough.
 
 v0.4 finishes in a single call: the model picks `with_warmup=true` on its first try. Display window (60 bars) and analytical window (300 bars) are separated so long-period indicators all populate, and the summary-first response shape keeps 60 raw OHLCV rows out of the model's context entirely.
@@ -485,15 +483,16 @@ dotnet run --project src/RedoxNet.Mcp.LsOpenApi --framework net8.0
 
 ## Status
 
-- ✅ M1 — Core scaffold + auth (OAuth2 client_credentials, SQLite WAL token cache, secret masking).
-- ✅ M2 — Embedded TR catalog with 24 testbed-verified seed entries (`t1101`, `t1102`, `t1301`, `t1441`, `t1444`, `t1452`, `t1463`, `t1466`, `t1485`, `t1511`, `t1514`, `t1516`, `t1531`, `t1532`, `t1537`, `t1901`, `t1904`, `t8407`, `t8410`, `t8412`, `t8424`, `t8430`, `t8436`, `t9945`).
-- ✅ M3 — TR execution (`LsApiClient.CallTrAsync`) with Polly retries, per-TR rate limiter, header + body continuation modes.
-- ✅ M4 — MCP stdio server with 3 meta tools (`ls_search_tr`, `ls_describe_tr`, `ls_call_tr`).
-- ✅ M5 — 8 semantic tools: `ls_get_quote`, `ls_get_multi_quote`, `ls_get_top_stocks`, `ls_get_stock_info`, `ls_get_chart` (+ indicators, context metadata, multi-timeframe, Plotly v5 spec via `include_chart`), `ls_search_stock`, **`ls_get_etf_info`, `ls_get_etf_holdings`**.
-- ✅ Live verified against the LS virtual server (v0.2.0).
-- ✅ M6 — **Local portfolio module (v0.5)**: multi-account holdings with `set`/`buy`/`sell` semantics (weighted-average merge, auto-remove on zero), watchlists, watched themes, corporate actions across all holders, structured error envelopes with candidate accounts. SQLite-backed; no broker sync.
-- ✅ M7 — **Market context + portfolio I/O (v0.6)**: index quote (`t1511`), industry indices fanout with 60s cache (`t8424` + `t1511`), industry stocks (`t1516`), LS theme stocks (`t1537`) + stock-themes reverse lookup (`t1532`), fire-and-forget theme enrichment with `metadata_freshness` hint, holdings_list theme filters, versioned JSON export/import with auto-backup, Tier 1 tool compression (39 tools total). `watched_sectors → watched_themes` rename + schema v3 migration preserves v0.5 data.
-- ⏳ v2.0 — Realtime (WebSocket), live accounts/balances, orders.
+- [x] **v0.1.0** — Initial public release. MCP server scaffold + OAuth2 auth + 10 market-data tools.
+- [x] **v0.2.0** — MCP host interoperability fixes. No tool surface changes; reshaped JSON schemas and UI-resource metadata so hosts accept and render them correctly.
+- [x] **v0.3.0** — Market screener tool, search-parameter rename, Naver-style chart polish.
+- [x] **v0.4.0** — Token-efficient chart payloads, two dataset-handle follow-up tools, ZigZag-based swing detector, `IndicatorCoverage` block explaining null indicators.
+- [x] **v0.5.0** — Local portfolio module (24 new tools, 13 → 37 total): multi-account holdings with `set`/`buy`/`sell` semantics, watchlists, watched sectors, corporate actions, structured error envelopes with candidate accounts. SQLite-backed; no broker sync.
+- [x] **v0.6.0** — Market context (index `t1511` + industry fanout `t8424`+`t1511` + industry stocks `t1516`) + LS themes (`t1537` + `t1532`) + portfolio JSON export/import with auto-backup + fire-and-forget theme enrichment with `metadata_freshness` hint + Tier 1 tool compression (39 tools total). `watched_sectors → watched_themes` rename + schema v3 migration preserves v0.5 data.
+- [ ] **v0.7+** — `stocks.krx_sector` enrichment + `industry?` filter (sourcing deferred from v0.6 after confirming `t1102` lacks the field), fundamentals/investor-flow/event tools, synchronous metadata refresh.
+- [ ] **v2.0.0** — Realtime (WebSocket), live accounts/balances, orders.
+
+Full changelog: [RELEASENOTES.Mcp.md](RELEASENOTES.Mcp.md) · [RELEASENOTES.Core.md](RELEASENOTES.Core.md).
 
 ## License
 

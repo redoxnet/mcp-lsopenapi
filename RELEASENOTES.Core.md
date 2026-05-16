@@ -1,5 +1,25 @@
 # Release Notes — RedoxNet.LsOpenApi.Core
 
+## v0.6.0 (2026-05-16)
+
+Six new TRs in the embedded catalog under the new `/indtp/market-data` (업종) path, plus one rate-limit correction. Catalog-only release — the public Core surface (`LsApiClient`, `TrCatalog`, indicator pipeline, etc.) is unchanged from v0.5.
+
+### Added — Catalog rows (6 new TRs)
+
+- **`t1511` (업종현재가)** under `/indtp/market-data`. Single-index snapshot — current value, OHLC with timestamps, 52-week + YTD range, market breadth (advancers/decliners/limit), four related auxiliary indices in `firstj*..fourthj*` blocks. Consumed by the Mcp package's `ls_get_index_quote` wrapper.
+- **`t8424` (전체업종)** under `/indtp/market-data`. Industry/index code catalog (code + name only, no quotes). Consumed internally by `ls_get_industry_indices` fanout and by `industry_keyword` resolution in `ls_get_industry_stocks`.
+- **`t1516` (업종별종목시세)** under `/indtp/market-data`. Stocks inside one industry + the industry's index summary. Body-based continuation paging (last `shcode` echoed). Consumed by `ls_get_industry_stocks`.
+- **`t1537` (테마종목별시세조회)** under `/stock/sector`. Stocks inside one LS curated theme + theme summary (tmcnt/upcnt/uprate). Header-based `tr_cont` / `tr_cont_key` paging. Consumed by `ls_get_theme_stocks`.
+- **`t1485` (예상지수)** under `/indtp/market-data`. Pre-market expected index. Catalog-only — reachable via `ls_call_tr`.
+- **`t1514` (업종기간별추이)** under `/indtp/market-data`. Industry daily/weekly/monthly time series. Catalog-only — reachable via `ls_call_tr`. v0.7 wrapper candidate.
+
+### Changed
+
+- **`t1511` `rate_limit_per_sec`: 1 → 10**. The conservative v0.6 placeholder was corrected against the LS [업종] 시세 guide which publishes t1511 at 10 req/sec while keeping the other four TRs in the category at 1. Impact: `ls_get_industry_indices` cold-cache fanout drops from ~25s to ~2.5s for KOSPI (≈25 upcodes).
+- Catalog count **18 → 24 TRs**.
+
+> Versioned in lockstep with `RedoxNet.Mcp.LsOpenApi` 0.6.0. No public Core API changes — consumers that read the catalog or call TRs through `LsApiClient` get the new rows automatically.
+
 ## v0.5.0 (2026-05-15)
 
 Two theme classification TRs added to the embedded catalog. The Mcp package's portfolio sector quote enrichment depends on `t1531`.

@@ -1,5 +1,142 @@
 # Release Notes — RedoxNet.Mcp.LsOpenApi
 
+## v0.6.0 (2026-05-16)
+
+Market context + theme wrappers + portfolio I/O. The third big surface
+release: 37 → **39 tools** (net +2 after Tier 1 compression). v0.5's
+"watched sectors" naming was a misnomer — LS API splits 업종 (KRX
+industry classification) from 테마 (LS curated themes); v0.6 lines up
+both DB and tool surface with that split. The portfolio module also
+gets its first migration story (export/import + before-import auto-backup).
+
+### Added — Market context (3 tools)
+
+- `ls_get_index_quote(index_code)` — single Korean index snapshot via
+  TR `t1511`. Aliases `kospi`→`001`, `kosdaq`→`301`, `kospi200`→`101`,
+  `krx100`→`501`. Envelope nests `value` / `previous_close` /
+  `change` / `change_pct`, OHLC with timestamps, 52-week and YTD range
+  blocks, market breadth (up/down/unchanged/limit), and four related
+  auxiliary indices (e.g. KOSPI 종합 returns 대형주/중형주/소형주
+  alongside).
+- `ls_get_industry_indices(market, top_n)` — sorted top-N industry
+  indices for kospi/kosdaq/all. Internally fans out `t8424` (industry
+  catalog) + `t1511` per upcode; the catalog default `rate_limit_per_sec=10`
+  for `t1511` (confirmed against the LS [업종] 시세 guide) keeps the
+  cold-cache cost ≈2.5s for KOSPI's ~25 codes. 60-second in-process
+  cache so `top_n=5` then `top_n=30` is one fanout, not two.
+- `ls_get_industry_stocks(upcode | industry_keyword, market, top_n)`
+  — stocks inside one industry with the industry's index summary, via
+  `t1516`. Body-based continuation paging (last shcode echo). Keyword
+  resolution against the cached catalog: 0 matches → `IndustryNotFound`,
+  1 → `resolved.matched_via="keyword"` echo, 2+ → `AmbiguousIndustry`
+  with candidates.
+
+### Added — LS themes (2 tools)
+
+- `ls_get_theme_stocks(theme_code | theme_keyword, top_n)` — stocks
+  inside one LS curated theme + the theme's roll-up summary, via
+  `t1537`. Header-based continuation paging (`tr_cont` / `tr_cont_key`
+  echo). Keyword resolution same 0/1/N branches as the industry tool.
+- `ls_get_stock_themes(shcode)` — every theme a stock belongs to via
+  `t1532`. Empty array is a valid response — not every stock is
+  pinned to a theme.
+
+### Added — Portfolio I/O (2 tools)
+
+- `ls_portfolio_export(path?)` — versioned JSON snapshot covering
+  accounts/holdings/watchlists/watched_themes. Default path writes
+  `<db-parent>/exports/portfolio-YYYY-MM-DDTHHmmss.json` so backups
+  sit alongside `portfolio.db`. `stocks` and `stock_themes` caches are
+  intentionally excluded — quote/theme enrichment rebuilds them after
+  import.
+- `ls_portfolio_import(path, mode, confirm)` — `mode=merge` (default)
+  skips duplicates with explicit reason codes per domain
+  (`duplicate_account_number`, `duplicate_theme_code`, …);
+  `mode=replace` wipes the export-covered domains first, requires
+  `confirm=true`, and silently writes a `before-import-*.json`
+  auto-backup so a wrong file is recoverable. Unsupported
+  `schema_version` → `ImportSchemaMismatch`.
+
+### Added — Theme enrichment + freshness hint
+
+- `t1532` fire-and-forget enrichment on `ls_holdings_set` / `_buy` /
+  `ls_watchlist_add`. Per-stock theme memberships cached in a new
+  `stock_themes` table. Best-effort: LS errors are absorbed; on stdio
+  shutdown a half-finished enrichment retries on next session's first
+  write.
+- `ls_holdings_list` now emits a `metadata_freshness` block:
+  `{ fully_enriched, pending: { themes: N }, hint }`. Each holding row
+  carries `themes` (array) and optional `themes_status` (`"pending"`
+  when enrichment hasn't caught up yet; omitted when `"ok"` to save
+  tokens).
+- `ls_holdings_list` gains optional `theme_code` (exact) and
+  `theme_keyword` (LIKE on name) filters with AND-combine semantics.
+  Responses include a `filter` echo and `matched_themes` (alphabetized
+  unique names) so LIKE false positives are visible.
+
+### Added — Catalog v0.6 (6 new TRs)
+
+- `t1511` 업종현재가 (wrapper) — `rate_limit_per_sec=10`.
+- `t1485` 예상지수 / `t1514` 업종기간별추이 / `t8424` 전체업종 —
+  catalog-only; reachable via `ls_call_tr`. `t8424` is consumed
+  internally by `ls_get_industry_indices`.
+- `t1516` 업종별종목시세 (wrapper).
+- `t1537` 테마종목별시세조회 (wrapper).
+
+### Changed — Renamed (BREAKING)
+
+- `ls_watched_sectors_{add,remove,list}` → `ls_watched_themes_{add,remove,list}`.
+  Param `sector_code` → `theme_code`, `sector_name` → `theme_name`.
+  v0.5 was caching LS theme tmcodes under the "sector" label; v0.6
+  lines names up with the actual concept.
+- portfolio.db schema **v2 → v3** migration: `watched_sectors` table
+  renamed to `watched_themes` (columns `sector_code`/`sector_name` →
+  `theme_code`/`theme_name`). New `stock_themes` cache table.
+  v0.5 data (e.g. tmcode `0012`, `0064`) is preserved.
+
+### Removed — Tier 1 compression (BREAKING, −5 tools)
+
+LLM routing burden mitigation; service+repository layers untouched.
+
+- `ls_account_get` — derive from `ls_accounts_list[].is_default`.
+- `ls_account_set_default` — same effect via
+  `ls_account_upsert(set_default=true)`.
+- `ls_holdings_split` / `ls_holdings_reverse_split` /
+  `ls_holdings_bonus` — collapsed into `ls_holdings_corporate_action(
+  shcode, type, ratio, account?)`. Open enum: v0.6 supports
+  `split` / `reverse_split` / `bonus`; v0.7+ adds
+  `stock_dividend` / `spin_off` / `merger` by extending the enum
+  without growing the tool surface.
+
+### Deferred — v0.7 candidates
+
+- **`stocks.krx_sector` enrichment + `industry?` filter.** SPEC §4.4
+  / §10 Q7 — confirmed during v0.6 implementation that `t1102` does
+  *not* return a KRX industry classification field. LS's [주식 섹터]
+  category is all theme TRs. v0.6 leaves the column NULL; v0.7 will
+  identify an enrichment source (LS 마스터 TR / t8424+t1516 reverse
+  lookup / static KRX table).
+- `ls_get_index_history` (`t1514` wrapper) — catalog-only in v0.6.
+- `ls_stocks_refresh_metadata` synchronous refresh tool.
+
+### Verified
+
+- **230 unit + fixture tests pass on net8.0** (was 178). New coverage:
+  IndustryDataCache fanout sort + cache reuse, t1516 body-paging,
+  t1537 header-paging with `tr_cont_key` echo, keyword resolution
+  0/1/N branches for industry + theme, schema v3 migration round-trip,
+  ReplaceStockThemes / GetStockThemesBatch, EnrichStockMetadataAsync
+  store + LS-error fallback, ListHoldings metadata_freshness +
+  per-row themes, theme filters (exact / LIKE / AND-combine),
+  portfolio I/O round-trip + replace auto-backup + schema_version
+  mismatch, corporate_action dispatch + unknown-type rejection.
+- **48-case stdio smoke** (`scripts/portfolio-smoke.py`) extended with
+  Tier 1 compression regressions (removed tools absent from
+  `tools/list`, calling a removed name returns `__rpc_error`),
+  watched_themes rename, portfolio export/import round-trip with
+  schema_version=99 → ImportSchemaMismatch, all 5 new tools route
+  offline.
+
 ## v0.5.0 (2026-05-15)
 
 Local-only portfolio module — multi-account holdings, buy/sell/corporate-action semantics, watchlists, watched sectors. The biggest tool-surface expansion since v0.1: 13 → 37 tools. Stored alongside `token.db`; no broker sync, no data leaves the user's machine.
