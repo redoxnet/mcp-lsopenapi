@@ -33,6 +33,8 @@ internal static class GetIndustryStocksTool
 
         upcode XOR industry_keyword: pass either a 3-char LS upcode (e.g. '013' 전기전자) or a Korean keyword that resolves against the catalog (LIKE match). Multiple matches return an AmbiguousIndustry envelope with candidates. When both are supplied, upcode wins.
         market: t1516 gubun. '1'=코스피업종 (default), '2'=코스닥업종, '3'=섹터지수.
+
+        Caveat (LS-side, v0.6 testbed-observed): when market='3' (섹터지수), some synthetic sector indices — notably the KRX 산업분류 family like 503 KRX반도체 — return an empty stocks array because LS publishes them as computed indices without an exposed stock basket. If '3' returns 0 rows for a code you expected to be populated, fall back to ls_get_theme_stocks (theme TR family covers the same conceptual surface with concrete memberships).
         """)]
     public static async Task<string> GetIndustryStocks(
         LsApiClient apiClient,
