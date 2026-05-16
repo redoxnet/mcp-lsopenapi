@@ -8,17 +8,17 @@ using RedoxNet.Mcp.LsOpenApi.Tools;
 namespace RedoxNet.Mcp.LsOpenApi.Portfolio;
 
 /// <summary>
-/// Retrieves LS quote data used to enrich portfolio, watchlist, and sector results.
+/// Retrieves LS quote data used to enrich portfolio, watchlist, and theme results.
 /// </summary>
 internal sealed class LsQuoteService : IQuoteService
 {
     readonly LsApiClient _apiClient;
-    readonly SemaphoreSlim _sectorCacheLock = new(1, 1);
-    SectorCacheEntry? _sectorCache;
-    static readonly TimeSpan SectorCacheTtl = TimeSpan.FromSeconds(60);
+    readonly SemaphoreSlim _themeCacheLock = new(1, 1);
+    ThemeCacheEntry? _themeCache;
+    static readonly TimeSpan ThemeCacheTtl = TimeSpan.FromSeconds(60);
 
-    sealed record SectorCacheEntry(
-        IReadOnlyDictionary<string, SectorQuote> Quotes,
+    sealed record ThemeCacheEntry(
+        IReadOnlyDictionary<string, ThemeQuote> Quotes,
         DateTimeOffset FetchedAt,
         string? Error);
 
@@ -107,48 +107,48 @@ internal sealed class LsQuoteService : IQuoteService
     }
 
     /// <inheritdoc />
-    public async Task<QuoteBatchResult<SectorQuote>> GetSectorQuotesAsync(
-        IReadOnlyCollection<string> sectorCodes,
+    public async Task<QuoteBatchResult<ThemeQuote>> GetThemeQuotesAsync(
+        IReadOnlyCollection<string> themeCodes,
         CancellationToken cancellationToken = default)
     {
-        string[] normalized = sectorCodes
+        string[] normalized = themeCodes
             .Where(c => !string.IsNullOrWhiteSpace(c))
             .Select(c => c.Trim().ToUpperInvariant())
             .Distinct(StringComparer.Ordinal)
             .ToArray();
-        var quotes = normalized.ToDictionary(c => c, _ => (SectorQuote?)null, StringComparer.Ordinal);
+        var quotes = normalized.ToDictionary(c => c, _ => (ThemeQuote?)null, StringComparer.Ordinal);
         if (normalized.Length == 0)
-            return new QuoteBatchResult<SectorQuote>(quotes, null);
+            return new QuoteBatchResult<ThemeQuote>(quotes, null);
 
-        SectorCacheEntry entry = await GetAllSectorQuotesAsync(cancellationToken).ConfigureAwait(false);
+        ThemeCacheEntry entry = await GetAllThemeQuotesAsync(cancellationToken).ConfigureAwait(false);
         foreach (string code in normalized)
         {
-            if (entry.Quotes.TryGetValue(code, out SectorQuote? quote))
+            if (entry.Quotes.TryGetValue(code, out ThemeQuote? quote))
                 quotes[code] = quote;
         }
 
-        return new QuoteBatchResult<SectorQuote>(quotes, entry.Error);
+        return new QuoteBatchResult<ThemeQuote>(quotes, entry.Error);
     }
 
     /// <summary>
     /// Gets and short-term caches the full t1531 theme quote table.
     /// </summary>
-    async Task<SectorCacheEntry> GetAllSectorQuotesAsync(CancellationToken cancellationToken)
+    async Task<ThemeCacheEntry> GetAllThemeQuotesAsync(CancellationToken cancellationToken)
     {
-        SectorCacheEntry? snapshot = _sectorCache;
+        ThemeCacheEntry? snapshot = _themeCache;
         DateTimeOffset now = DateTimeOffset.UtcNow;
-        if (snapshot is not null && now - snapshot.FetchedAt < SectorCacheTtl)
+        if (snapshot is not null && now - snapshot.FetchedAt < ThemeCacheTtl)
             return snapshot;
 
-        await _sectorCacheLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _themeCacheLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            snapshot = _sectorCache;
+            snapshot = _themeCache;
             now = DateTimeOffset.UtcNow;
-            if (snapshot is not null && now - snapshot.FetchedAt < SectorCacheTtl)
+            if (snapshot is not null && now - snapshot.FetchedAt < ThemeCacheTtl)
                 return snapshot;
 
-            var fetched = new Dictionary<string, SectorQuote>(StringComparer.Ordinal);
+            var fetched = new Dictionary<string, ThemeQuote>(StringComparer.Ordinal);
             string? error = null;
             try
             {
@@ -177,7 +177,7 @@ internal sealed class LsQuoteService : IQuoteService
                             if (string.IsNullOrEmpty(tmcode))
                                 continue;
 
-                            fetched[tmcode] = new SectorQuote(
+                            fetched[tmcode] = new ThemeQuote(
                                 IndexValue: null,
                                 Change: null,
                                 ChangePct: row.ReadDouble("avgdiff"),
@@ -195,13 +195,13 @@ internal sealed class LsQuoteService : IQuoteService
                 error = $"TR call failed: {ex.Message}";
             }
 
-            var entry = new SectorCacheEntry(fetched, now, error);
-            _sectorCache = entry;
+            var entry = new ThemeCacheEntry(fetched, now, error);
+            _themeCache = entry;
             return entry;
         }
         finally
         {
-            _sectorCacheLock.Release();
+            _themeCacheLock.Release();
         }
     }
 

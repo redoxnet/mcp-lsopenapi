@@ -249,13 +249,13 @@ public sealed class PortfolioServiceTests
             return Task.FromResult(new QuoteBatchResult<StockQuote>(result, _stockError));
         }
 
-        public Task<QuoteBatchResult<SectorQuote>> GetSectorQuotesAsync(IReadOnlyCollection<string> sectorCodes, CancellationToken cancellationToken = default)
+        public Task<QuoteBatchResult<ThemeQuote>> GetThemeQuotesAsync(IReadOnlyCollection<string> themeCodes, CancellationToken cancellationToken = default)
         {
-            var result = sectorCodes.Distinct(StringComparer.Ordinal).ToDictionary(
+            var result = themeCodes.Distinct(StringComparer.Ordinal).ToDictionary(
                 s => s,
-                _ => (SectorQuote?)null,
+                _ => (ThemeQuote?)null,
                 StringComparer.Ordinal);
-            return Task.FromResult(new QuoteBatchResult<SectorQuote>(result, null));
+            return Task.FromResult(new QuoteBatchResult<ThemeQuote>(result, null));
         }
     }
 

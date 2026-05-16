@@ -9,7 +9,7 @@ namespace RedoxNet.Mcp.LsOpenApi.Tests.Portfolio;
 public sealed class LsQuoteServiceTests
 {
     [Fact]
-    public async Task GetSectorQuotesAsync_UsesT1531AvgDiffForWatchedThemeCodes()
+    public async Task GetThemeQuotesAsync_UsesT1531AvgDiffForWatchedThemeCodes()
     {
         const string body = """
         {
@@ -27,7 +27,7 @@ public sealed class LsQuoteServiceTests
         }));
         var service = new LsQuoteService(client);
 
-        QuoteBatchResult<SectorQuote> result = await service.GetSectorQuotesAsync(new[] { "0012", "9999" });
+        QuoteBatchResult<ThemeQuote> result = await service.GetThemeQuotesAsync(new[] { "0012", "9999" });
 
         handler.Requests.Should().ContainSingle();
         handler.Requests[0].Headers.GetValues("tr_cd").Should().ContainSingle().Which.Should().Be("t1531");
@@ -70,7 +70,7 @@ public sealed class LsQuoteServiceTests
     }
 
     [Fact]
-    public async Task GetSectorQuotesAsync_ReturnsBusinessErrorAsTopLevelError()
+    public async Task GetThemeQuotesAsync_ReturnsBusinessErrorAsTopLevelError()
     {
         const string body = """
         {
@@ -85,14 +85,14 @@ public sealed class LsQuoteServiceTests
         }));
         var service = new LsQuoteService(client);
 
-        QuoteBatchResult<SectorQuote> result = await service.GetSectorQuotesAsync(new[] { "0012" });
+        QuoteBatchResult<ThemeQuote> result = await service.GetThemeQuotesAsync(new[] { "0012" });
 
         result.TopLevelError.Should().Contain("12345");
         result.Quotes["0012"].Should().BeNull();
     }
 
     [Fact]
-    public async Task GetSectorQuotesAsync_ReusesShortTermThemeCache()
+    public async Task GetThemeQuotesAsync_ReusesShortTermThemeCache()
     {
         const string body = """
         {
@@ -109,8 +109,8 @@ public sealed class LsQuoteServiceTests
         }));
         var service = new LsQuoteService(client);
 
-        await service.GetSectorQuotesAsync(new[] { "0012" });
-        await service.GetSectorQuotesAsync(new[] { "0012" });
+        await service.GetThemeQuotesAsync(new[] { "0012" });
+        await service.GetThemeQuotesAsync(new[] { "0012" });
 
         handler.Requests.Should().ContainSingle();
     }

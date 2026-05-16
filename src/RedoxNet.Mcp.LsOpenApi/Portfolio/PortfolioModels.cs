@@ -41,13 +41,15 @@ internal sealed class WatchlistItem
 }
 
 /// <summary>
-/// Theme or sector saved by the user for tracking.
+/// LS theme saved by the user for tracking. v0.5 mis-named these "sectors";
+/// v0.6 split sector (KRX industry) and theme (LS curated tmcode) — this row
+/// stores tmcode entries (e.g. 0012 반도체 장비, 0064 2차전지).
 /// </summary>
-internal sealed class WatchedSector
+internal sealed class WatchedTheme
 {
     public long Id { get; init; }
-    public string SectorCode { get; init; } = "";
-    public string SectorName { get; init; } = "";
+    public string ThemeCode { get; init; } = "";
+    public string ThemeName { get; init; } = "";
     public string? Notes { get; init; }
     public string AddedAt { get; init; } = "";
 }
@@ -102,9 +104,9 @@ internal sealed record StockQuote(
 }
 
 /// <summary>
-/// Compact sector/theme quote. t1531 exposes average percent change but not an index value.
+/// Compact LS theme quote. t1531 exposes average percent change but not an index value.
 /// </summary>
-internal sealed record SectorQuote(double? IndexValue, double? Change, double ChangePct, string Timestamp);
+internal sealed record ThemeQuote(double? IndexValue, double? Change, double ChangePct, string Timestamp);
 
 /// <summary>
 /// Result envelope for batch quote calls with per-key quote values and an optional top-level failure message.
@@ -166,14 +168,14 @@ internal sealed record WatchlistListResult(string? GroupName, IReadOnlyList<Watc
 internal sealed record RenameGroupResult(string OldName, string NewName);
 
 /// <summary>
-/// Watched sector/theme plus optional t1531 quote enrichment.
+/// Watched LS theme plus optional t1531 quote enrichment.
 /// </summary>
-internal sealed record WatchedSectorWithQuote(string SectorCode, string SectorName, string? Note, string AddedAt, SectorQuote? Quote);
+internal sealed record WatchedThemeWithQuote(string ThemeCode, string ThemeName, string? Note, string AddedAt, ThemeQuote? Quote);
 
 /// <summary>
-/// Watched sector/theme list response.
+/// Watched LS theme list response.
 /// </summary>
-internal sealed record SectorListResult(IReadOnlyList<WatchedSectorWithQuote> Items, string? QuoteError);
+internal sealed record ThemeListResult(IReadOnlyList<WatchedThemeWithQuote> Items, string? QuoteError);
 
 /// <summary>
 /// Holding plus optional current quote and derived valuation fields.

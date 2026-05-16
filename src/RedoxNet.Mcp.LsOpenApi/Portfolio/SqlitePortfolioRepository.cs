@@ -91,6 +91,27 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
 
             CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_nickname ON accounts(nickname);
             """),
+        (3, """
+            -- v0.6: v0.5 mis-named LS theme membership as 'sector'. Rename to align
+            -- with the v0.6 industry (KRX 표준 산업분류) vs theme (LS curated group)
+            -- split. Rows (e.g. tmcode 0012, 0064) are preserved as-is.
+            ALTER TABLE watched_sectors RENAME TO watched_themes;
+            ALTER TABLE watched_themes RENAME COLUMN sector_code TO theme_code;
+            ALTER TABLE watched_themes RENAME COLUMN sector_name TO theme_name;
+
+            -- v0.6: stock_themes caches per-stock t1532 theme memberships so
+            -- holdings × theme filters in ls_holdings_list can resolve without
+            -- a live TR fetch. Populated by fire-and-forget enrichment on writes.
+            CREATE TABLE stock_themes (
+                symbol      TEXT NOT NULL REFERENCES stocks(symbol),
+                theme_code  TEXT NOT NULL,
+                theme_name  TEXT NOT NULL,
+                updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                PRIMARY KEY (symbol, theme_code)
+            );
+            CREATE INDEX idx_stock_themes_theme_code ON stock_themes(theme_code);
+            CREATE INDEX idx_stock_themes_theme_name ON stock_themes(theme_name);
+            """),
     ];
 
     readonly string _databasePath;
@@ -329,53 +350,53 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
     }
 
     /// <inheritdoc />
-    public async Task<WatchedSector> WatchSectorAsync(string code, string? name, string? notes, CancellationToken cancellationToken = default)
+    public async Task<WatchedTheme> WatchThemeAsync(string code, string? name, string? notes, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
         string normalizedCode = NormalizeName(code, nameof(code)).ToUpperInvariant();
-        string sectorName = NullIfWhiteSpace(name) ?? normalizedCode;
+        string themeName = NullIfWhiteSpace(name) ?? normalizedCode;
         await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await connection.ExecuteAsync(new CommandDefinition(
             """
-            INSERT INTO watched_sectors(sector_code, sector_name, notes)
+            INSERT INTO watched_themes(theme_code, theme_name, notes)
             VALUES (@Code, @Name, @Notes)
-            ON CONFLICT(sector_code) DO UPDATE SET
-                sector_name = excluded.sector_name,
+            ON CONFLICT(theme_code) DO UPDATE SET
+                theme_name = excluded.theme_name,
                 notes = excluded.notes;
             """,
-            new { Code = normalizedCode, Name = sectorName, Notes = NullIfWhiteSpace(notes) },
+            new { Code = normalizedCode, Name = themeName, Notes = NullIfWhiteSpace(notes) },
             cancellationToken: cancellationToken)).ConfigureAwait(false);
-        return await connection.QuerySingleAsync<WatchedSector>(new CommandDefinition(
+        return await connection.QuerySingleAsync<WatchedTheme>(new CommandDefinition(
             """
-            SELECT id AS Id, sector_code AS SectorCode, sector_name AS SectorName, notes AS Notes, added_at AS AddedAt
-            FROM watched_sectors
-            WHERE sector_code = @Code;
+            SELECT id AS Id, theme_code AS ThemeCode, theme_name AS ThemeName, notes AS Notes, added_at AS AddedAt
+            FROM watched_themes
+            WHERE theme_code = @Code;
             """,
             new { Code = normalizedCode }, cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
-    public async Task<bool> UnwatchSectorAsync(string code, CancellationToken cancellationToken = default)
+    public async Task<bool> UnwatchThemeAsync(string code, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
         await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         int affected = await connection.ExecuteAsync(new CommandDefinition(
-            "DELETE FROM watched_sectors WHERE sector_code = @Code;",
+            "DELETE FROM watched_themes WHERE theme_code = @Code;",
             new { Code = NormalizeName(code, nameof(code)).ToUpperInvariant() },
             cancellationToken: cancellationToken)).ConfigureAwait(false);
         return affected > 0;
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<WatchedSector>> ListSectorsAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<WatchedTheme>> ListThemesAsync(CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
         await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        IEnumerable<WatchedSector> rows = await connection.QueryAsync<WatchedSector>(new CommandDefinition(
+        IEnumerable<WatchedTheme> rows = await connection.QueryAsync<WatchedTheme>(new CommandDefinition(
             """
-            SELECT id AS Id, sector_code AS SectorCode, sector_name AS SectorName, notes AS Notes, added_at AS AddedAt
-            FROM watched_sectors
-            ORDER BY added_at, sector_code;
+            SELECT id AS Id, theme_code AS ThemeCode, theme_name AS ThemeName, notes AS Notes, added_at AS AddedAt
+            FROM watched_themes
+            ORDER BY added_at, theme_code;
             """,
             cancellationToken: cancellationToken)).ConfigureAwait(false);
         return rows.ToList();

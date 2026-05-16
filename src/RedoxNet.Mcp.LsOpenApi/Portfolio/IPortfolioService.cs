@@ -17,10 +17,10 @@ internal interface IPortfolioService
     Task<RemoveResult> RemoveWatchlistAsync(string symbol, string group, CancellationToken cancellationToken = default);
     Task<WatchlistListResult> ListWatchlistAsync(string? group, CancellationToken cancellationToken = default);
 
-    // -------- Sectors --------
-    Task<WatchedSector> WatchSectorAsync(string sectorCode, string? sectorName, string? notes, CancellationToken cancellationToken = default);
-    Task<RemoveResult> UnwatchSectorAsync(string sectorCode, CancellationToken cancellationToken = default);
-    Task<SectorListResult> ListSectorsAsync(CancellationToken cancellationToken = default);
+    // -------- Themes --------
+    Task<WatchedTheme> WatchThemeAsync(string themeCode, string? themeName, string? notes, CancellationToken cancellationToken = default);
+    Task<RemoveResult> UnwatchThemeAsync(string themeCode, CancellationToken cancellationToken = default);
+    Task<ThemeListResult> ListThemesAsync(CancellationToken cancellationToken = default);
 
     // -------- Accounts --------
     Task<IReadOnlyList<AccountSummary>> ListAccountsAsync(CancellationToken cancellationToken = default);

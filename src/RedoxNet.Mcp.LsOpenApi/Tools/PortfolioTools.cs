@@ -7,7 +7,7 @@ using RedoxNet.Mcp.LsOpenApi.Portfolio;
 namespace RedoxNet.Mcp.LsOpenApi.Tools;
 
 /// <summary>
-/// Exposes local portfolio, watchlist, and watched-sector MCP tools.
+/// Exposes local portfolio, watchlist, and watched-theme MCP tools.
 /// </summary>
 [McpServerToolType]
 internal static class PortfolioTools
@@ -95,36 +95,36 @@ internal static class PortfolioTools
         CancellationToken cancellationToken = default) =>
         await SerializeAsync(() => portfolio.ListWatchlistAsync(group_name, cancellationToken)).ConfigureAwait(false);
 
-    // ---------------------- Sectors ----------------------
+    // ---------------------- Themes ----------------------
 
-    [McpServerTool(Name = "ls_watched_sectors_add")]
-    [Description("Adds a theme/sector code to the local watched sectors list. t1531 theme codes are supported for quote enrich. Does not require LS credentials to save metadata.")]
-    public static async Task<string> SectorWatch(
+    [McpServerTool(Name = "ls_watched_themes_add")]
+    [Description("Adds an LS theme code (t1531 tmcode, 4-char) to the local watched themes list. Quotes enrich on list via t1531 avgdiff. Does not require LS credentials to save metadata.")]
+    public static async Task<string> ThemeWatch(
         IPortfolioService portfolio,
-        [Description("Theme/sector code, e.g. a t1531 tmcode such as '0012'.")]
-        string sector_code,
-        [Description("Optional human-readable sector_name. Defaults to sector_code when omitted.")]
-        string? sector_name = null,
-        [Description("Optional user note for this sector/theme.")]
+        [Description("LS theme code (tmcode), e.g. '0012' (반도체 장비), '0064' (2차전지).")]
+        string theme_code,
+        [Description("Optional human-readable theme_name. Defaults to theme_code when omitted.")]
+        string? theme_name = null,
+        [Description("Optional user note for this theme.")]
         string? note = null,
         CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.WatchSectorAsync(sector_code, sector_name, note, cancellationToken)).ConfigureAwait(false);
+        await SerializeAsync(() => portfolio.WatchThemeAsync(theme_code, theme_name, note, cancellationToken)).ConfigureAwait(false);
 
-    [McpServerTool(Name = "ls_watched_sectors_remove")]
-    [Description("Removes a sector/index code from the saved sector watch list. Does not require LS credentials.")]
-    public static async Task<string> SectorUnwatch(
+    [McpServerTool(Name = "ls_watched_themes_remove")]
+    [Description("Removes an LS theme code from the saved theme watch list. Does not require LS credentials.")]
+    public static async Task<string> ThemeUnwatch(
         IPortfolioService portfolio,
-        [Description("Theme/sector code to remove.")]
-        string sector_code,
+        [Description("LS theme code (tmcode) to remove.")]
+        string theme_code,
         CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.UnwatchSectorAsync(sector_code, cancellationToken)).ConfigureAwait(false);
+        await SerializeAsync(() => portfolio.UnwatchThemeAsync(theme_code, cancellationToken)).ConfigureAwait(false);
 
-    [McpServerTool(Name = "ls_watched_sectors_list")]
-    [Description("Lists local watched sectors/themes and enriches t1531 theme codes with avgdiff as change_pct when LS credentials are available. Saved metadata still returns without credentials.")]
-    public static async Task<string> SectorList(
+    [McpServerTool(Name = "ls_watched_themes_list")]
+    [Description("Lists local watched LS themes and enriches them with t1531 avgdiff as change_pct when LS credentials are available. Saved metadata still returns without credentials.")]
+    public static async Task<string> ThemeList(
         IPortfolioService portfolio,
         CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.ListSectorsAsync(cancellationToken)).ConfigureAwait(false);
+        await SerializeAsync(() => portfolio.ListThemesAsync(cancellationToken)).ConfigureAwait(false);
 
     // ---------------------- Accounts ----------------------
 

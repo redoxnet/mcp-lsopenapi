@@ -1,14 +1,14 @@
 namespace RedoxNet.Mcp.LsOpenApi.Portfolio;
 
 /// <summary>
-/// Fetches live quote snapshots for stocks and watched sectors/themes.
+/// Fetches live quote snapshots for stocks and watched LS themes.
 /// </summary>
 internal interface IQuoteService
 {
     /// <summary>Gets stock quotes keyed by six-digit stock code.</summary>
     Task<QuoteBatchResult<StockQuote>> GetStockQuotesAsync(IReadOnlyCollection<string> symbols, CancellationToken cancellationToken = default);
 
-    /// <summary>Gets sector/theme quotes keyed by watched sector code.</summary>
-    Task<QuoteBatchResult<SectorQuote>> GetSectorQuotesAsync(IReadOnlyCollection<string> sectorCodes, CancellationToken cancellationToken = default);
+    /// <summary>Gets LS theme quotes keyed by tmcode.</summary>
+    Task<QuoteBatchResult<ThemeQuote>> GetThemeQuotesAsync(IReadOnlyCollection<string> themeCodes, CancellationToken cancellationToken = default);
 }
 

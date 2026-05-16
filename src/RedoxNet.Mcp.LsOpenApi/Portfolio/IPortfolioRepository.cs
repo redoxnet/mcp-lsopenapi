@@ -33,16 +33,16 @@ internal interface IPortfolioRepository
     /// <summary>Lists watchlist items, optionally filtered by group.</summary>
     Task<IReadOnlyList<WatchlistItem>> ListWatchlistAsync(string? group, CancellationToken cancellationToken = default);
 
-    // -------- Sectors --------
+    // -------- Themes --------
 
-    /// <summary>Adds or updates a watched sector/theme.</summary>
-    Task<WatchedSector> WatchSectorAsync(string code, string? name, string? notes, CancellationToken cancellationToken = default);
+    /// <summary>Adds or updates a watched LS theme (tmcode).</summary>
+    Task<WatchedTheme> WatchThemeAsync(string code, string? name, string? notes, CancellationToken cancellationToken = default);
 
-    /// <summary>Removes a watched sector/theme.</summary>
-    Task<bool> UnwatchSectorAsync(string code, CancellationToken cancellationToken = default);
+    /// <summary>Removes a watched LS theme.</summary>
+    Task<bool> UnwatchThemeAsync(string code, CancellationToken cancellationToken = default);
 
-    /// <summary>Lists watched sectors/themes.</summary>
-    Task<IReadOnlyList<WatchedSector>> ListSectorsAsync(CancellationToken cancellationToken = default);
+    /// <summary>Lists watched LS themes.</summary>
+    Task<IReadOnlyList<WatchedTheme>> ListThemesAsync(CancellationToken cancellationToken = default);
 
     // -------- Accounts --------
 

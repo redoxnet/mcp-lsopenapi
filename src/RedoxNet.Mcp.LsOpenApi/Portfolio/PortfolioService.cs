@@ -80,28 +80,28 @@ internal sealed class PortfolioService : IPortfolioService
         return new WatchlistListResult(NullIfWhiteSpace(group), groupItems, quoteResult.TopLevelError);
     }
 
-    // -------- Sectors --------
+    // -------- Themes --------
 
-    public Task<WatchedSector> WatchSectorAsync(string sectorCode, string? sectorName, string? notes, CancellationToken cancellationToken = default) =>
-        _repository.WatchSectorAsync(sectorCode, sectorName, notes, cancellationToken);
+    public Task<WatchedTheme> WatchThemeAsync(string themeCode, string? themeName, string? notes, CancellationToken cancellationToken = default) =>
+        _repository.WatchThemeAsync(themeCode, themeName, notes, cancellationToken);
 
-    public async Task<RemoveResult> UnwatchSectorAsync(string sectorCode, CancellationToken cancellationToken = default)
+    public async Task<RemoveResult> UnwatchThemeAsync(string themeCode, CancellationToken cancellationToken = default)
     {
-        bool removed = await _repository.UnwatchSectorAsync(sectorCode, cancellationToken).ConfigureAwait(false);
+        bool removed = await _repository.UnwatchThemeAsync(themeCode, cancellationToken).ConfigureAwait(false);
         return new RemoveResult(removed);
     }
 
-    public async Task<SectorListResult> ListSectorsAsync(CancellationToken cancellationToken = default)
+    public async Task<ThemeListResult> ListThemesAsync(CancellationToken cancellationToken = default)
     {
-        IReadOnlyList<WatchedSector> sectors = await _repository.ListSectorsAsync(cancellationToken).ConfigureAwait(false);
-        QuoteBatchResult<SectorQuote> quoteResult = await _quoteService.GetSectorQuotesAsync(
-            sectors.Select(s => s.SectorCode).ToArray(), cancellationToken).ConfigureAwait(false);
-        var items = sectors.Select(s =>
+        IReadOnlyList<WatchedTheme> themes = await _repository.ListThemesAsync(cancellationToken).ConfigureAwait(false);
+        QuoteBatchResult<ThemeQuote> quoteResult = await _quoteService.GetThemeQuotesAsync(
+            themes.Select(s => s.ThemeCode).ToArray(), cancellationToken).ConfigureAwait(false);
+        var items = themes.Select(s =>
         {
-            quoteResult.Quotes.TryGetValue(s.SectorCode, out SectorQuote? quote);
-            return new WatchedSectorWithQuote(s.SectorCode, s.SectorName, s.Notes, s.AddedAt, quote);
+            quoteResult.Quotes.TryGetValue(s.ThemeCode, out ThemeQuote? quote);
+            return new WatchedThemeWithQuote(s.ThemeCode, s.ThemeName, s.Notes, s.AddedAt, quote);
         }).ToList();
-        return new SectorListResult(items, quoteResult.TopLevelError);
+        return new ThemeListResult(items, quoteResult.TopLevelError);
     }
 
     // -------- Accounts --------
