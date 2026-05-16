@@ -463,7 +463,7 @@ ls_holdings_list(account?, industry?, theme_code?, theme_keyword?)
     - `ls_account_set_default` 삭제 — `ls_account_upsert(set_default=true)`로 대체.
     - `ls_holdings_split` / `_reverse_split` / `_bonus` 3개 → `ls_holdings_corporate_action(type, ratio)` 1개. `type` enum으로 분기.
   - **총 도구 수**: 37 + 7 − 5 = **39**.
-- **카탈로그**: 18 → 23 TRs (t1485, t1511, t8424, t1514, t1516, t1537 추가. t1531/t1532는 v0.5 카탈로그에 이미 존재). path 분포: `/indtp/market-data` 신규(t1485, t1511, t8424, t1514, t1516), `/stock/sector` 기존(t1531/t1532/t1537).
+- **카탈로그**: 20 → 26 TRs (t1485, t1511, t8424, t1514, t1516, t1537 추가. t1531/t1532는 v0.5 카탈로그에 이미 존재). path 분포: `/indtp/market-data` 신규(t1485, t1511, t8424, t1514, t1516), `/stock/sector` 기존(t1531/t1532) + 신규(t1537).
 - **데이터**: portfolio.db schema v2 → v3. `watched_sectors` 테이블/컬럼 rename, `stock_themes` 신규. v0.5 사용자 데이터는 자동 마이그레이션으로 그대로 보존.
 - **응답 envelope**: v0.5 `SectorListResult`/`WatchedSectorWithQuote` → v0.6 `ThemeListResult`/`WatchedThemeWithQuote`. 필드명 `sector_code/sector_name` → `theme_code/theme_name`.
 - **NuGet**: Core 0.5.0 → 0.6.0 (카탈로그만), Mcp 0.5.0 → 0.6.0 (도구 surface 확장 + rename).
