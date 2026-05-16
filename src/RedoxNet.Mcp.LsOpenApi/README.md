@@ -6,6 +6,8 @@ MCP server for the **LS증권 OpenAPI** — exposes Korean stock market data as 
 
 ## Install
 
+**Prerequisite.** `dnx` is the dotnet tool launcher that ships with **.NET SDK 10 or later**. Install from [.NET downloads](https://dotnet.microsoft.com/download/dotnet/10.0) if you don't have it yet. Verify with `dnx --help`.
+
 `dnx` fetches the latest published version from NuGet on every launch — no separate install step. Wire it into your MCP host:
 
 ### Claude Desktop / Claude Code

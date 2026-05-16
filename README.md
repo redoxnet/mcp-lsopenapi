@@ -110,6 +110,8 @@ v0.4는 모델이 첫 시도에 `with_warmup=true`를 선택해 한 번에 끝�
 
 ## 설치 — 1분 컷
 
+**사전 준비.** `dnx`는 **.NET SDK 10 이상**에 들어 있는 dotnet 도구 실행기입니다. 아직 없으면 [.NET 다운로드](https://dotnet.microsoft.com/download/dotnet/10.0)에서 SDK를 먼저 설치하세요 (Windows/macOS/Linux 모두 지원). 터미널에서 `dnx --help`가 도움말을 출력하면 준비 완료. — 처음 `dnx RedoxNet.Mcp.LsOpenApi`를 실행하는 시점에 패키지 자동 다운로드 + 캐싱, 다음 실행부터는 즉시 기동.
+
 LS증권 OpenAPI 키 한 쌍(`AppKey` + `AppSecretKey`) 이 필요합니다 — [LS증권 OpenAPI 포털](https://openapi.ls-sec.co.kr/)에서 발급(모의투자도 동일 절차, 자세한 단계는 [영문 README](README.en.md#getting-an-api-key)). 키를 받았으면 사용하는 AI 호스트의 MCP 설정에 아래 한 덩어리를 붙여 넣고 재시작합니다.
 
 ### Claude Desktop / Claude Code

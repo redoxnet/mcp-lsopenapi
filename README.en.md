@@ -74,7 +74,9 @@ Full 7-turn analysis → [docs/case-studies/v0.4.0-token-efficiency.md](docs/cas
 
 ## Quick start
 
-`dnx` fetches the latest published version from NuGet on every launch — no separate install step. Wire it into your MCP host:
+**Prerequisite.** `dnx` is the dotnet tool launcher that ships with **.NET SDK 10 or later**. Install from [.NET downloads](https://dotnet.microsoft.com/download/dotnet/10.0) if you don't have it yet (Windows / macOS / Linux). Verify with `dnx --help` — that should print the launcher help, not "command not found". The first `dnx RedoxNet.Mcp.LsOpenApi` call fetches the package from NuGet and caches it; subsequent launches start immediately.
+
+Wire it into your MCP host:
 
 ### Claude Desktop / Claude Code
 
