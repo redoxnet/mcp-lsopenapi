@@ -301,6 +301,24 @@ internal sealed record HoldingListResult(
 {
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public MetadataFreshness? MetadataFreshness { get; init; }
+
+    /// <summary>Echo of the active filter inputs (only present when at least one filter is applied).</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public HoldingsFilterEcho? Filter { get; init; }
+
+    /// <summary>Unique theme names matched by the active filter, for false-positive visibility on LIKE matches.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? MatchedThemes { get; init; }
+}
+
+/// <summary>Echo of the active <c>ls_holdings_list</c> filter parameters.</summary>
+internal sealed record HoldingsFilterEcho
+{
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? ThemeCode { get; init; }
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? ThemeKeyword { get; init; }
 }
 
 /// <summary>

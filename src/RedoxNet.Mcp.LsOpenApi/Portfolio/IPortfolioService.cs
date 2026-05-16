@@ -35,7 +35,11 @@ internal interface IPortfolioService
     Task<HoldingWriteResult> BuyHoldingAsync(string symbol, int quantity, double price, string? accountIdentifier, CancellationToken cancellationToken = default);
     Task<HoldingWriteResult> SellHoldingAsync(string symbol, int quantity, string? accountIdentifier, CancellationToken cancellationToken = default);
     Task<HoldingWriteResult?> RemoveHoldingAsync(string symbol, string? accountIdentifier, CancellationToken cancellationToken = default);
-    Task<HoldingListResult> ListHoldingsAsync(string? accountIdentifier, CancellationToken cancellationToken = default);
+    Task<HoldingListResult> ListHoldingsAsync(
+        string? accountIdentifier,
+        string? themeCode = null,
+        string? themeKeyword = null,
+        CancellationToken cancellationToken = default);
 
     // -------- Corporate actions --------
     Task<CorporateActionResult> SplitHoldingAsync(string symbol, int ratio, string? accountIdentifier, CancellationToken cancellationToken = default);

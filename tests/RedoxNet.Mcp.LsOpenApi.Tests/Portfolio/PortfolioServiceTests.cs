@@ -307,6 +307,127 @@ public sealed class PortfolioServiceTests
     }
 
     [Fact]
+    public async Task ListHoldingsAsync_ThemeCodeFilter_KeepsExactMatches()
+    {
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        Account account = await repository.UpsertAccountAsync("AAA", "main", null, setDefault: false);
+        await repository.SetHoldingAsync(account.Id, "005930", 10, 70000, null); // Samsung — 반도체 + AI
+        await repository.SetHoldingAsync(account.Id, "373220", 3, 380000, null); // LGES — 2차전지
+        await repository.SetHoldingAsync(account.Id, "035420", 5, 220000, null); // NAVER — IT/플랫폼
+        await repository.ReplaceStockThemesAsync("005930", new[]
+        {
+            new ThemeCatalogRow("0011", "반도체"),
+            new ThemeCatalogRow("0100", "AI"),
+        });
+        await repository.ReplaceStockThemesAsync("373220", new[] { new ThemeCatalogRow("0064", "2차전지") });
+        await repository.ReplaceStockThemesAsync("035420", new[] { new ThemeCatalogRow("0200", "플랫폼") });
+        var service = new PortfolioService(repository, new FakeQuoteService());
+
+        HoldingListResult result = await service.ListHoldingsAsync(accountIdentifier: null, themeCode: "0011");
+
+        result.Accounts[0].Holdings.Should().ContainSingle()
+            .Which.Shcode.Should().Be("005930");
+        result.Filter.Should().NotBeNull();
+        result.Filter!.ThemeCode.Should().Be("0011");
+        result.Filter.ThemeKeyword.Should().BeNull();
+        result.MatchedThemes.Should().ContainSingle().Which.Should().Be("반도체");
+    }
+
+    [Fact]
+    public async Task ListHoldingsAsync_ThemeKeywordFilter_MatchesLikeAndExposesAllMatches()
+    {
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        Account account = await repository.UpsertAccountAsync("AAA", "main", null, setDefault: false);
+        await repository.SetHoldingAsync(account.Id, "005930", 10, 70000, null);
+        await repository.SetHoldingAsync(account.Id, "000660", 5, 100000, null);
+        await repository.SetHoldingAsync(account.Id, "035420", 5, 220000, null);
+        await repository.ReplaceStockThemesAsync("005930", new[]
+        {
+            new ThemeCatalogRow("0011", "반도체"),
+            new ThemeCatalogRow("0100", "AI"),
+        });
+        await repository.ReplaceStockThemesAsync("000660", new[]
+        {
+            new ThemeCatalogRow("0011", "반도체"),
+            new ThemeCatalogRow("0501", "온디바이스 AI"),
+        });
+        await repository.ReplaceStockThemesAsync("035420", new[] { new ThemeCatalogRow("0200", "플랫폼") });
+        var service = new PortfolioService(repository, new FakeQuoteService());
+
+        HoldingListResult result = await service.ListHoldingsAsync(accountIdentifier: null, themeKeyword: "AI");
+
+        // Both Samsung (AI) and SK Hynix (온디바이스 AI) should match LIKE on "AI"
+        result.Accounts[0].Holdings.Should().HaveCount(2);
+        result.Accounts[0].Holdings.Select(h => h.Shcode).Should().BeEquivalentTo(["005930", "000660"]);
+        result.MatchedThemes.Should().BeEquivalentTo(["AI", "온디바이스 AI"]);
+    }
+
+    [Fact]
+    public async Task ListHoldingsAsync_ThemeCodeAndKeyword_AndCombine()
+    {
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        Account account = await repository.UpsertAccountAsync("AAA", "main", null, setDefault: false);
+        await repository.SetHoldingAsync(account.Id, "005930", 10, 70000, null);
+        await repository.SetHoldingAsync(account.Id, "000660", 5, 100000, null);
+        // 005930 has both 반도체 AND AI themes.
+        await repository.ReplaceStockThemesAsync("005930", new[]
+        {
+            new ThemeCatalogRow("0011", "반도체"),
+            new ThemeCatalogRow("0100", "AI"),
+        });
+        // 000660 has only 반도체.
+        await repository.ReplaceStockThemesAsync("000660", new[] { new ThemeCatalogRow("0011", "반도체") });
+        var service = new PortfolioService(repository, new FakeQuoteService());
+
+        HoldingListResult result = await service.ListHoldingsAsync(
+            accountIdentifier: null, themeCode: "0011", themeKeyword: "AI");
+
+        result.Accounts[0].Holdings.Should().ContainSingle()
+            .Which.Shcode.Should().Be("005930", "AND-combine requires both 반도체 code AND AI keyword");
+    }
+
+    [Fact]
+    public async Task ListHoldingsAsync_NoFilter_OmitsFilterEcho()
+    {
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        Account account = await repository.UpsertAccountAsync("AAA", "main", null, setDefault: false);
+        await repository.SetHoldingAsync(account.Id, "005930", 10, 70000, null);
+        var service = new PortfolioService(repository, new FakeQuoteService());
+
+        HoldingListResult result = await service.ListHoldingsAsync(accountIdentifier: null);
+
+        result.Filter.Should().BeNull();
+        result.MatchedThemes.Should().BeNull();
+        result.Accounts[0].Holdings.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task ListHoldingsAsync_FilterMatchesNothing_ReturnsEmptyButEchoesFilter()
+    {
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        Account account = await repository.UpsertAccountAsync("AAA", "main", null, setDefault: false);
+        await repository.SetHoldingAsync(account.Id, "005930", 10, 70000, null);
+        await repository.ReplaceStockThemesAsync("005930", new[] { new ThemeCatalogRow("0011", "반도체") });
+        var service = new PortfolioService(repository, new FakeQuoteService());
+
+        HoldingListResult result = await service.ListHoldingsAsync(accountIdentifier: null, themeCode: "9999");
+
+        result.Accounts[0].Holdings.Should().BeEmpty();
+        result.Filter.Should().NotBeNull();
+        result.MatchedThemes.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task UpsertAccountAsync_RejectsNicknameCollisionAcrossAccountNumbers()
     {
         await using TestDatabase db = new();

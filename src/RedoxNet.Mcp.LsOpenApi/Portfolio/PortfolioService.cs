@@ -224,8 +224,16 @@ internal sealed class PortfolioService : IPortfolioService
             SqlitePortfolioRepository.ToAccountInfo(account));
     }
 
-    public async Task<HoldingListResult> ListHoldingsAsync(string? accountIdentifier, CancellationToken cancellationToken = default)
+    public async Task<HoldingListResult> ListHoldingsAsync(
+        string? accountIdentifier,
+        string? themeCode = null,
+        string? themeKeyword = null,
+        CancellationToken cancellationToken = default)
     {
+        string? normalizedThemeCode = string.IsNullOrWhiteSpace(themeCode) ? null : themeCode.Trim().ToUpperInvariant();
+        string? normalizedThemeKeyword = string.IsNullOrWhiteSpace(themeKeyword) ? null : themeKeyword.Trim();
+        bool hasFilter = normalizedThemeCode is not null || normalizedThemeKeyword is not null;
+
         IReadOnlyList<Account> accounts;
         if (!string.IsNullOrWhiteSpace(accountIdentifier))
         {
@@ -237,10 +245,16 @@ internal sealed class PortfolioService : IPortfolioService
             accounts = await _repository.ListAccountsAsync(cancellationToken).ConfigureAwait(false);
         }
 
+        HoldingsFilterEcho? filterEcho = hasFilter
+            ? new HoldingsFilterEcho { ThemeCode = normalizedThemeCode, ThemeKeyword = normalizedThemeKeyword }
+            : null;
+
         if (accounts.Count == 0)
             return new HoldingListResult(Array.Empty<AccountHoldings>(), EmptySummary(), null)
             {
                 MetadataFreshness = BuildFreshness(themesPending: 0),
+                Filter = filterEcho,
+                MatchedThemes = hasFilter ? Array.Empty<string>() : null,
             };
 
         IReadOnlyList<Holding> allHoldings;
@@ -258,6 +272,44 @@ internal sealed class PortfolioService : IPortfolioService
         IReadOnlyDictionary<string, IReadOnlyList<StockTheme>> themesMap =
             await _repository.GetStockThemesBatchAsync(distinctSymbols, cancellationToken).ConfigureAwait(false);
 
+        // Apply theme filters at the holdings level. Per spec §4.6 multiple
+        // filters AND-combine; matched_themes echoes the unique theme names
+        // (across the filtered set) so LIKE false positives are visible.
+        HashSet<string>? matchedThemes = hasFilter
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : null;
+        IReadOnlyList<Holding> filteredHoldings;
+        if (hasFilter)
+        {
+            var keep = new List<Holding>(allHoldings.Count);
+            foreach (Holding h in allHoldings)
+            {
+                if (!themesMap.TryGetValue(h.Symbol, out IReadOnlyList<StockTheme>? holdingThemes))
+                    continue; // un-enriched stocks can't satisfy a theme filter
+
+                bool codeOk = normalizedThemeCode is null
+                    || holdingThemes.Any(t => string.Equals(t.ThemeCode, normalizedThemeCode, StringComparison.Ordinal));
+                bool keywordOk = normalizedThemeKeyword is null
+                    || holdingThemes.Any(t => t.ThemeName.Contains(normalizedThemeKeyword, StringComparison.Ordinal));
+                if (!codeOk || !keywordOk)
+                    continue;
+
+                keep.Add(h);
+                foreach (StockTheme t in holdingThemes)
+                {
+                    if (normalizedThemeCode is not null && string.Equals(t.ThemeCode, normalizedThemeCode, StringComparison.Ordinal))
+                        matchedThemes!.Add(t.ThemeName);
+                    if (normalizedThemeKeyword is not null && t.ThemeName.Contains(normalizedThemeKeyword, StringComparison.Ordinal))
+                        matchedThemes!.Add(t.ThemeName);
+                }
+            }
+            filteredHoldings = keep;
+        }
+        else
+        {
+            filteredHoldings = allHoldings;
+        }
+
         var perAccount = new List<AccountHoldings>(accounts.Count);
         double totalCost = 0;
         double totalValue = 0;
@@ -266,7 +318,7 @@ internal sealed class PortfolioService : IPortfolioService
 
         foreach (Account account in accounts)
         {
-            List<Holding> accountRows = allHoldings.Where(h => h.AccountId == account.Id).ToList();
+            List<Holding> accountRows = filteredHoldings.Where(h => h.AccountId == account.Id).ToList();
             (List<HoldingWithQuote> projected, double cost, double value, bool allQuoted, int accountThemesPending) =
                 ProjectHoldings(accountRows, quoteResult, themesMap);
             var summary = BuildSummary(cost, value, allQuoted);
@@ -292,6 +344,8 @@ internal sealed class PortfolioService : IPortfolioService
             quoteResult.TopLevelError)
         {
             MetadataFreshness = BuildFreshness(themesPending),
+            Filter = filterEcho,
+            MatchedThemes = matchedThemes is null ? null : matchedThemes.OrderBy(s => s, StringComparer.Ordinal).ToList(),
         };
     }
 

@@ -268,17 +268,27 @@ internal static class PortfolioTools
 
     [McpServerTool(Name = "ls_holdings_list")]
     [Description("""
-        Lists the user's locally registered holdings grouped by account, enriches them with current price, market_value, PnL, and PnL percent using batch t8407 when LS credentials are available, and computes a per-account summary plus a total_summary across all accounts.
+        Lists the user's locally registered holdings grouped by account, enriches them with current price, market_value, PnL, and PnL percent using batch t8407 when LS credentials are available, and computes a per-account summary plus a total_summary across all accounts. v0.6 adds optional theme filters; when at least one filter is active the response also echoes the filter and a matched_themes array so LIKE false positives are visible.
 
         USE WHEN: the user refers to their own position or portfolio, including Korean phrases like "내가 가진", "내가 산", "보유 중", "들고 있는", "내 종목", "내 포트폴리오", or English phrases like "my holdings", "my position", "my portfolio". Before calling general stock tools such as ls_get_chart or ls_get_quote, call this tool first to check the user's registered holdings. If it returns empty, guide the user to register holdings or fall back to general analysis.
         AVOID WHEN: the user asks about a stock in general without personal ownership context, e.g. "삼성전자 어때?"; use market/quote/chart tools directly.
+
+        Filter natural-language mapping:
+        - "내 보유 중 2차전지 테마" → theme_keyword="2차전지"
+        - "내 한투 계좌의 AI 테마" → account="한투", theme_keyword="AI"
+        - "테마 코드 0064 보유" → theme_code="0064"
+        Both filters AND-combine. Industry (KRX 산업분류) filtering is deferred to v0.7 — for now use ls_get_industry_stocks for market-wide industry views.
         """)]
     public static async Task<string> HoldingList(
         IPortfolioService portfolio,
         [Description("Optional account identifier (account_number or nickname). When omitted, holdings across all accounts are returned grouped.")]
         string? account = null,
+        [Description("Optional exact 4-character LS theme code (tmcode), e.g. '0064'. Keeps only holdings whose cached themes contain this code.")]
+        string? theme_code = null,
+        [Description("Optional theme name keyword. Case-sensitive LIKE match against cached theme names. '2차전지' matches '2차전지 셀', '2차전지 소재', etc.")]
+        string? theme_keyword = null,
         CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.ListHoldingsAsync(account, cancellationToken)).ConfigureAwait(false);
+        await SerializeAsync(() => portfolio.ListHoldingsAsync(account, theme_code, theme_keyword, cancellationToken)).ConfigureAwait(false);
 
     // ---------------------- Corporate actions ----------------------
 
