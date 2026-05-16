@@ -109,6 +109,15 @@ internal sealed record StockQuote(
 internal sealed record ThemeQuote(double? IndexValue, double? Change, double ChangePct, string Timestamp);
 
 /// <summary>
+/// One row of the t1531 theme catalog cache — code and human-readable name only,
+/// without quote data. Used for keyword resolution in ls_get_theme_stocks.
+/// </summary>
+internal sealed record ThemeCatalogRow(string Code, string Name);
+
+/// <summary>Result wrapper returned by <c>IQuoteService.GetThemeCatalogAsync</c>.</summary>
+internal sealed record ThemeCatalogResult(IReadOnlyList<ThemeCatalogRow> Rows, string? Error);
+
+/// <summary>
 /// Result envelope for batch quote calls with per-key quote values and an optional top-level failure message.
 /// </summary>
 internal sealed record QuoteBatchResult<T>(IReadOnlyDictionary<string, T?> Quotes, string? TopLevelError);

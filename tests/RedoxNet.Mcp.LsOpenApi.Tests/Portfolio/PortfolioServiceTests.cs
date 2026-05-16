@@ -257,6 +257,9 @@ public sealed class PortfolioServiceTests
                 StringComparer.Ordinal);
             return Task.FromResult(new QuoteBatchResult<ThemeQuote>(result, null));
         }
+
+        public Task<ThemeCatalogResult> GetThemeCatalogAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(new ThemeCatalogResult(Array.Empty<ThemeCatalogRow>(), null));
     }
 
     sealed class TestDatabase : IAsyncDisposable

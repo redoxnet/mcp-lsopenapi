@@ -19,6 +19,7 @@ internal sealed class LsQuoteService : IQuoteService
 
     sealed record ThemeCacheEntry(
         IReadOnlyDictionary<string, ThemeQuote> Quotes,
+        IReadOnlyList<ThemeCatalogRow> Catalog,
         DateTimeOffset FetchedAt,
         string? Error);
 
@@ -130,6 +131,13 @@ internal sealed class LsQuoteService : IQuoteService
         return new QuoteBatchResult<ThemeQuote>(quotes, entry.Error);
     }
 
+    /// <inheritdoc />
+    public async Task<ThemeCatalogResult> GetThemeCatalogAsync(CancellationToken cancellationToken = default)
+    {
+        ThemeCacheEntry entry = await GetAllThemeQuotesAsync(cancellationToken).ConfigureAwait(false);
+        return new ThemeCatalogResult(entry.Catalog, entry.Error);
+    }
+
     /// <summary>
     /// Gets and short-term caches the full t1531 theme quote table.
     /// </summary>
@@ -149,6 +157,7 @@ internal sealed class LsQuoteService : IQuoteService
                 return snapshot;
 
             var fetched = new Dictionary<string, ThemeQuote>(StringComparer.Ordinal);
+            var catalog = new List<ThemeCatalogRow>();
             string? error = null;
             try
             {
@@ -176,12 +185,14 @@ internal sealed class LsQuoteService : IQuoteService
                             string? tmcode = row.ReadString("tmcode")?.Trim().ToUpperInvariant();
                             if (string.IsNullOrEmpty(tmcode))
                                 continue;
+                            string tmname = (row.ReadString("tmname") ?? tmcode).Trim();
 
                             fetched[tmcode] = new ThemeQuote(
                                 IndexValue: null,
                                 Change: null,
                                 ChangePct: row.ReadDouble("avgdiff"),
                                 Timestamp: timestamp);
+                            catalog.Add(new ThemeCatalogRow(tmcode, tmname));
                         }
                     }
                 }
@@ -195,7 +206,7 @@ internal sealed class LsQuoteService : IQuoteService
                 error = $"TR call failed: {ex.Message}";
             }
 
-            var entry = new ThemeCacheEntry(fetched, now, error);
+            var entry = new ThemeCacheEntry(fetched, catalog, now, error);
             _themeCache = entry;
             return entry;
         }
