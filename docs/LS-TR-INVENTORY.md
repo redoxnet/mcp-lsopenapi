@@ -4,7 +4,7 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 
 **Source:** [openapi.ls-sec.co.kr/apiservice](https://openapi.ls-sec.co.kr/apiservice) listing (captured 2026-05-13).
 
-**Implementation status last refreshed:** 2026-05-15 for v0.5.0 (added `t1531` / `t1532`; the portfolio module is layered on top of `t8407` / `t1531` rather than introducing new TRs).
+**Implementation status last refreshed:** 2026-05-16 for v0.6.0 (added `t1485` / `t1511` / `t1514` / `t1516` / `t1537` / `t8424`; promoted `t1532` from catalog-only to wrapper; t1102/krx_sector enrichment deferred to v0.7 after confirming t1102 has no industry classification field).
 
 **Use this doc when:** deciding what to add to the catalog next, mapping a user request to an underlying TR, or scoping the next release.
 
@@ -134,15 +134,29 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 | `t3521` | 해외지수 조회 (API용) | ⚪ 💡 | |
 | `t8428` | 증시주변자금 추이 | ⚪ | Macro liquidity |
 
-## [주식] 섹터 — Sectors / themes
+## [주식] 섹터 — LS curated themes (path `/stock/sector`)
+
+> Naming clarification (v0.6): LS's `[주식 섹터]` API category is entirely **theme** TRs (LS-curated tmcode groupings). v0.5 mis-named these "sectors"; v0.6 renames the watch-list surface to `ls_watched_themes_*` to match. True KRX industry classification is a separate concept covered by `[업종]` below.
 
 | TR | 이름 | Status | Tool / Notes |
 | --- | --- | --- | --- |
-| `t1531` | 테마별 종목 | 🔵 | In catalog. Consumed by the portfolio module's sector quote enrichment (`ls_watched_sectors_list` returns each watched theme's `avgdiff` as `change_pct`); empty `tmname`/`tmcode` returns the full theme list. No dedicated semantic wrapper yet — direct calls go through `ls_call_tr`. |
-| `t1532` | 종목별 테마 | 🔵 | In catalog (`ls_call_tr` only). Reverse lookup: which themes a stock belongs to. |
+| `t1531` | 테마별 종목 | 🔵 | In catalog. Consumed by the portfolio module's theme quote enrichment (`ls_watched_themes_list` returns each watched theme's `avgdiff` as `change_pct`) and by `ls_get_theme_stocks` keyword resolution; empty `tmname`/`tmcode` returns the full theme list. 60s in-process catalog cache shared between the quote enrichment and keyword-resolution paths. |
+| `t1532` | 종목별 테마 | 🟢 | `ls_get_stock_themes` — every theme a stock belongs to. Also feeds the v0.6 fire-and-forget enrichment that populates the `stock_themes` cache on portfolio writes. |
 | `t1533` | 특이 테마 | ⚪ | |
-| `t1537` | 테마종목별 시세조회 | ⚪ | |
-| `t8425` | 전체 테마 | ⚪ | |
+| `t1537` | 테마종목별 시세조회 | 🟢 | `ls_get_theme_stocks` — stocks inside one theme + summary (tmcnt/upcnt/uprate). Header-based `tr_cont` / `tr_cont_key` paging. |
+| `t8425` | 전체 테마 | ⚪ | Lighter than t1531 (tmname + tmcode only, no quote). Possible v0.7+ optimization when quote enrichment isn't needed. |
+
+## [업종] 시세 — KRX industry indices (path `/indtp/market-data`)
+
+> v0.6 added category. **KRX industry classification** (전기전자 / 화학 / 금융 등 ~30) is distinct from LS themes above. None of these TRs return a stock→industry mapping; the v0.6 `stocks.krx_sector` enrichment is **deferred to v0.7** while a source is identified (LS 마스터 TR / t8424+t1516 reverse-lookup / static KRX table).
+
+| TR | 이름 | Status | Tool / Notes |
+| --- | --- | --- | --- |
+| `t1485` | 예상지수 | 🔵 | In catalog (`ls_call_tr` only). Pre-market expected index. |
+| `t1511` | 업종현재가 | 🟢 | `ls_get_index_quote` — single index snapshot with aliases (kospi→001, kosdaq→301, kospi200→101, krx100→501). 52-week + YTD range, market breadth, 4 related indices. `rate_limit_per_sec=10` (confirmed via LS guide). |
+| `t1514` | 업종기간별추이 | 🔵 | In catalog (`ls_call_tr` only). Industry daily/weekly/monthly time series. v0.7 candidate for `ls_get_index_history` wrapper. |
+| `t1516` | 업종별종목시세 | 🟢 | `ls_get_industry_stocks` — stocks inside one industry + the industry's index summary. Body-based continuation paging (last shcode echo). Keyword resolution via cached t8424. |
+| `t8424` | 전체업종 | 🔵 | In catalog. Internal: feeds the `ls_get_industry_indices` fanout. Also exposed as the catalog source for `industry_keyword` resolution in `ls_get_industry_stocks`. |
 
 ## [주식] ETF — Exchange-traded funds
 
@@ -231,22 +245,40 @@ WebSocket-based stream identifiers, not REST TRs. ~50 channels including:
 
 ---
 
-## Implementation status summary (v0.5)
+## Implementation status summary (v0.6)
 
-- **18 TRs in catalog** — `t1101`, `t1102`, `t1301`, `t1441`, `t1444`, `t1452`, `t1463`, `t1466`, `t1531`, `t1532`, `t1901`, `t1904`, `t8407`, `t8410`, `t8412`, `t8430`, `t8436`, `t9945`.
-- **37 MCP tools**:
+- **24 TRs in catalog** — `t1101`, `t1102`, `t1301`, `t1441`, `t1444`, `t1452`, `t1463`, `t1466`, `t1485`, `t1511`, `t1514`, `t1516`, `t1531`, `t1532`, `t1537`, `t1901`, `t1904`, `t8407`, `t8410`, `t8412`, `t8424`, `t8430`, `t8436`, `t9945`.
+- **39 MCP tools** (37 v0.5 + 7 v0.6 new − 5 v0.6 Tier 1 compression):
   - Meta (3) — `ls_search_tr`, `ls_describe_tr`, `ls_call_tr`.
   - Market data (10) — `ls_get_quote`, `ls_get_multi_quote`, `ls_get_top_stocks`, `ls_get_stock_info`, `ls_get_chart`, `ls_add_indicator`, `ls_reframe_chart`, `ls_search_stock`, `ls_get_etf_info`, `ls_get_etf_holdings`.
-  - Portfolio (24, v0.5, local-only) — accounts: `ls_accounts_list`, `ls_account_get`, `ls_account_upsert`, `ls_account_set_default`, `ls_account_remove`, `ls_broker_rename`; holdings: `ls_holdings_list`, `ls_holdings_set`, `ls_holdings_buy`, `ls_holdings_sell`, `ls_holdings_remove`, `ls_holdings_split`, `ls_holdings_reverse_split`, `ls_holdings_bonus`; watchlists: `ls_watchlist_groups_list`, `ls_watchlist_group_create`, `ls_watchlist_group_delete`, `ls_watchlist_group_rename`, `ls_watchlist_add`, `ls_watchlist_remove`, `ls_watchlist_list`; sectors: `ls_watched_sectors_add`, `ls_watched_sectors_remove`, `ls_watched_sectors_list`.
+  - **Index + industry (3, v0.6 new)** — `ls_get_index_quote`, `ls_get_industry_indices`, `ls_get_industry_stocks`.
+  - **LS themes (2, v0.6 new)** — `ls_get_theme_stocks`, `ls_get_stock_themes`.
+  - Portfolio (21, v0.5 + v0.6, local-only) — accounts: `ls_accounts_list`, `ls_account_upsert`, `ls_account_remove`, `ls_broker_rename`; holdings: `ls_holdings_list`, `ls_holdings_set`, `ls_holdings_buy`, `ls_holdings_sell`, `ls_holdings_remove`, `ls_holdings_corporate_action`; watchlists: `ls_watchlist_groups_list`, `ls_watchlist_group_create`, `ls_watchlist_group_delete`, `ls_watchlist_group_rename`, `ls_watchlist_add`, `ls_watchlist_remove`, `ls_watchlist_list`; watched themes: `ls_watched_themes_add`, `ls_watched_themes_remove`, `ls_watched_themes_list`; I/O: `ls_portfolio_export`, `ls_portfolio_import`.
 
-> The portfolio module is local-only (SQLite at `%LOCALAPPDATA%\RedoxNet\LsOpenApi\portfolio.db`). It uses `t8407` for holdings/watchlist quote enrichment and `t1531` for watched-sector enrichment but does not introduce new TRs.
+> The portfolio module is local-only (SQLite at `%LOCALAPPDATA%\RedoxNet\LsOpenApi\portfolio.db`). v0.6 adds fire-and-forget `t1532` enrichment of the new `stock_themes` cache on write paths, plus an export/import JSON round-trip (schema_version=1) for backup and machine migration.
 
-## Recommended next batch (v0.6+ candidates)
+### v0.6 Tier 1 compression (BREAKING, −5 tools)
 
-Based on 💎 markers above, in rough priority order:
+Goal: keep total tool count under ~45 by v1.0 so the LLM has less to route across. Service+repository layers stayed; only the MCP surface contracted.
 
-1. **`t1102` enrichment fold-in** — populate `stocks.krx_sector` automatically on portfolio writes so the v0.6 cross-domain query "내 관심 섹터에 속한 보유 종목" works without manual sector tagging.
-2. **`t3341` fundamental ranking** — new `ls_get_fundamentals_rank` tool (cross-stock screener; complements per-stock `ls_get_stock_info`).
+| Removed v0.5 tool | Equivalent v0.6 path |
+| --- | --- |
+| `ls_account_get` | `ls_accounts_list[].is_default` flag |
+| `ls_account_set_default(account)` | `ls_account_upsert(set_default=true)` |
+| `ls_holdings_split(ratio)` | `ls_holdings_corporate_action(type="split", ratio)` |
+| `ls_holdings_reverse_split(ratio)` | `ls_holdings_corporate_action(type="reverse_split", ratio)` |
+| `ls_holdings_bonus(ratio)` | `ls_holdings_corporate_action(type="bonus", ratio)` |
+
+The unified `corporate_action` is an open enum — v0.7+ adds `stock_dividend` / `spin_off` / `merger` by extending the enum without growing the tool surface.
+
+## Recommended next batch (v0.7+ candidates)
+
+Based on 💎 markers above + v0.6 deferrals, in rough priority order:
+
+1. **`stocks.krx_sector` enrichment + `industry?` filter** — confirmed during v0.6 implementation that `t1102` doesn't carry KRX classification. Three candidate sources (per SPEC §10 Q7): LS 마스터/기본정보 TR (LS support inquiry), `t8424` + `t1516` reverse-lookup mapping, or static KRX industry table bundled with the package.
+2. **`ls_get_index_history`** — wrap `t1514` (catalog-only in v0.6). Decide consistency with `ls_get_chart` (period_type / count / indicators) when added.
+3. **`ls_stocks_refresh_metadata`** — synchronous explicit refresh tool. Adds a UX out for the fire-and-forget "pending themes" state once we measure how often it actually bites in practice.
+4. **`t3341` fundamental ranking** — new `ls_get_fundamentals_rank` tool (cross-stock screener; complements per-stock `ls_get_stock_info`).
 3. **`t1601` / `t1702` investor flow** — `ls_get_investor_flow` covering institutional/foreign net flow.
 4. **`t1442` 신고/신저가 screener** + **`t1927` short interest** for screener fold-in.
 5. **Theme semantic wrappers** — `ls_get_theme_stocks` (t1531) + `ls_get_stock_themes` (t1532). Currently callable via `ls_call_tr` only; portfolio sector enrichment consumes `t1531` internally.
