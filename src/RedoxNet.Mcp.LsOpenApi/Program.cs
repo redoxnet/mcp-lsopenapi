@@ -7,6 +7,7 @@ using RedoxNet.LsOpenApi.Core;
 using RedoxNet.Mcp.LsOpenApi.Apps;
 using RedoxNet.Mcp.LsOpenApi.Portfolio;
 using RedoxNet.Mcp.LsOpenApi.Server;
+using RedoxNet.Mcp.LsOpenApi.Tools;
 
 // CLI subcommand dispatch (one-shot mode for diagnostics).
 if (args.Length > 0 && IsCliCommand(args[0]))
@@ -45,6 +46,7 @@ builder.Services
     .ConfigureLsOptionsFromEnvironment();
 
 builder.Services.AddPortfolio();
+builder.Services.AddSingleton<IndustryDataCache>();
 
 builder.Services
     .AddMcpServer(options =>
