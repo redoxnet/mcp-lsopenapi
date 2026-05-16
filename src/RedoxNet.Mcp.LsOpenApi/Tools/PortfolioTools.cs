@@ -135,12 +135,9 @@ internal static class PortfolioTools
         CancellationToken cancellationToken = default) =>
         await SerializeAsync(() => portfolio.ListAccountsAsync(cancellationToken)).ConfigureAwait(false);
 
-    [McpServerTool(Name = "ls_account_get")]
-    [Description("Returns the default local portfolio account, or null when no accounts are registered. Does not require LS credentials.")]
-    public static async Task<string> AccountGet(
-        IPortfolioService portfolio,
-        CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.GetDefaultAccountAsync(cancellationToken)).ConfigureAwait(false);
+    // ls_account_get removed in v0.6 (Tier 1 compression). The default
+    // account is exposed via ls_accounts_list's is_default flag — the model
+    // filters the array to get the same information without a dedicated tool.
 
     [McpServerTool(Name = "ls_account_upsert")]
     [Description("""
@@ -173,14 +170,9 @@ internal static class PortfolioTools
         CancellationToken cancellationToken = default) =>
         await SerializeAsync(() => portfolio.RemoveAccountAsync(account, confirm, cancellationToken)).ConfigureAwait(false);
 
-    [McpServerTool(Name = "ls_account_set_default")]
-    [Description("Promotes the target account to default. Exactly one account is the default whenever >= 1 account exists.")]
-    public static async Task<string> AccountSetDefault(
-        IPortfolioService portfolio,
-        [Description("Account identifier: account_number or nickname.")]
-        string account,
-        CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.SetDefaultAccountAsync(account, cancellationToken)).ConfigureAwait(false);
+    // ls_account_set_default removed in v0.6 (Tier 1 compression). The same
+    // effect is reachable via ls_account_upsert(set_default=true) without
+    // adding a separate tool to the surface.
 
     [McpServerTool(Name = "ls_broker_rename")]
     [Description("Renames a broker label across every account currently using it. Free-text label; no validation against an external broker list.")]
@@ -292,55 +284,71 @@ internal static class PortfolioTools
 
     // ---------------------- Corporate actions ----------------------
 
-    [McpServerTool(Name = "ls_holdings_split")]
+    /// <summary>
+    /// v0.6 Tier 1 compression. The three v0.5 tools (ls_holdings_split,
+    /// ls_holdings_reverse_split, ls_holdings_bonus) collapsed into one
+    /// open-enum dispatcher so the v0.7 additions
+    /// (stock_dividend / spin_off / merger) can land without expanding
+    /// the tool surface. See SPEC §4.5.
+    /// </summary>
+    [McpServerTool(Name = "ls_holdings_corporate_action")]
     [Description("""
-        Applies a stock split (액면분할). Quantity is multiplied by ratio and average price divided by ratio, preserving cost basis.
-        Account omitted → applied to every account holding the symbol (single corporate event affects all owners).
-        USE FOR "삼성전자 10:1 분할했대" with ratio=10.
-        """)]
-    public static async Task<string> HoldingSplit(
-        IPortfolioService portfolio,
-        [Description("6-character Korean short code.")]
-        string shcode,
-        [Description("Split ratio. e.g. 50 for 1:50 split.")]
-        int ratio,
-        [Description("Optional account identifier. Omit to apply across every account holding the symbol.")]
-        string? account = null,
-        CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.SplitHoldingAsync(shcode, ratio, account, cancellationToken)).ConfigureAwait(false);
+        Applies a corporate action (액면분할 / 액면병합 / 무상증자) to a holding by adjusting quantity and average price so the cost basis is preserved. v0.6 replaces the three v0.5 tools (ls_holdings_split / _reverse_split / _bonus) with this single dispatcher.
 
-    [McpServerTool(Name = "ls_holdings_reverse_split")]
-    [Description("""
-        Applies a reverse stock split (액면병합). Quantity is divided by ratio and average price multiplied by ratio. ValidationError when the existing quantity is not divisible by ratio (fractional shares are not supported).
-        Account omitted → applied to every account holding the symbol.
-        USE FOR "삼성전자 10:1 액면병합" with ratio=10.
-        """)]
-    public static async Task<string> HoldingReverseSplit(
-        IPortfolioService portfolio,
-        [Description("6-character Korean short code.")]
-        string shcode,
-        [Description("Reverse-split ratio. e.g. 10 for 10:1 reverse split.")]
-        int ratio,
-        [Description("Optional account identifier. Omit to apply across every account holding the symbol.")]
-        string? account = null,
-        CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.ReverseSplitHoldingAsync(shcode, ratio, account, cancellationToken)).ConfigureAwait(false);
+        type values (v0.6, open enum):
+        - "split"          — 액면분할. ratio must be an integer ≥ 2 (e.g. 10 for 1:10). qty *= ratio, avg /= ratio.
+        - "reverse_split"  — 액면병합. ratio must be an integer ≥ 2; rejects when qty is not divisible. qty /= ratio, avg *= ratio.
+        - "bonus"          — 무상증자. ratio is a positive fraction (e.g. 0.1 for 10%). qty *= (1+ratio), avg /= (1+ratio).
+        Unknown types return a ValidationError envelope listing the v0.6 set; v0.7+ extends the enum (stock_dividend / spin_off / merger) without adding new tools.
 
-    [McpServerTool(Name = "ls_holdings_bonus")]
-    [Description("""
-        Applies a bonus issue (무상증자). Quantity is multiplied by (1 + ratio) and average price divided by the same factor. Account omitted → applied to every account holding the symbol.
-        USE FOR "무상증자 1주당 0.1주" with ratio=0.1.
+        Account omitted → applied to every account holding the symbol (one corporate event affects all owners).
+        USE FOR phrases like "삼성전자 10:1 분할했대" (type=split, ratio=10), "삼성전자 10:1 액면병합" (type=reverse_split, ratio=10), "무상증자 1주당 0.1주" (type=bonus, ratio=0.1).
         """)]
-    public static async Task<string> HoldingBonus(
+    public static async Task<string> HoldingCorporateAction(
         IPortfolioService portfolio,
         [Description("6-character Korean short code.")]
         string shcode,
-        [Description("Bonus ratio. e.g. 0.1 for 10% bonus.")]
+        [Description("Corporate action type: 'split', 'reverse_split', or 'bonus'. Other values planned for v0.7+ (stock_dividend / spin_off / merger).")]
+        string type,
+        [Description("Ratio. For split / reverse_split: integer ≥ 2. For bonus: positive double (0.1 = 10%).")]
         double ratio,
         [Description("Optional account identifier. Omit to apply across every account holding the symbol.")]
         string? account = null,
         CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.BonusHoldingAsync(shcode, ratio, account, cancellationToken)).ConfigureAwait(false);
+        await SerializeAsync<object>(() => DispatchCorporateActionAsync(portfolio, shcode, type, ratio, account, cancellationToken)).ConfigureAwait(false);
+
+    static async Task<object> DispatchCorporateActionAsync(
+        IPortfolioService portfolio,
+        string shcode,
+        string? type,
+        double ratio,
+        string? account,
+        CancellationToken cancellationToken)
+    {
+        string normalizedType = (type ?? "").Trim().ToLowerInvariant();
+        return normalizedType switch
+        {
+            "split" => await portfolio.SplitHoldingAsync(shcode, ToInteger(ratio, normalizedType), account, cancellationToken).ConfigureAwait(false),
+            "reverse_split" => await portfolio.ReverseSplitHoldingAsync(shcode, ToInteger(ratio, normalizedType), account, cancellationToken).ConfigureAwait(false),
+            "bonus" => await portfolio.BonusHoldingAsync(shcode, ratio, account, cancellationToken).ConfigureAwait(false),
+            _ => throw new PortfolioValidationException(
+                $"Unsupported corporate action type '{type}'. Supported in v0.6: split / reverse_split / bonus. " +
+                "Additional types (stock_dividend / spin_off / merger) are planned for future releases via enum extension."),
+        };
+    }
+
+    /// <summary>
+    /// Coerces the wire-side <c>ratio</c> (declared as double on the MCP tool
+    /// so JSON numbers round-trip cleanly) into the integer that
+    /// SplitHoldingAsync / ReverseSplitHoldingAsync expect. Fractional values
+    /// like 1.5 or 3.7 are rejected to match the v0.5 service-layer contract.
+    /// </summary>
+    static int ToInteger(double ratio, string typeForMessage)
+    {
+        if (Math.Abs(ratio - Math.Round(ratio)) > 1e-9)
+            throw new PortfolioValidationException($"{typeForMessage} ratio must be an integer (e.g. 10), got {ratio:G}.");
+        return (int)Math.Round(ratio);
+    }
 
     // ---------------------- Portfolio I/O ----------------------
 
