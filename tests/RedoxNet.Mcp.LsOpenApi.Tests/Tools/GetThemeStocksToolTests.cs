@@ -31,6 +31,9 @@ public sealed class GetThemeStocksToolTests
 
         public Task<ThemeCatalogResult> GetThemeCatalogAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(new ThemeCatalogResult(_catalog, _catalogError));
+
+        public Task<StockThemesFetchResult> GetStockThemesAsync(string symbol, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new StockThemesFetchResult(Array.Empty<ThemeCatalogRow>(), null));
     }
 
     static Task<HttpResponseMessage> Ok(string json, (string name, string value)[]? headers = null)

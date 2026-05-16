@@ -118,6 +118,24 @@ internal sealed record ThemeCatalogRow(string Code, string Name);
 internal sealed record ThemeCatalogResult(IReadOnlyList<ThemeCatalogRow> Rows, string? Error);
 
 /// <summary>
+/// stock_themes row — one LS theme membership a given stock belongs to.
+/// Populated by fire-and-forget enrichment on portfolio writes.
+/// </summary>
+internal sealed class StockTheme
+{
+    public string Symbol { get; init; } = "";
+    public string ThemeCode { get; init; } = "";
+    public string ThemeName { get; init; } = "";
+    public string UpdatedAt { get; init; } = "";
+}
+
+/// <summary>
+/// Result wrapper for the per-stock theme fetch (t1532). Distinct from
+/// <see cref="ThemeCatalogResult"/> which is the market-wide t1531 catalog.
+/// </summary>
+internal sealed record StockThemesFetchResult(IReadOnlyList<ThemeCatalogRow> Themes, string? Error);
+
+/// <summary>
 /// Result envelope for batch quote calls with per-key quote values and an optional top-level failure message.
 /// </summary>
 internal sealed record QuoteBatchResult<T>(IReadOnlyDictionary<string, T?> Quotes, string? TopLevelError);
@@ -189,6 +207,12 @@ internal sealed record ThemeListResult(IReadOnlyList<WatchedThemeWithQuote> Item
 /// <summary>
 /// Holding plus optional current quote and derived valuation fields.
 /// </summary>
+/// <remarks>
+/// <c>Themes</c> + <c>ThemesStatus</c> ride the v0.6 fire-and-forget enrichment
+/// path: when the cache has rows the response carries the array and omits the
+/// status field; when it's empty the response sets <c>themes_status="pending"</c>
+/// so the model can explain the in-flight metadata.
+/// </remarks>
 internal sealed record HoldingWithQuote(
     string Shcode,
     string? Name,
@@ -200,7 +224,24 @@ internal sealed record HoldingWithQuote(
     double? CostBasis,
     double? Pnl,
     double? PnlPct,
-    string? Warning);
+    string? Warning)
+{
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<ThemeCatalogRow>? Themes { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? ThemesStatus { get; init; }
+}
+
+/// <summary>
+/// Top-level enrichment freshness block emitted by <c>ls_holdings_list</c>.
+/// </summary>
+internal sealed record MetadataFreshness(
+    bool FullyEnriched,
+    IReadOnlyDictionary<string, int> Pending)
+{
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? Hint { get; init; }
+}
 
 /// <summary>
 /// Portfolio valuation summary used both per-account and at the total roll-up.
@@ -256,7 +297,11 @@ internal sealed record AccountHoldings(
 internal sealed record HoldingListResult(
     IReadOnlyList<AccountHoldings> Accounts,
     PortfolioSummary TotalSummary,
-    string? QuoteError);
+    string? QuoteError)
+{
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public MetadataFreshness? MetadataFreshness { get; init; }
+}
 
 /// <summary>
 /// Result of removing an account. Reports whether holdings were cascaded and who inherited default, if anyone.

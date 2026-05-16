@@ -216,6 +216,97 @@ public sealed class PortfolioServiceTests
     }
 
     [Fact]
+    public async Task EnrichStockMetadataAsync_StoresThemesFromQuoteService()
+    {
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        var themes = new Dictionary<string, IReadOnlyList<ThemeCatalogRow>>(StringComparer.Ordinal)
+        {
+            ["005930"] = new[]
+            {
+                new ThemeCatalogRow("0011", "반도체"),
+                new ThemeCatalogRow("0100", "AI"),
+            },
+        };
+        var service = new PortfolioService(repository, new FakeQuoteService(themesPerSymbol: themes));
+
+        await service.EnrichStockMetadataAsync("005930");
+
+        IReadOnlyDictionary<string, IReadOnlyList<StockTheme>> stored =
+            await repository.GetStockThemesBatchAsync(new[] { "005930" });
+        stored["005930"].Should().HaveCount(2);
+        stored["005930"].Select(t => t.ThemeName).Should().BeEquivalentTo(["반도체", "AI"]);
+    }
+
+    [Fact]
+    public async Task EnrichStockMetadataAsync_LsError_LeavesCacheUnchanged()
+    {
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        // Seed an existing row so we can detect whether the error path nukes it.
+        await repository.ReplaceStockThemesAsync("005930", new[] { new ThemeCatalogRow("0011", "반도체") });
+        var service = new PortfolioService(repository, new FakeQuoteService(stockThemesError: "no credentials"));
+
+        await service.EnrichStockMetadataAsync("005930");
+
+        (await repository.GetStockThemesBatchAsync(new[] { "005930" }))["005930"].Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task ListHoldingsAsync_EmitsThemesAndFreshnessBlock()
+    {
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        Account account = await repository.UpsertAccountAsync("AAA", "main", null, setDefault: false);
+        await repository.SetHoldingAsync(account.Id, "005930", 10, 70000, null);
+        await repository.SetHoldingAsync(account.Id, "000660", 5, 100000, null);
+        // Pre-populate themes for 005930; leave 000660 un-enriched → "pending".
+        await repository.ReplaceStockThemesAsync("005930", new[]
+        {
+            new ThemeCatalogRow("0011", "반도체"),
+            new ThemeCatalogRow("0100", "AI"),
+        });
+        var service = new PortfolioService(repository, new FakeQuoteService());
+
+        HoldingListResult result = await service.ListHoldingsAsync(accountIdentifier: null);
+
+        result.MetadataFreshness.Should().NotBeNull();
+        result.MetadataFreshness!.FullyEnriched.Should().BeFalse();
+        result.MetadataFreshness.Pending.Should().ContainKey("themes").WhoseValue.Should().Be(1);
+        result.MetadataFreshness.Hint.Should().Contain("테마");
+
+        HoldingWithQuote samsung = result.Accounts[0].Holdings.Single(h => h.Shcode == "005930");
+        samsung.Themes.Should().NotBeNull();
+        samsung.Themes!.Should().HaveCount(2);
+        samsung.ThemesStatus.Should().BeNull("ok status is omitted to save payload tokens");
+
+        HoldingWithQuote hynix = result.Accounts[0].Holdings.Single(h => h.Shcode == "000660");
+        hynix.Themes.Should().BeNull();
+        hynix.ThemesStatus.Should().Be("pending");
+    }
+
+    [Fact]
+    public async Task ListHoldingsAsync_AllEnriched_FreshnessFullyEnrichedTrue()
+    {
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        Account account = await repository.UpsertAccountAsync("AAA", "main", null, setDefault: false);
+        await repository.SetHoldingAsync(account.Id, "005930", 10, 70000, null);
+        await repository.ReplaceStockThemesAsync("005930", new[] { new ThemeCatalogRow("0011", "반도체") });
+        var service = new PortfolioService(repository, new FakeQuoteService());
+
+        HoldingListResult result = await service.ListHoldingsAsync(accountIdentifier: null);
+
+        result.MetadataFreshness!.FullyEnriched.Should().BeTrue();
+        result.MetadataFreshness.Pending.Should().BeEmpty();
+        result.MetadataFreshness.Hint.Should().BeNull("hint omitted when fully enriched");
+    }
+
+    [Fact]
     public async Task UpsertAccountAsync_RejectsNicknameCollisionAcrossAccountNumbers()
     {
         await using TestDatabase db = new();
@@ -233,11 +324,19 @@ public sealed class PortfolioServiceTests
     {
         readonly string? _stockError;
         readonly IReadOnlyDictionary<string, StockQuote?> _quotes;
+        readonly IReadOnlyDictionary<string, IReadOnlyList<ThemeCatalogRow>> _themesPerSymbol;
+        readonly string? _stockThemesError;
 
-        public FakeQuoteService(string? stockError = null, IReadOnlyDictionary<string, StockQuote?>? quotes = null)
+        public FakeQuoteService(
+            string? stockError = null,
+            IReadOnlyDictionary<string, StockQuote?>? quotes = null,
+            IReadOnlyDictionary<string, IReadOnlyList<ThemeCatalogRow>>? themesPerSymbol = null,
+            string? stockThemesError = null)
         {
             _stockError = stockError;
             _quotes = quotes ?? new Dictionary<string, StockQuote?>();
+            _themesPerSymbol = themesPerSymbol ?? new Dictionary<string, IReadOnlyList<ThemeCatalogRow>>();
+            _stockThemesError = stockThemesError;
         }
 
         public Task<QuoteBatchResult<StockQuote>> GetStockQuotesAsync(IReadOnlyCollection<string> symbols, CancellationToken cancellationToken = default)
@@ -260,6 +359,16 @@ public sealed class PortfolioServiceTests
 
         public Task<ThemeCatalogResult> GetThemeCatalogAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(new ThemeCatalogResult(Array.Empty<ThemeCatalogRow>(), null));
+
+        public Task<StockThemesFetchResult> GetStockThemesAsync(string symbol, CancellationToken cancellationToken = default)
+        {
+            if (_stockThemesError is not null)
+                return Task.FromResult(new StockThemesFetchResult(Array.Empty<ThemeCatalogRow>(), _stockThemesError));
+            IReadOnlyList<ThemeCatalogRow> themes = _themesPerSymbol.TryGetValue(symbol, out IReadOnlyList<ThemeCatalogRow>? rows)
+                ? rows
+                : Array.Empty<ThemeCatalogRow>();
+            return Task.FromResult(new StockThemesFetchResult(themes, null));
+        }
     }
 
     sealed class TestDatabase : IAsyncDisposable

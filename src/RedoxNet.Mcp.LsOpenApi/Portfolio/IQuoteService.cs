@@ -17,5 +17,13 @@ internal interface IQuoteService
     /// t1531 fetch serves both quote enrichment and tool-side name lookups.
     /// </summary>
     Task<ThemeCatalogResult> GetThemeCatalogAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Fetches every LS theme a single stock belongs to via t1532. Used by the
+    /// fire-and-forget enrichment path to populate the stock_themes cache after
+    /// portfolio writes; no in-process caching since it's keyed per-symbol and
+    /// only fires once on each write.
+    /// </summary>
+    Task<StockThemesFetchResult> GetStockThemesAsync(string symbol, CancellationToken cancellationToken = default);
 }
 

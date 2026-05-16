@@ -812,6 +812,83 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
         await UpsertStockAsync(connection, NormalizeSymbol(symbol), NormalizeName(name, nameof(name)), NormalizeName(market, nameof(market)), NullIfWhiteSpace(krxSector), cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
+    public async Task ReplaceStockThemesAsync(string symbol, IReadOnlyList<ThemeCatalogRow> themes, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(themes);
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        string normalizedSymbol = NormalizeSymbol(symbol);
+
+        await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        // Ensure the FK target row exists before inserting stock_themes rows.
+        await UpsertStockAsync(connection, normalizedSymbol, normalizedSymbol, "unknown", null, cancellationToken, updateExisting: false).ConfigureAwait(false);
+
+        await connection.ExecuteAsync(new CommandDefinition(
+            "DELETE FROM stock_themes WHERE symbol = @Symbol;",
+            new { Symbol = normalizedSymbol }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        foreach (ThemeCatalogRow theme in themes)
+        {
+            if (string.IsNullOrWhiteSpace(theme.Code))
+                continue;
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                INSERT INTO stock_themes(symbol, theme_code, theme_name, updated_at)
+                VALUES (@Symbol, @ThemeCode, @ThemeName, datetime('now'))
+                ON CONFLICT(symbol, theme_code) DO UPDATE SET
+                    theme_name = excluded.theme_name,
+                    updated_at = datetime('now');
+                """,
+                new
+                {
+                    Symbol = normalizedSymbol,
+                    ThemeCode = theme.Code.Trim().ToUpperInvariant(),
+                    ThemeName = (theme.Name ?? "").Trim(),
+                },
+                transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyDictionary<string, IReadOnlyList<StockTheme>>> GetStockThemesBatchAsync(
+        IReadOnlyCollection<string> symbols,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(symbols);
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        if (symbols.Count == 0)
+            return new Dictionary<string, IReadOnlyList<StockTheme>>(0, StringComparer.Ordinal);
+
+        string[] normalized = symbols
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Select(s => s.Trim().ToUpperInvariant())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (normalized.Length == 0)
+            return new Dictionary<string, IReadOnlyList<StockTheme>>(0, StringComparer.Ordinal);
+
+        await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        IEnumerable<StockTheme> rows = await connection.QueryAsync<StockTheme>(new CommandDefinition(
+            """
+            SELECT symbol AS Symbol, theme_code AS ThemeCode, theme_name AS ThemeName, updated_at AS UpdatedAt
+            FROM stock_themes
+            WHERE symbol IN @Symbols
+            ORDER BY symbol, theme_code;
+            """,
+            new { Symbols = normalized }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        var result = new Dictionary<string, IReadOnlyList<StockTheme>>(StringComparer.Ordinal);
+        foreach (IGrouping<string, StockTheme> group in rows.GroupBy(r => r.Symbol, StringComparer.Ordinal))
+        {
+            result[group.Key] = group.ToList();
+        }
+        return result;
+    }
+
     /// <summary>
     /// Lazily initializes the database before repository operations.
     /// </summary>

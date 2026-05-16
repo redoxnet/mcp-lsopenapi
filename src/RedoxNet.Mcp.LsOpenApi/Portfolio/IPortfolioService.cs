@@ -41,4 +41,13 @@ internal interface IPortfolioService
     Task<CorporateActionResult> SplitHoldingAsync(string symbol, int ratio, string? accountIdentifier, CancellationToken cancellationToken = default);
     Task<CorporateActionResult> ReverseSplitHoldingAsync(string symbol, int ratio, string? accountIdentifier, CancellationToken cancellationToken = default);
     Task<CorporateActionResult> BonusHoldingAsync(string symbol, double ratio, string? accountIdentifier, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Fetches t1532 and replaces the stock_themes cache for the symbol.
+    /// Called fire-and-forget on portfolio writes; also exposed publicly so
+    /// tests (and any future explicit-refresh tool in v0.7) can drive it
+    /// synchronously. Best-effort: LS errors are absorbed and just leave the
+    /// cache as-is for the next retry.
+    /// </summary>
+    Task EnrichStockMetadataAsync(string symbol, CancellationToken cancellationToken = default);
 }

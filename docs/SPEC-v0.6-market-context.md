@@ -28,8 +28,8 @@ v0.5에서 로컬 포트폴리오 모듈이 안정화되면서 다음 UX 갭이 
 | 2 | 지수·업종 도구 3개 추가 | `ls_get_index_quote` (t1511) 단건 지수, `ls_get_industry_indices` (t8424 + 병렬 t1511 + 60s 캐시) 업종 전체 등락률 array sorted, `ls_get_industry_stocks` (t1516) 업종 안의 종목 + 업종 지수 요약. 모두 `/indtp/market-data` |
 | 3 | 테마 wrapper 2개 추가 | `ls_get_theme_stocks` (t1537) 테마→종목, `ls_get_stock_themes` (t1532) 종목→테마 |
 | 4 | 포트폴리오 export/import 2개 추가 | 버전드 JSON 단일 파일. import는 `mode=merge` 기본, `replace` 옵션 |
-| 5 | 자동 enrichment 2종 — 쓰기 경로 fire-and-forget | (a) `stocks.krx_sector` ← t1102 (업종), (b) `stock_themes` ← t1532 (테마 멤버십). 읽기 경로는 캐시만 |
-| 6 | `ls_holdings_list` 시그니처 확장 | `account?` 외에 `industry?`, `theme_code?`, `theme_keyword?` 3개 optional 필터 추가. AND 결합. 자세한 §4.5 |
+| 5 | 자동 enrichment 1종 (v0.6 한정) — 쓰기 경로 fire-and-forget | `stock_themes` ← t1532 (테마 멤버십). `stocks.krx_sector` enrichment는 **v0.7로 이연** — t1102가 KRX 산업분류 필드를 반환하지 않음이 v0.6 구현 중에 확인됨 (§10 Q7). 읽기 경로는 캐시만 |
+| 6 | `ls_holdings_list` 시그니처 확장 | `account?` 외에 `theme_code?`, `theme_keyword?` 2개 optional 필터 추가 (v0.6). `industry?` 필터는 krx_sector enrichment와 함께 v0.7로 이연. AND 결합. 자세한 §4.6 |
 | 7 | v0.5 `watched_sectors` → `watched_themes` 일괄 rename | DB 테이블, 필드(sector_code→theme_code, sector_name→theme_name), 도구(`ls_watched_sectors_*` → `ls_watched_themes_*`), 모델, 응답 envelope, export JSON. Schema v3 migration |
 | 8 | TR 카탈로그에 5개 추가 | t1511, t1485 (catalog only), t8424 (catalog only, fanout 내부 사용), t1514 (catalog only), t1516, t1537. t1532는 v0.5 catalog에 이미 존재 — v0.6에서 wrapper 승격 |
 
@@ -37,7 +37,7 @@ v0.5에서 로컬 포트폴리오 모듈이 안정화되면서 다음 UX 갭이 
 
 | 의미 | 한국어 | 도구/필드명 | LS TR | 예시 |
 |---|---|---|---|---|
-| KRX 표준 산업분류 (~30) | 업종 | `industry`, `krx_sector` (DB 컬럼명 유지) | t1102 (현재 — 종목별 업종 enrichment), 업종 전체 등락률 TR은 v0.7로 (§10 Q2) | "전기전자", "화학", "금융" |
+| KRX 표준 산업분류 (~30) | 업종 | `industry`, `krx_sector` (DB 컬럼명 유지) | **v0.6에는 enrichment 소스 미정** — t1102는 KRX 산업분류 필드를 반환하지 않으며 LS [주식 섹터] 카테고리는 전부 테마 TR(t1531/t1532/t1533/t1537/t8425). 컬럼은 forward-compat 위해 유지하되 NULL 상태. v0.7에서 별도 TR(검토 후보: t8401/마스터) 또는 t8424+t1516 reverse-lookup으로 enrich (§10 Q7). | "전기전자", "화학", "금융" |
 | LS 큐레이션 그룹 (~수백) | 테마 | `theme`, `theme_code` (4-char tmcode), `theme_name` | t1531 / t1532 / t1537 | "AI", "2차전지", "반도체 장비" (0012, 0064 등) |
 
 v0.5에서 `watched_sectors`로 부르던 것은 실제로 **테마** — 마이그레이션으로 `watched_themes`로 이름 바로잡음. `stocks.krx_sector` DB 컬럼명은 그대로 유지하되 외부 노출(파라미터/응답)은 `industry`로 통일.
@@ -312,18 +312,18 @@ t1511의 `firstjcode`/`secondjcode`/`thirdjcode`/`fourthjcode` 4쌍을 `related_
 
 ### 4.4 도메인 간 enrichment
 
-#### 자동 enrichment 2종 (쓰기 경로 fire-and-forget)
+#### 자동 enrichment (v0.6: 1종, 쓰기 경로 fire-and-forget)
 
 `ls_holdings_set` / `_buy` / `ls_watchlist_add` 호출 시, 응답 반환 후 background task로:
 
-1. **t1102 → `stocks.krx_sector`** (업종 채우기). 단건 호출.
+1. ~~**t1102 → `stocks.krx_sector`**~~ — **v0.7로 이연**. t1102 응답에 KRX 산업분류 필드 없음이 v0.6 구현 중 확인됨. LS [주식 섹터] 카테고리는 전부 테마 TR. KRX 업종 enrich 소스는 v0.7에서 식별 (§10 Q7).
 2. **t1532 → `stock_themes` upsert** (이 종목이 속한 모든 테마 캐시). 응답 array를 stock_themes 테이블에 UPSERT (theme_code 단위 PRIMARY KEY).
 
 읽기 경로(`_list` 및 새 필터)는 캐시된 값만 사용 — 느려지지 않음. 첫 호출 직후 곧바로 list하면 캐시가 still empty일 수 있다.
 
 #### 4.4.1 Enrichment freshness hint
 
-위 "캐시 still empty" 상황을 모델이 사용자에게 자연어로 안내할 수 있도록 `ls_holdings_list` 응답에 freshness 블록 추가:
+위 "캐시 still empty" 상황을 모델이 사용자에게 자연어로 안내할 수 있도록 `ls_holdings_list` 응답에 freshness 블록 추가. v0.6은 `themes`만 enrich; `krx_sector`는 항상 null 상태.
 
 ```json
 {
@@ -333,8 +333,6 @@ t1511의 `firstjcode`/`secondjcode`/`thirdjcode`/`fourthjcode` 4쌍을 `related_
         {
           "shcode": "005930",
           "name": "삼성전자",
-          "krx_sector": null,
-          "krx_sector_status": "pending",
           "themes": [],
           "themes_status": "pending",
           "...": "..."
@@ -344,15 +342,16 @@ t1511의 `firstjcode`/`secondjcode`/`thirdjcode`/`fourthjcode` 4쌍을 `related_
   ],
   "metadata_freshness": {
     "fully_enriched": false,
-    "pending": { "krx_sector": 3, "themes": 2 },
-    "hint": "방금 등록한 종목의 업종/테마 정보는 다음 호출에서 채워집니다."
+    "pending": { "themes": 2 },
+    "hint": "방금 등록한 종목의 테마 정보는 다음 호출에서 채워집니다."
   }
 }
 ```
 
-- 행별 `*_status`: `"ok"` / `"pending"` / `"failed"`. `"ok"`일 때는 status 필드 자체를 생략(payload 절약).
+- 행별 `themes_status`: `"ok"` / `"pending"`. `"ok"`일 때는 status 필드 자체를 생략(payload 절약).
 - 모두 `"ok"`일 때 `metadata_freshness.fully_enriched: true`이고 `pending` 빈 객체, `hint`도 생략.
-- `"failed"`는 t1102/t1532가 LS-side 에러를 반환했거나 자격증명이 없는 상태. 다음 쓰기 시 재시도.
+- `"pending"`은 아직 enrichment 안 됐거나 t1532가 LS-side 에러를 반환했거나 자격증명이 없는 상태. 다음 쓰기 시 재시도.
+- v0.7에서 `krx_sector`/`krx_sector_status` 필드를 추가하면 같은 envelope을 확장 (forward-compat).
 
 ### 4.5 Holdings 도구 압축 (v0.5 → v0.6 breaking)
 
@@ -411,12 +410,13 @@ ls_holdings_corporate_action(
 ### 4.6 `ls_holdings_list` 시그니처 확장
 
 ```
-ls_holdings_list(account?, industry?, theme_code?, theme_keyword?)
+ls_holdings_list(account?, theme_code?, theme_keyword?)   // v0.6
+ls_holdings_list(account?, industry?, theme_code?, theme_keyword?)   // v0.7 — industry 필터는 krx_sector enrichment와 함께 추가
 ```
 
 | 파라미터 | 동작 |
 |---|---|
-| `industry` | `stocks.krx_sector LIKE '%{value}%'`. *"반도체"*가 *"반도체장비"*, *"반도체부품"* 모두 매치 |
+| ~~`industry`~~ | **v0.7로 이연** — `stocks.krx_sector` enrichment 소스 미정 (§4.4) |
 | `theme_code` | 정확 일치. holdings 행 중 `stock_themes.theme_code = ?` 조건 만족 |
 | `theme_keyword` | `stock_themes.theme_name LIKE '%{value}%'`. *"2차전지"*가 *"2차전지수혜주"* 매치 |
 
@@ -428,19 +428,18 @@ ls_holdings_list(account?, industry?, theme_code?, theme_keyword?)
 {
   "accounts": [ ... ],
   "total_summary": { ... },
-  "filter": { "industry": "반도체", "theme_keyword": "AI" },
-  "matched_industries": ["반도체", "반도체 장비", "반도체 부품"],
+  "filter": { "theme_keyword": "AI" },
   "matched_themes": ["AI", "AI 반도체", "온디바이스 AI"]
 }
 ```
 
-필터 미지정 도메인의 `matched_*` 필드는 응답에서 생략 (industry만 필터 시 `matched_themes` 없음).
+필터 미지정 도메인의 `matched_*` 필드는 응답에서 생략. v0.7에서 `industry` 필터 추가 시 `matched_industries` 동봉.
 
-자연 질의 매핑:
+자연 질의 매핑 (v0.6):
 
-- *"내 보유종목 중 반도체 업종만"* → `ls_holdings_list(industry="반도체")`
 - *"내 보유종목 중 2차전지 테마"* → `ls_holdings_list(theme_keyword="2차전지")`
-- *"내 한투 계좌의 반도체 업종 보유 중 AI 테마인 것"* → `ls_holdings_list(account="한투", industry="반도체", theme_keyword="AI")`
+- *"내 한투 계좌의 AI 테마"* → `ls_holdings_list(account="한투", theme_keyword="AI")`
+- *"내 보유종목 중 반도체 업종만"* → v0.7 대기 (krx_sector enrichment 도입 후)
 
 ### 4.7 에러 envelope
 
@@ -456,7 +455,7 @@ ls_holdings_list(account?, industry?, theme_code?, theme_keyword?)
 
 - **호스트(MCP 클라이언트)**:
   - 도구 추가 7개 (호환).
-  - `ls_holdings_list`에 optional 파라미터 3개 추가 (호환).
+  - `ls_holdings_list`에 optional 파라미터 2개 추가 — `theme_code`, `theme_keyword` (호환). `industry?` 필터는 v0.7로 이연 (§4.4 / §10 Q7).
   - `ls_watched_sectors_*` 3개 → `ls_watched_themes_*` rename (**breaking**). 파라미터 `sector_code` → `theme_code`, `sector_name` → `theme_name`. 사용자 측 직접 호출 없고 모델이 도구 description 기반으로 라우팅하므로 영향 작음.
   - **Tier 1 압축 (breaking, total −5):**
     - `ls_account_get` 삭제 — `ls_accounts_list`의 `is_default` 플래그로 대체.
@@ -475,14 +474,15 @@ ls_holdings_list(account?, industry?, theme_code?, theme_keyword?)
 - A. 지수·업종 도구 3개 — `ls_get_index_quote` (t1511), `ls_get_industry_indices` (t8424+t1511 fanout, 60s cache), `ls_get_industry_stocks` (t1516). 카탈로그에 t1511/t8424/t1514/t1516/t1485 추가 (t1485·t1514·t8424는 wrapper 없는 catalog).
 - B. 테마 wrapper 2개 (`ls_get_theme_stocks`, `ls_get_stock_themes`) + t1537 카탈로그 추가, t1532 wrapper 승격
 - C. Portfolio export/import + JSON schema v1
-- D. 자동 enrichment 2종 (`stocks.krx_sector` ← t1102 업종, `stock_themes` ← t1532 테마)
-- E. `ls_holdings_list` 3-필터 확장 (`industry?`, `theme_code?`, `theme_keyword?`)
+- D. 자동 enrichment 1종 (`stock_themes` ← t1532 테마). `stocks.krx_sector` enrichment는 v0.7로 이연 — t1102 응답에 KRX 산업분류 필드 없음이 v0.6 구현 중 확인됨 (§10 Q7).
+- E. `ls_holdings_list` 2-필터 확장 (`theme_code?`, `theme_keyword?`). `industry?` 필터는 krx_sector enrichment와 함께 v0.7로 이연.
 - F. **v0.5 명명 정정**: `watched_sectors` → `watched_themes` (테이블/필드/도구/모델/envelope 일괄 rename, schema v3 migration)
 - G. **Tier 1 도구 압축** (−5): `ls_account_get` 삭제, `ls_account_set_default` 삭제, `ls_holdings_{split,reverse_split,bonus}` 3→1 `ls_holdings_corporate_action`. 통합 도구는 **열린 enum**(`type`)으로 출발 — v0.7+에 `stock_dividend`/`spin_off`/`merger` 등 추가 시 도구 surface 증가 없이 enum만 확장. LLM 라우팅 부담 완화 — v1.0에서 도구 수 40~45 안에 마감하려는 전략의 첫 발
 
 ### OUT (v0.7+)
 
 - **`ls_get_index_history`** (t1514 wrapper) — v0.7. 업종 시계열 (일/주/월). 단건 지수의 chart 격. v0.6에는 t1514 catalog만 등록해 `ls_call_tr`로 호출은 가능. wrapper 도입 시 `ls_get_chart`와의 일관성(period_type, count, indicators 지원 여부 등) 결정 필요해서 v0.7로 미룸.
+- **`stocks.krx_sector` enrichment + `industry?` 필터** — v0.7. t1102 응답에 KRX 산업분류 필드 부재 확인 후 이연 (§10 Q7). v0.7에서 enrichment 소스 식별 후 도입 — 후보: (a) LS 마스터 TR 별도 호출 (필요시 LS 문의), (b) t8424 + t1516 reverse-lookup으로 (shcode → 업종) 매핑 빌드 (cold cost 큼, 60s 캐시), (c) 외부 KRX 산업분류표 정적 동봉.
 - **`ls_stocks_refresh_metadata`** 동기 명시 갱신 도구 — v0.7. 결정 근거: v0.6의 fire-and-forget enrichment(§4.4)가 실제 사용에서 얼마나 stale을 만드는지 측정해야 명시 갱신 도구의 시그니처(`shcodes?` 선택, batched 정책, 우선순위 큐)가 정해진다. v0.6 lazy 정책의 실측 마찰 데이터를 보고 v0.7에서 도입.
 - `ls_get_fundamentals_rank` (t3341) — v0.7
 - `ls_get_investor_flow` (t1601 / t1702) — v0.7
@@ -595,6 +595,7 @@ ls_holdings_list(account?, industry?, theme_code?, theme_keyword?)
 - **Q4: 다중 호스트 동시 portfolio.db 접근.** Claude Desktop + Codex CLI를 같은 PC에서 동시 실행하면 두 프로세스가 같은 portfolio.db에 동시 write 가능. SQLite WAL 모드로 read는 안전하지만 두 호스트의 background enrichment task가 같은 stocks 행을 race할 수 있음. 게다가 holdings_set이 동시에 같은 (account, symbol)로 들어오면 의도 외 마지막-쓰기 승. 빈도 낮은 시나리오라 v0.6에서는 명문화만 하고 lock 도입은 보류 — 발생 빈도 보고 v0.7+에서 advisory lock(`PRAGMA locking_mode=EXCLUSIVE` 또는 별도 lock 파일) 검토. (단일 프로세스 내 race는 §7에서 UPSERT로 종결.)
 - **Q5: `industry` 필터의 정확 일치 옵션.** v0.6은 LIKE만 (§4.5 + `matched_industries` echo로 false positive 가시화). 실 사용에서 false positive가 많으면 v0.7에 `match_mode: contains | exact` 파라미터 추가 결정.
 - **Q6: Import의 stocks/stock_themes 캐시 부재 영향.** Export에 캐시 안 담으므로 import 직후 `_list` 호출은 enrichment 전이라 이름/업종/테마가 비어 있음(§4.4 freshness hint로 안내). 첫 쓰기 또는 quote enrichment 호출 후 정상화. 사용자가 import 직후 list 보고 *"내 종목이 다 사라진 것 같다"*고 오해할 가능성 — import 응답에 *"메타데이터가 차후 자동 갱신됩니다"* hint 한 줄 추가하면 완화.
+- **Q7: KRX 산업분류 enrich 소스 식별.** v0.6 구현 중 확인: t1102 catalog (TrCatalog.json:703-841) 응답에 KRX 산업분류 필드 없음 — janginfo(시장구분)만 있음. LS [주식 섹터] 카테고리는 전부 테마 TR(t1531/t1532/t1533/t1537/t8425). 어느 LS TR이 shcode→업종명(전기전자/화학) 매핑을 제공하는지 v0.7 시작 전 확인 필요. 후보: (a) LS 마스터/기본정보 TR 별도 식별 (LS 문의 검토), (b) t8424 + t1516 reverse-lookup으로 (shcode → 업종) 매핑 빌드, (c) KRX 산업분류표 정적 데이터 동봉. v0.6은 `stocks.krx_sector` 컬럼 NULL 유지 + `industry?` 필터 제거로 갭 처리.
 
 ---
 

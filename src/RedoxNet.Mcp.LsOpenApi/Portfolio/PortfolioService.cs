@@ -41,6 +41,7 @@ internal sealed class PortfolioService : IPortfolioService
     {
         WatchlistItem item = await _repository.AddWatchlistItemAsync(symbol, group, notes, cancellationToken).ConfigureAwait(false);
         StockQuote? quote = await TryCacheStockMetadataAsync(item.Symbol, cancellationToken).ConfigureAwait(false);
+        FireAndForgetEnrich(item.Symbol);
         string name = quote?.Name ?? item.Name;
         return new WatchlistItemAdded(item.Symbol, name, item.GroupName, item.Notes, item.AddedAt);
     }
@@ -168,6 +169,7 @@ internal sealed class PortfolioService : IPortfolioService
         Account account = await ResolveTargetForWriteAsync(accountIdentifier, cancellationToken).ConfigureAwait(false);
         Holding saved = await _repository.SetHoldingAsync(account.Id, symbol, quantity, avgPrice, notes, cancellationToken).ConfigureAwait(false);
         StockQuote? quote = await TryCacheStockMetadataAsync(saved.Symbol, cancellationToken).ConfigureAwait(false);
+        FireAndForgetEnrich(saved.Symbol);
         return new HoldingWriteResult(saved.Symbol, ResolveDisplayName(quote, saved.Name, saved.Symbol), saved.Quantity, saved.AvgPrice, SqlitePortfolioRepository.ToAccountInfo(account));
     }
 
@@ -181,6 +183,7 @@ internal sealed class PortfolioService : IPortfolioService
         Account account = await ResolveTargetForWriteAsync(accountIdentifier, cancellationToken).ConfigureAwait(false);
         Holding saved = await _repository.BuyHoldingAsync(account.Id, symbol, quantity, price, cancellationToken).ConfigureAwait(false);
         StockQuote? quote = await TryCacheStockMetadataAsync(saved.Symbol, cancellationToken).ConfigureAwait(false);
+        FireAndForgetEnrich(saved.Symbol);
         return new HoldingWriteResult(saved.Symbol, ResolveDisplayName(quote, saved.Name, saved.Symbol), saved.Quantity, saved.AvgPrice, SqlitePortfolioRepository.ToAccountInfo(account));
     }
 
@@ -235,7 +238,10 @@ internal sealed class PortfolioService : IPortfolioService
         }
 
         if (accounts.Count == 0)
-            return new HoldingListResult(Array.Empty<AccountHoldings>(), EmptySummary(), null);
+            return new HoldingListResult(Array.Empty<AccountHoldings>(), EmptySummary(), null)
+            {
+                MetadataFreshness = BuildFreshness(themesPending: 0),
+            };
 
         IReadOnlyList<Holding> allHoldings;
         if (accounts.Count == 1 && accountIdentifier is not null)
@@ -249,22 +255,27 @@ internal sealed class PortfolioService : IPortfolioService
 
         var distinctSymbols = allHoldings.Select(h => h.Symbol).Distinct(StringComparer.Ordinal).ToArray();
         QuoteBatchResult<StockQuote> quoteResult = await EnrichStocksAsync(distinctSymbols, cancellationToken).ConfigureAwait(false);
+        IReadOnlyDictionary<string, IReadOnlyList<StockTheme>> themesMap =
+            await _repository.GetStockThemesBatchAsync(distinctSymbols, cancellationToken).ConfigureAwait(false);
 
         var perAccount = new List<AccountHoldings>(accounts.Count);
         double totalCost = 0;
         double totalValue = 0;
         bool totalAllQuoted = true;
+        int themesPending = 0;
 
         foreach (Account account in accounts)
         {
             List<Holding> accountRows = allHoldings.Where(h => h.AccountId == account.Id).ToList();
-            (List<HoldingWithQuote> projected, double cost, double value, bool allQuoted) = ProjectHoldings(accountRows, quoteResult);
+            (List<HoldingWithQuote> projected, double cost, double value, bool allQuoted, int accountThemesPending) =
+                ProjectHoldings(accountRows, quoteResult, themesMap);
             var summary = BuildSummary(cost, value, allQuoted);
             totalCost += cost;
             if (allQuoted)
                 totalValue += value;
             else
                 totalAllQuoted = false;
+            themesPending += accountThemesPending;
 
             perAccount.Add(new AccountHoldings(
                 account.AccountNo,
@@ -278,7 +289,10 @@ internal sealed class PortfolioService : IPortfolioService
         return new HoldingListResult(
             perAccount,
             BuildSummary(totalCost, totalValue, totalAllQuoted),
-            quoteResult.TopLevelError);
+            quoteResult.TopLevelError)
+        {
+            MetadataFreshness = BuildFreshness(themesPending),
+        };
     }
 
     // -------- Corporate actions --------
@@ -440,6 +454,48 @@ internal sealed class PortfolioService : IPortfolioService
 
     // -------- Quote enrichment + projection helpers --------
 
+    /// <inheritdoc />
+    public async Task EnrichStockMetadataAsync(string symbol, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+            return;
+        string normalized = symbol.Trim().ToUpperInvariant();
+
+        StockThemesFetchResult fetched;
+        try
+        {
+            fetched = await _quoteService.GetStockThemesAsync(normalized, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // Best-effort. Leave cache as-is; the next write retries.
+            return;
+        }
+
+        if (fetched.Error is not null)
+            return;
+
+        try
+        {
+            await _repository.ReplaceStockThemesAsync(normalized, fetched.Themes, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // Swallow — fire-and-forget contract per spec §7.
+        }
+    }
+
+    /// <summary>
+    /// Posts <see cref="EnrichStockMetadataAsync"/> to the thread pool so the
+    /// HTTP write response returns immediately. Per spec §7 the task is
+    /// intentionally not awaited: on stdio shutdown a half-finished enrichment
+    /// just retries on the next session's first write.
+    /// </summary>
+    void FireAndForgetEnrich(string symbol)
+    {
+        _ = Task.Run(() => EnrichStockMetadataAsync(symbol, CancellationToken.None));
+    }
+
     async Task<StockQuote?> TryCacheStockMetadataAsync(string symbol, CancellationToken cancellationToken)
     {
         QuoteBatchResult<StockQuote> result = await _quoteService.GetStockQuotesAsync(new[] { symbol }, cancellationToken).ConfigureAwait(false);
@@ -463,14 +519,16 @@ internal sealed class PortfolioService : IPortfolioService
         return result;
     }
 
-    static (List<HoldingWithQuote> Projected, double CostBasis, double MarketValue, bool AllQuoted) ProjectHoldings(
+    static (List<HoldingWithQuote> Projected, double CostBasis, double MarketValue, bool AllQuoted, int ThemesPending) ProjectHoldings(
         IReadOnlyList<Holding> accountRows,
-        QuoteBatchResult<StockQuote> quoteResult)
+        QuoteBatchResult<StockQuote> quoteResult,
+        IReadOnlyDictionary<string, IReadOnlyList<StockTheme>> themesMap)
     {
         var projected = new List<HoldingWithQuote>(accountRows.Count);
         double cost = 0;
         double value = 0;
         bool allQuoted = true;
+        int themesPending = 0;
 
         foreach (Holding holding in accountRows)
         {
@@ -500,6 +558,22 @@ internal sealed class PortfolioService : IPortfolioService
                 allQuoted = false;
             }
 
+            // Theme cache projection: rows present → "ok" (status omitted in
+            // envelope to save tokens); no rows → "pending" so the model can
+            // surface the freshness hint. A truly themeless stock will look
+            // pending until next-write retry — harmless false positive.
+            IReadOnlyList<ThemeCatalogRow>? themes = null;
+            string? themesStatus = null;
+            if (themesMap.TryGetValue(holding.Symbol, out IReadOnlyList<StockTheme>? cached) && cached.Count > 0)
+            {
+                themes = cached.Select(t => new ThemeCatalogRow(t.ThemeCode, t.ThemeName)).ToList();
+            }
+            else
+            {
+                themesStatus = "pending";
+                themesPending++;
+            }
+
             projected.Add(new HoldingWithQuote(
                 holding.Symbol,
                 ResolveDisplayName(quote, holding.Name, holding.Symbol),
@@ -511,10 +585,26 @@ internal sealed class PortfolioService : IPortfolioService
                 rowCost,
                 pnl,
                 pnlPct,
-                warning));
+                warning)
+            {
+                Themes = themes,
+                ThemesStatus = themesStatus,
+            });
         }
 
-        return (projected, cost, value, allQuoted);
+        return (projected, cost, value, allQuoted, themesPending);
+    }
+
+    static MetadataFreshness? BuildFreshness(int themesPending)
+    {
+        if (themesPending == 0)
+            return new MetadataFreshness(FullyEnriched: true, Pending: new Dictionary<string, int>(0));
+        return new MetadataFreshness(
+            FullyEnriched: false,
+            Pending: new Dictionary<string, int> { ["themes"] = themesPending })
+        {
+            Hint = "방금 등록한 종목의 테마 정보는 다음 호출에서 채워집니다.",
+        };
     }
 
     static PortfolioSummary BuildSummary(double cost, double value, bool allQuoted) =>

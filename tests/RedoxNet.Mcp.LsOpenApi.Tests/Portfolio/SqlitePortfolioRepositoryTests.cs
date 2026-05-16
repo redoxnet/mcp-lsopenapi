@@ -287,6 +287,57 @@ public sealed class SqlitePortfolioRepositoryTests
     }
 
     [Fact]
+    public async Task ReplaceStockThemesAsync_ReplacesPriorRowsAtomically()
+    {
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+
+        // First write: 3 themes.
+        await repository.ReplaceStockThemesAsync("005930", new[]
+        {
+            new ThemeCatalogRow("0011", "반도체"),
+            new ThemeCatalogRow("0100", "AI"),
+            new ThemeCatalogRow("0042", "스마트폰"),
+        });
+        IReadOnlyDictionary<string, IReadOnlyList<StockTheme>> after1 =
+            await repository.GetStockThemesBatchAsync(new[] { "005930" });
+        after1["005930"].Should().HaveCount(3);
+
+        // Second write: only 2 (one removed, one new).
+        await repository.ReplaceStockThemesAsync("005930", new[]
+        {
+            new ThemeCatalogRow("0100", "AI"),
+            new ThemeCatalogRow("0500", "온디바이스 AI"),
+        });
+        IReadOnlyDictionary<string, IReadOnlyList<StockTheme>> after2 =
+            await repository.GetStockThemesBatchAsync(new[] { "005930" });
+        after2["005930"].Should().HaveCount(2, "REPLACE keeps the cache in sync with the latest fetch — stale memberships disappear");
+        after2["005930"].Select(t => t.ThemeCode).Should().BeEquivalentTo(["0100", "0500"]);
+    }
+
+    [Fact]
+    public async Task GetStockThemesBatchAsync_GroupsBySymbolAndOmitsAbsentSymbols()
+    {
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        await repository.ReplaceStockThemesAsync("005930", new[] { new ThemeCatalogRow("0011", "반도체") });
+        await repository.ReplaceStockThemesAsync("000660", new[]
+        {
+            new ThemeCatalogRow("0011", "반도체"),
+            new ThemeCatalogRow("0100", "AI"),
+        });
+
+        IReadOnlyDictionary<string, IReadOnlyList<StockTheme>> result =
+            await repository.GetStockThemesBatchAsync(new[] { "005930", "000660", "035420" });
+
+        result.Should().HaveCount(2, "035420 has no theme rows yet — absent from result dict");
+        result["005930"].Should().ContainSingle();
+        result["000660"].Should().HaveCount(2);
+    }
+
+    [Fact]
     public void ResolveDatabasePath_PrefersEnvironmentOverride()
     {
         string? previous = Environment.GetEnvironmentVariable(SqlitePortfolioRepository.DatabasePathEnvVar);

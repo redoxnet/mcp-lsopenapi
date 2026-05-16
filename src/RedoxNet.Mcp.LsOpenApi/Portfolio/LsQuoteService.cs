@@ -138,6 +138,49 @@ internal sealed class LsQuoteService : IQuoteService
         return new ThemeCatalogResult(entry.Catalog, entry.Error);
     }
 
+    /// <inheritdoc />
+    public async Task<StockThemesFetchResult> GetStockThemesAsync(string symbol, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+            return new StockThemesFetchResult(Array.Empty<ThemeCatalogRow>(), "symbol must not be empty.");
+
+        string normalized = symbol.Trim().ToUpperInvariant();
+        try
+        {
+            LsTrResponse response = await _apiClient.CallTrAsync(
+                "t1532",
+                new JsonObject { ["shcode"] = normalized },
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            if (!response.IsSuccess)
+                return new StockThemesFetchResult(Array.Empty<ThemeCatalogRow>(),
+                    $"LS reported a business-level error ({response.RspCode}: {response.RspMessage}).");
+
+            JsonElement? block = response.GetBlock("t1532OutBlock");
+            if (block is null || block.Value.ValueKind != JsonValueKind.Array)
+                return new StockThemesFetchResult(Array.Empty<ThemeCatalogRow>(), null);
+
+            var themes = new List<ThemeCatalogRow>();
+            foreach (JsonElement row in block.Value.EnumerateArray())
+            {
+                string? code = row.ReadString("tmcode")?.Trim().ToUpperInvariant();
+                if (string.IsNullOrEmpty(code))
+                    continue;
+                string name = (row.ReadString("tmname") ?? code).Trim();
+                themes.Add(new ThemeCatalogRow(code, name));
+            }
+            return new StockThemesFetchResult(themes, null);
+        }
+        catch (LsAuthException ex)
+        {
+            return new StockThemesFetchResult(Array.Empty<ThemeCatalogRow>(), $"Authentication failed: {ex.Message}");
+        }
+        catch (LsTrException ex)
+        {
+            return new StockThemesFetchResult(Array.Empty<ThemeCatalogRow>(), $"TR call failed: {ex.Message}");
+        }
+    }
+
     /// <summary>
     /// Gets and short-term caches the full t1531 theme quote table.
     /// </summary>

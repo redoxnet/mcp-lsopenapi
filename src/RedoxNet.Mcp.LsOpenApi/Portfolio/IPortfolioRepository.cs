@@ -119,4 +119,20 @@ internal interface IPortfolioRepository
 
     /// <summary>Creates or updates locally cached stock metadata.</summary>
     Task UpsertStockAsync(string symbol, string name, string market, string? krxSector, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Atomically replaces the stock_themes rows for one symbol with the supplied list,
+    /// keeping the cache in sync with the latest t1532 fetch (memberships LS removed
+    /// disappear from cache rather than lingering as stale rows).
+    /// </summary>
+    Task ReplaceStockThemesAsync(string symbol, IReadOnlyList<ThemeCatalogRow> themes, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the cached stock_themes rows for many symbols at once. Symbols with
+    /// no cache rows are simply absent from the returned dictionary (callers treat
+    /// missing as "pending" enrichment).
+    /// </summary>
+    Task<IReadOnlyDictionary<string, IReadOnlyList<StockTheme>>> GetStockThemesBatchAsync(
+        IReadOnlyCollection<string> symbols,
+        CancellationToken cancellationToken = default);
 }
