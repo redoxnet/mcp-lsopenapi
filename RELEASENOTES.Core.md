@@ -1,5 +1,50 @@
 # Release Notes — RedoxNet.LsOpenApi.Core
 
+## v0.7.0 (2026-05-18)
+
+Seven new TRs in the embedded catalog, no public API changes.
+Versioned in lockstep with `RedoxNet.Mcp.LsOpenApi` 0.7.0.
+
+### Added — Catalog rows (7 new TRs)
+
+- **`t3320` (FNG_요약 / 투자정보 요약)** under `/stock/investinfo`.
+  Per-stock 시장구분 + 회사 프로필 + 펀더멘털 (PER/PBR/EPS/ROE 등) +
+  FICS 산업분류 (`upgubunnm`, "FICS " prefix가 붙은 풀-네임). 1 TPS
+  per symbol. Input is 6-char shcode (LS doc lists 7-char "A"+code
+  but live verification confirmed 6-char only). Consumed by the Mcp
+  package's A1 industry enrichment path; reachable via `ls_call_tr`
+  for raw access.
+- **`t3341` (재무순위종합)** under `/stock/investinfo`. PER / PBR /
+  PEG / EPS / BPS / ROE + 매출액/영업이익/세전계속이익 증가율 +
+  부채비율 + 유보율 ranking. PER/PBR/PEG are forced ascending
+  LS-side. Pagination via `idx`. Consumed by `ls_get_fundamentals_rank`.
+- **`t1601` (투자자별 종합)** under `/stock/investor`. Real-time
+  market-wide investor-type flow — 6 OutBlocks × 12 investor types
+  (개인/외국인/기관계/증권/투신/은행/보험/종금/기금/국가/기타/사모펀드).
+  LS does not label which OutBlock corresponds to which market segment;
+  consumers should surface them as unlabeled.
+- **`t1702` (외인기관 종목별 동향)** under `/stock/investor`.
+  Single-stock daily investor flow history. `volvalgb` controls
+  unit (금액/수량/단가), `msmdgb` selects net/buy/sell, `gubun`
+  toggles per-day vs cumulative. Consumed by `ls_get_investor_flow`.
+- **`t3202` (종목별 증시일정)** under `/stock/investinfo`. 14 LS
+  corporate-action types (유무상증자 / 배당 / 감자 / 합병/분할 /
+  매수청구 / 실권주 / 액면교체 / 주주총회 / 상호변경 / 국내/해외 CB
+  전환 / 해외 BW 행사 / 스톡옵션행사). `recdt='00000000'` indicates
+  TBD entries. Consumed by `ls_get_stock_events`.
+- **`t1404` (관리/불성실공시/투자유의)** + **`t1405` (투자경고/
+  매매정지/정리매매/단기과열 …)** under `/stock/market-data`. Two
+  surveillance screens together cover 13 KRX designations. Both use
+  `cts_shcode` body-paging. Consumed by `ls_get_market_warnings`.
+
+### Changed
+
+- Catalog count **26 → 33 TRs**.
+
+> Versioned in lockstep with `RedoxNet.Mcp.LsOpenApi` 0.7.0. No public
+> Core API changes — consumers that read the catalog or call TRs through
+> `LsApiClient` get the new rows automatically.
+
 ## v0.6.0 (2026-05-16)
 
 Six new TRs in the embedded catalog under the new `/indtp/market-data` (업종) path, plus one rate-limit correction. Catalog-only release — the public Core surface (`LsApiClient`, `TrCatalog`, indicator pipeline, etc.) is unchanged from v0.5.

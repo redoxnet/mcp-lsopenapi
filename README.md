@@ -195,6 +195,21 @@ ETF/ETN 전용 정보(NAV, 추적오차율, 괴리율, AUM, LP), 구성종목(PD
 
 지수 단건 조회(`ls_get_index_quote`), 업종 등락률 랭킹(`ls_get_industry_indices`), 업종/테마 내 종목 비교(`ls_get_industry_stocks`, `ls_get_theme_stocks`), 종목별 테마 역조회(`ls_get_stock_themes`). 키워드가 모호하면 후보를 보여주고 되묻습니다.
 
+### 스크리너 (v0.7)
+> *"PER 낮은 종목 30개"* / *"코스닥 ROE 상위"* / *"오늘 외인 매수 상위"* / *"삼성전자 외인·기관 최근 한 달 흐름"* / *"카카오 다음 주주총회 언제"* / *"내 보유 중 관리종목 있어?"*
+
+펀더멘털 랭킹(PER/PBR/PEG/EPS/BPS/ROE + 성장률/부채비율/유보율), 시간대별 매매주체 종합 + 종목별 일별 외인·기관 수급, 단일 종목 코퍼레이트 액션·주주총회 일정, KRX 관리·매매정지·정리매매·단기과열 등 13가지 지정 종목 — 보유 종목 한정 필터링도 한 번에.
+
+### 지수 시계열 (v0.7)
+> *"코스피 최근 한 달 추이"* / *"KOSDAQ 주봉으로 60개"* / *"KRX100 월봉"*
+
+지수의 일/주/월봉 + 시고저종가 + 거래량·거래대금 + 시장 폭(상승/하락/보합/상한/하한) + 외인·기관 순매수.
+
+### 업종 필터 + 메타데이터 새로고침 (v0.7)
+> *"내 보유 중 반도체 종목"* / *"증권업 종목만"* / *"지금 새로 가져와"*
+
+FICS 산업 분류 기반 보유종목 필터(`ls_holdings_list(industry?)`), 테마·산업 캐시 동기 새로고침(`ls_stocks_refresh_metadata`).
+
 ### 백업/복원 (v0.6)
 > *"포트폴리오 백업"* / *"이 파일 복원해줘"*
 
@@ -212,7 +227,8 @@ ETF/ETN 전용 정보(NAV, 추적오차율, 괴리율, AUM, LP), 구성종목(PD
 - [x] **v0.4.0** — 토큰 효율 차트 페이로드, dataset handle 후속 도구 2종, ZigZag 기반 swing 감지, indicator coverage 블록.
 - [x] **v0.5.0** — 로컬 포트폴리오 모듈. 멀티 계좌·매수/매도/액면조정·관심종목·관심 테마. 13 → 37 도구. 로컬 SQLite 저장(브로커 동기화 없음).
 - [x] **v0.6.0** — 시장 컨텍스트(지수/업종/테마) + 포트폴리오 JSON 백업/복원 + 테마 자동 enrich + Tier 1 도구 압축. 37 → 39 도구.
-- [ ] **v0.7+** — `krx_sector` enrichment, 펀더멘털/투자자/이벤트 도구, 동기 메타데이터 refresh.
+- [x] **v0.7.0** — 스크리너 4종 (펀더멘털/투자자 수급/이벤트 일정/관리·매매정지) + 지수 시계열 + 동기 메타데이터 refresh + FICS 업종 enrichment(`ls_holdings_list(industry?)`) + holdings.avg_price 정수 저장 + ETF themes_pending 수정 + Tier 2 도구 압축. 40 → 43 도구.
+- [ ] **v0.8+** — 실적 발표/뉴스 wrapper, 차트 dataset에 ls_get_index_history 연동, FICS → KRX 표준 산업분류 매핑.
 - [ ] **v2.0.0** — 실시간 시세 (WebSocket), 실 계좌 조회·잔고, 주문 발주.
 
 상세 변경 내역은 [RELEASENOTES.Mcp.md](RELEASENOTES.Mcp.md) · [RELEASENOTES.Core.md](RELEASENOTES.Core.md) 참고.

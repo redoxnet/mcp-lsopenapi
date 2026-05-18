@@ -1,5 +1,192 @@
 # Release Notes — RedoxNet.Mcp.LsOpenApi
 
+## v0.7.0 (2026-05-18)
+
+Screeners + index history + industry filter. Tool surface 40 → **43**
+(net +3 after Tier 2 compression). The headline pivot is from
+"snapshot one stock" toward natural screener questions — *"PER 낮은
+종목"*, *"오늘 외인 매수 누구 들어왔어"*, *"다음 주주총회 언제"*,
+*"내 보유 중 관리종목 있어?"* — answerable in one tool call. v0.7 also
+moves portfolio data hygiene forward: `avg_price` no longer drifts
+under split/reverse-split round-trips, ETF holdings stop reporting
+perpetual "themes pending", and a new `industry` filter classifies
+holdings by FICS industry name without a manual refresh.
+
+### Added — Screeners (4 tools)
+
+- `ls_get_fundamentals_rank(field, market?, count?)` — fundamental-metric
+  ranking via `t3341` (재무순위종합). One TR call covers PER / PBR /
+  PEG / EPS / BPS / ROE plus four growth metrics + 부채비율 + 유보율.
+  PER / PBR / PEG are forced ascending (LS-side, undervalued first);
+  the other metrics use LS's default ordering. `field` accepts English
+  snake_case (`per`, `pbr`, …) or Korean labels (`매출액증가율`, …).
+  Each row carries the full fundamental snapshot so the model can
+  compare two metrics on the same stock without a follow-up call.
+- `ls_get_investor_flow(shcode?, …)` — investor-type flow dispatcher
+  across `t1601` (intraday market-wide) and `t1702` (single-stock
+  daily). Omit `shcode` → market snapshot per segment (KOSPI / KOSDAQ /
+  선물 / 옵션; LS does not label segments, so the wrapper surfaces
+  them as `block_index = 1..6`). Pass `shcode` → daily time series
+  with `metric` (`volume`/`value`/`price`) + `direction` (`net`/`buy`/
+  `sell`) + `cumulative` toggle. Twelve investor types unified across
+  both modes: 개인 / 외국인 / 기관계 / 증권 / 투신 / 은행 / 보험 / 종금
+  / 기금 / 국가 / 기타 / 사모펀드.
+- `ls_get_stock_events(shcode, from?, to?, kinds?)` — corporate-action
+  calendar via `t3202` (종목별 증시일정). Covers all 14 LS event types
+  (유무상증자, 배당, 감자, 합병/분할, 매수청구, 실권주, 액면교체,
+  주주총회, 상호변경, 국내/해외 CB 전환, 해외 BW 행사, 스톡옵션행사).
+  `kinds` accepts English snake_case, Korean labels, or raw two-char
+  upgu codes. TBD entries (`recdt='00000000'`) survive date filtering
+  so *"다음 주총 언제"* surfaces even when LS hasn't fixed the date.
+- `ls_get_market_warnings(kinds?, shcodes?, market?)` — KRX surveillance
+  list via `t1404` + `t1405`. Covers 13 designations: 관리, 불성실공시,
+  투자유의, 투자환기, 투자경고, 매매정지, 정리매매, 투자주의,
+  투자위험, 위험예고, 단기과열지정, 이상급등, 상장주식수부족. Default
+  kind set is **관리 (designated_admin) only** — pass an explicit list
+  (e.g. `["관리", "매매정지", "단기과열"]`) for wider sweep. `shcodes`
+  clips against holdings so *"내 보유 중 관리종목"* takes one call.
+  Per-kind seen-shcode dedup absorbs the LS quirk where `cts_shcode`
+  echoes the same cursor when a single-page screen has more candidates
+  to enumerate, so the response stays the size of the actual unique
+  set instead of fan-out × pages.
+
+### Added — Index history + metadata refresh (2 tools)
+
+- `ls_get_index_history(upcode, period_type?, count?, cts_date?)` — daily/
+  weekly/monthly time series for a Korean index via `t1514`. Aliases
+  mirror `ls_get_index_quote` (`kospi` → `001` etc.). Per-bar OHLC,
+  volume, transaction value, market breadth (advance/decline/limit-up/
+  limit-down), and foreign/institutional net flow. `cts_date` pagination
+  surfaced when more pages exist; dataset-handle integration (so
+  `ls_add_indicator` can pipe off this series) is deferred to v0.8.
+- `ls_stocks_refresh_metadata(shcodes?, kinds?)` — synchronous refresh
+  for theme and FICS industry enrichment. Default scope = holdings ∪
+  watchlist symbols when `shcodes` omitted; `kinds` ∈ `themes` /
+  `industry`. Blocks until the LS-side TPS-1 calls finish (≈N seconds
+  for N symbols), then echoes per-symbol `themes_updated` /
+  `industry_updated` flags and any errors. Use case: the user just
+  imported a fresh portfolio and wants the metadata caches warm.
+
+### Added — Industry filter + `industry_*` columns (A1)
+
+- `ls_holdings_list(industry?)` — new optional filter. Case-insensitive
+  substring match against the normalized FICS industry label.
+  *"내 보유 중 반도체 종목"* now resolves to a `WHERE industry LIKE
+  '%반도체%'`. The response carries a `matching_industries` echo
+  (alphabetized distinct labels) so LIKE false positives are visible
+  the same way `matched_themes` works.
+- New `stocks` columns (`industry_raw`, `industry`, `industry_fetched_at`)
+  populated by `t3320` (FNG_요약). `industry_raw` keeps the LS-shipped
+  "FICS …" prefix verbatim; `industry` is the normalized label without
+  prefix. ETF / SPAC / no-profile stocks record `industry_fetched_at`
+  with NULL industry — the same "fetched-but-empty" pattern v0.7 also
+  applies to stock_themes (B2) so the column doesn't loop "pending"
+  forever.
+- Enrichment is fire-and-forget on holdings / watchlist writes (joining
+  the existing v0.6 themes path) and synchronous via
+  `ls_stocks_refresh_metadata(kinds=["industry"])`. 1 TPS per symbol,
+  so cold-fill ≈ N seconds for N symbols; `industry_fetched_at IS NOT
+  NULL` is treated as a permanent cache hit (산업 변경은 분기/연 단위
+  이벤트).
+
+### Fixed — Storage precision (B1) + ETF perpetual-pending (B2)
+
+- **`holdings.avg_price`** migrated from `REAL` to `INTEGER` fractional
+  won (×10000) — schema v4. Public API response shape unchanged
+  (`avg_price` still ships as `double`); corporate-action round-trips
+  (split N then reverse_split N) now exact down to the 1/10000 won
+  instead of drifting by ~1e-10 per cycle. Internal corporate-action
+  API switched from `(double qtyMultiplier, double priceMultiplier)`
+  to rational `(long qtyNum, long qtyDen)` so the cost basis is exact
+  even for non-integer ratios (e.g. bonus(1+r)).
+- **`stock_themes` sentinel row** for ETFs and SPACs that LS reports
+  with an empty `t1532` array. Before: cache treated "0 rows" as "not
+  yet fetched" → 60s cooldown loop forever. After: `Replace…([])`
+  inserts `(symbol, "__NONE__", "")` so the cache-hit check matches
+  and the `themes_status: pending` flag clears. SELECT side filters
+  out the sentinel, so callers see empty themes (consistent with v0.6).
+
+### Changed — Tier 2 compression (BREAKING, −3 tools)
+
+LLM routing burden mitigation; service+repository layers untouched.
+
+- **`ls_watchlist_group_rename` removed.** Renames now flow through
+  `ls_watchlist_group_create(name, description?, rename_from?)`.
+  When `rename_from` is set, the existing group is renamed (and
+  `description` overrides if provided); otherwise the call upserts
+  as before. Conflicts raise `ValidationError`.
+- **`ls_watchlist_groups_list` removed.** Group-meta listing now flows
+  through `ls_watchlist_list(scope?: "items" | "groups" = "items")`.
+  `scope="groups"` returns `{ groups: [{name, description, sort_order,
+  item_count}, …] }`; `scope="items"` keeps v0.6 behavior.
+- **`ls_broker_rename` removed.** Broker label rename now flows through
+  `ls_account_upsert(rename_broker_from?, broker?)`. When
+  `rename_broker_from` is set, every account with that broker label
+  has its broker field updated to `broker` (other args are ignored);
+  otherwise the call upserts as before.
+
+### Added — Catalog v0.7 (7 new TRs)
+
+- `t3320` (FNG_요약 / 투자정보) under `/stock/investinfo` — FICS
+  industry name + 시장구분 + 회사 프로필 + 시가총액 + 외국인비율 +
+  PER/PBR/EPS/ROE 등. Internal-only (A1 enrichment source). 1 TPS;
+  6-char shcode only (LS doc's "A"+6 prefix is incorrect, confirmed
+  by live verify).
+- `t3341` (재무순위종합) — `ls_get_fundamentals_rank` backend.
+- `t1601` (투자자별 종합) under `/stock/investor` — `ls_get_investor_flow`
+  intraday backend. Six unlabeled OutBlocks, twelve investor types each.
+- `t1702` (외인기관 종목별 동향) under `/stock/investor` —
+  `ls_get_investor_flow` daily backend.
+- `t3202` (종목별 증시일정) — `ls_get_stock_events` backend.
+- `t1404` (관리/불성실공시/투자유의) + `t1405` (투자경고/매매정지/
+  정리매매/단기과열 …) under `/stock/market-data` —
+  `ls_get_market_warnings` backend. Both use `cts_shcode` continuation.
+
+### Deferred — v0.8 candidates
+
+- **Dataset-handle integration for `ls_get_index_history`.** v0.7 ships
+  as a thin wrapper; `ls_add_indicator` / `ls_reframe_chart` piping is
+  v0.8.
+- **t1511 firdiff non-self slot fix (B3).** v0.6 `d0b765e` self-entry
+  override stands; the other side (other upcodes' responses that include
+  KRX 100 as a related index) still ships LS-as-shipped because no
+  top-level `diffjisu` is available for client-side correction. LS bug
+  report filed; v0.8 will re-evaluate after LS responds.
+- **FICS → KRX standard industry mapping.** v0.7 stores FICS labels
+  verbatim (with `industry_raw` keeping the "FICS " prefix and
+  `industry` normalized). KRX standard isn't directly published in
+  LS OpenAPI; bridging is a v0.8 problem.
+
+### Verified
+
+- **531 tests pass on net8.0** (181 Core + 350 Mcp; was 408 at the end
+  of v0.6 — net +123 across schema v4/v5 migration, sentinel-row
+  semantics, FICS industry normalization, integer-arithmetic
+  corporate actions, 6 new tool wrappers, and E2E polish below).
+- **Live E2E (`todo/Test_v0.7.0.txt`)** against the LS 모의투자
+  server caught and fixed three issues before tag:
+  1. `t3341` `idx` was being serialized as a JSON string when LS
+     expects a number — HTTP 500 on every call. C-1 wrapper now
+     keeps `idx` as `int` end-to-end.
+  2. `t1702` lives under `/stock/frgr-itt`, not `/stock/investor`
+     like t1601 (LS splits [주식] 외인/기관 from [주식] 투자자).
+     Catalog path corrected; the `todo/t1702.txt` reference sheet
+     was staged without the URL header so v0.7 prep guessed wrong.
+  3. `ls_get_market_warnings` had a cursor loop on `t1404`/`t1405`
+     when the surveillance screen fit in one page — LS kept echoing
+     the same `cts_shcode` and the wrapper paged 6× through the same
+     rows. Fixed with per-kind seen-shcode dedup.
+  4. `ls_get_investor_flow` daily mode shipped ~12k tokens for one
+     30-day call (30 × 12 investor types × {kind, korean_label,
+     value} objects). Diet applied: default 3 macro categories
+     (`investors=["all"]` opts back in), flows array → map shape,
+     redundant `sign`/`change` dropped, `summary` block added with
+     period totals + per-investor extremes. ~75% token reduction.
+- Live verifications also confirmed: t3320 6-char shcode behavior,
+  FICS prefix consistency for two semiconductor stocks (005930 +
+  000660), ETF empty-OutBlock detection. See
+  `scripts/verify-t3320.ps1`.
+
 ## v0.6.0 (2026-05-16)
 
 Market context + theme wrappers + portfolio I/O. The third big surface
