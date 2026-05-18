@@ -154,21 +154,42 @@ internal static class PortfolioTools
 
     [McpServerTool(Name = "ls_account_upsert")]
     [Description("""
-        Creates or updates a local portfolio account by account_number. When set_default is true the account becomes the sole default; otherwise the previous default is preserved (and if none existed, the upserted account is auto-promoted to default).
-        USE WHEN: the user wants to register their brokerage account locally — "내 한투 계좌 등록해줘. 번호 X 닉네임 한투" or adding a second account.
+        Two modes selected by the optional `rename_broker_from`:
+
+        - Upsert mode (default — rename_broker_from omitted): creates or updates a local portfolio account by `account_number`. When `set_default` is true the account becomes the sole default; otherwise the previous default is preserved (and if none existed, the upserted account is auto-promoted to default).
+
+        - Rename-broker mode (`rename_broker_from` set): renames the broker label across every account currently using `rename_broker_from`, replacing it with the value passed in `broker`. In this mode `account_number`, `nickname`, and `set_default` are ignored.
+
+        v0.7 Tier 2 BREAKING: the previous `ls_broker_rename` tool was folded here as the `rename_broker_from` parameter.
+
+        USE WHEN: the user wants to register their brokerage account locally — "내 한투 계좌 등록해줘. 번호 X 닉네임 한투" or adding a second account; OR wants to rename a broker label across accounts — "broker 'KB' 를 'KB증권' 으로 바꿔" (rename_broker_from="KB", broker="KB증권").
         """)]
     public static async Task<string> AccountUpsert(
         IPortfolioService portfolio,
-        [Description("Brokerage account number to store locally. Primary identity; unique.")]
-        string account_number,
-        [Description("Human-readable nickname (e.g. '한투', '주식1', 'ISA'). Must be unique across accounts.")]
-        string nickname,
-        [Description("Free-text broker label (e.g. '한국투자', 'KB증권'). Defaults to 'LS'.")]
+        [Description("Brokerage account number (upsert mode only — ignored when rename_broker_from is set).")]
+        string? account_number = null,
+        [Description("Human-readable nickname (upsert mode only — ignored when rename_broker_from is set). Must be unique across accounts.")]
+        string? nickname = null,
+        [Description("Upsert mode: free-text broker label for this account (defaults to 'LS'). Rename-broker mode: REQUIRED — the replacement label that overwrites every account whose current broker is `rename_broker_from`.")]
         string? broker = null,
-        [Description("If true, promote this account to default. If false and no default exists, the account is promoted anyway to maintain the >=1 default invariant.")]
+        [Description("Upsert mode only: if true, promote this account to default. Rename-broker mode ignores this.")]
         bool set_default = false,
-        CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.UpsertAccountAsync(account_number, nickname, broker, set_default, cancellationToken)).ConfigureAwait(false);
+        [Description("Optional. Current broker label to rename. When set, the tool enters rename-broker mode: every account whose broker equals this value is updated to use `broker` as the new label.")]
+        string? rename_broker_from = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!string.IsNullOrWhiteSpace(rename_broker_from))
+        {
+            if (string.IsNullOrWhiteSpace(broker))
+                return McpJson.Error("rename_broker_from requires `broker` (the replacement label).");
+            return await SerializeAsync(() => portfolio.RenameBrokerAsync(rename_broker_from!.Trim(), broker!.Trim(), cancellationToken)).ConfigureAwait(false);
+        }
+        if (string.IsNullOrWhiteSpace(account_number))
+            return McpJson.Error("account_number is required for upsert mode (omit only when rename_broker_from is set).");
+        if (string.IsNullOrWhiteSpace(nickname))
+            return McpJson.Error("nickname is required for upsert mode.");
+        return await SerializeAsync(() => portfolio.UpsertAccountAsync(account_number, nickname, broker, set_default, cancellationToken)).ConfigureAwait(false);
+    }
 
     [McpServerTool(Name = "ls_account_remove")]
     [Description("""
@@ -187,16 +208,8 @@ internal static class PortfolioTools
     // effect is reachable via ls_account_upsert(set_default=true) without
     // adding a separate tool to the surface.
 
-    [McpServerTool(Name = "ls_broker_rename")]
-    [Description("Renames a broker label across every account currently using it. Free-text label; no validation against an external broker list.")]
-    public static async Task<string> BrokerRename(
-        IPortfolioService portfolio,
-        [Description("Existing broker label to replace (e.g. '한투').")]
-        string from,
-        [Description("Replacement broker label (e.g. '한국투자증권').")]
-        string to,
-        CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.RenameBrokerAsync(from, to, cancellationToken)).ConfigureAwait(false);
+    // ls_broker_rename removed in v0.7 (Tier 2 compression). The same effect
+    // is reachable via ls_account_upsert(rename_broker_from=OLD, broker=NEW).
 
     // ---------------------- Holdings ----------------------
 
