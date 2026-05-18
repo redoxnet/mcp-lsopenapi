@@ -16,13 +16,6 @@ internal static class PortfolioTools
 
     // ---------------------- Watchlist groups ----------------------
 
-    [McpServerTool(Name = "ls_watchlist_groups_list")]
-    [Description("Lists user-defined watchlist groups with item counts. Does not require LS credentials.")]
-    public static async Task<string> WatchlistGroupsList(
-        IPortfolioService portfolio,
-        CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.ListGroupsAsync(cancellationToken)).ConfigureAwait(false);
-
     [McpServerTool(Name = "ls_watchlist_group_create")]
     [Description("""
         Creates a watchlist group, updates its description, or renames an existing group — all through the same tool. Does not require LS credentials.
@@ -87,15 +80,33 @@ internal static class PortfolioTools
 
     [McpServerTool(Name = "ls_watchlist_list")]
     [Description("""
-        Lists local saved watchlist items, optionally filtered by group_name, and enriches each item with current price/change_pct using batch t8407 when LS credentials are available. Partial quote failures are allowed: quote may be null but saved items still return.
-        USE WHEN: the user asks for 관심종목, watchlist, tracked stocks, saved stocks, or a saved group. AVOID WHEN: the user asks general market info unrelated to saved watchlists.
+        Lists local saved watchlist data. Two shapes selected by `scope`:
+        - scope="items" (default) → grouped watchlist items, each enriched with current price / change_pct via batch t8407 when LS credentials are available. Partial quote failures are allowed: quote may be null but saved items still return.
+        - scope="groups" → group metadata only ({ name, description, sort_order, item_count } per group). No LS calls.
+
+        v0.7 Tier 2 BREAKING: the previous `ls_watchlist_groups_list` tool was folded here as `scope="groups"`.
+
+        USE WHEN: the user asks for 관심종목 / watchlist / tracked stocks (scope="items"), or for the saved group list / "내 watchlist 그룹 뭐가 있어 / show my watchlist groups" (scope="groups"). AVOID WHEN: the user asks general market info unrelated to saved watchlists.
         """)]
     public static async Task<string> WatchlistList(
         IPortfolioService portfolio,
-        [Description("Optional group name. When omitted, all groups are returned, including empty groups.")]
+        [Description("Optional group name (only meaningful when scope='items'). When omitted, all groups are returned, including empty groups.")]
         string? group_name = null,
-        CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.ListWatchlistAsync(group_name, cancellationToken)).ConfigureAwait(false);
+        [Description("Optional. 'items' (default) returns grouped items + quote enrichment; 'groups' returns group metadata only.")]
+        string? scope = null,
+        CancellationToken cancellationToken = default)
+    {
+        string normalizedScope = string.IsNullOrWhiteSpace(scope) ? "items" : scope.Trim().ToLowerInvariant();
+        if (normalizedScope != "items" && normalizedScope != "groups")
+            return McpJson.Error($"scope '{scope}' is not recognized. Use 'items' (default) or 'groups'.");
+        if (normalizedScope == "groups" && !string.IsNullOrWhiteSpace(group_name))
+            return McpJson.Error("scope='groups' does not accept group_name. Use scope='items' to filter items by group.");
+        return normalizedScope switch
+        {
+            "groups" => await SerializeAsync(async () => new { scope = "groups", groups = await portfolio.ListGroupsAsync(cancellationToken).ConfigureAwait(false) }).ConfigureAwait(false),
+            _ => await SerializeAsync(() => portfolio.ListWatchlistAsync(group_name, cancellationToken)).ConfigureAwait(false),
+        };
+    }
 
     // ---------------------- Themes ----------------------
 
