@@ -1711,6 +1711,156 @@
       ],
       "continuation": { "supported": true, "in_key_fields": ["idx"], "out_key_field_hint": "OutBlock.idx" },
       "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t1601",
+      "name": "투자자별 종합 (시간대별 매매주체별 매매수량)",
+      "category": "투자자",
+      "path": "/stock/investor",
+      "description": "시장 전체 매매주체별(개인/외국인/기관계/증권/투신/은행/보험/종금/기금/국가/기타/사모펀드) 누적 매수·매도·순매수·증감. 6개 OutBlock(LS 가이드에 명시적 라벨 없음 — KOSPI/KOSDAQ/선물/옵션 등 세그먼트). v0.7 A4-C `ls_get_investor_flow` (intraday mode) 백엔드. gubun3는 사용안함이지만 InBlock 필수 — 스페이스 전송.",
+      "in_blocks": [
+        {
+          "name": "t1601InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "gubun1", "type": "char", "description": "주식 금액/수량 구분 (1:수량 2:금액)", "required": true, "length": 1, "example": "1" },
+            { "name": "gubun2", "type": "char", "description": "옵션 금액/수량 구분 (1:수량 2:금액)", "required": true, "length": 1, "example": "1" },
+            { "name": "gubun3", "type": "char", "description": "금액단위 (사용안함 — 스페이스 전송)", "required": true, "length": 1 },
+            { "name": "gubun4", "type": "char", "description": "선물 금액/수량 구분 (1:수량 2:금액)", "required": true, "length": 1, "example": "1" },
+            { "name": "exchgubun", "type": "char", "description": "거래소구분 (K:KRX N:NXT U:통합)", "required": true, "length": 1, "example": "U" }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t1601OutBlock1",
+          "is_array": false,
+          "description": "세그먼트 1 (LS 가이드 라벨 없음). 6개 OutBlock이 동일 구조로 반복; KOSPI/KOSDAQ/선물/옵션 세그먼트 추정.",
+          "fields": [
+            { "name": "tjjcode_08", "type": "char", "description": "개인투자자코드 (관례적으로 빈 문자열)", "length": 4 },
+            { "name": "ms_08", "type": "int", "description": "개인 매수" },
+            { "name": "md_08", "type": "int", "description": "개인 매도" },
+            { "name": "rate_08", "type": "double", "description": "개인 증감" },
+            { "name": "svolume_08", "type": "int", "description": "개인 순매수" },
+            { "name": "jjcode_17", "type": "char", "description": "외국인투자자코드", "length": 4 },
+            { "name": "ms_17", "type": "int", "description": "외국인 매수" },
+            { "name": "md_17", "type": "int", "description": "외국인 매도" },
+            { "name": "rate_17", "type": "double", "description": "외국인 증감" },
+            { "name": "svolume_17", "type": "int", "description": "외국인 순매수" },
+            { "name": "jjcode_18", "type": "char", "description": "기관계투자자코드", "length": 4 },
+            { "name": "ms_18", "type": "int", "description": "기관계 매수" },
+            { "name": "md_18", "type": "int", "description": "기관계 매도" },
+            { "name": "rate_18", "type": "double", "description": "기관계 증감" },
+            { "name": "svolume_18", "type": "int", "description": "기관계 순매수" },
+            { "name": "jjcode_01", "type": "char", "description": "증권투자자코드", "length": 4 },
+            { "name": "ms_01", "type": "int", "description": "증권 매수" },
+            { "name": "md_01", "type": "int", "description": "증권 매도" },
+            { "name": "rate_01", "type": "double", "description": "증권 증감" },
+            { "name": "svolume_01", "type": "int", "description": "증권 순매수" },
+            { "name": "jjcode_03", "type": "char", "description": "투신투자자코드", "length": 4 },
+            { "name": "ms_03", "type": "int", "description": "투신 매수" },
+            { "name": "md_03", "type": "int", "description": "투신 매도" },
+            { "name": "rate_03", "type": "double", "description": "투신 증감" },
+            { "name": "svolume_03", "type": "int", "description": "투신 순매수" },
+            { "name": "jjcode_04", "type": "char", "description": "은행투자자코드", "length": 4 },
+            { "name": "ms_04", "type": "int", "description": "은행 매수" },
+            { "name": "md_04", "type": "int", "description": "은행 매도" },
+            { "name": "rate_04", "type": "double", "description": "은행 증감" },
+            { "name": "svolume_04", "type": "int", "description": "은행 순매수" },
+            { "name": "jjcode_02", "type": "char", "description": "보험투자자코드", "length": 4 },
+            { "name": "ms_02", "type": "int", "description": "보험 매수" },
+            { "name": "md_02", "type": "int", "description": "보험 매도" },
+            { "name": "rate_02", "type": "double", "description": "보험 증감" },
+            { "name": "svolume_02", "type": "int", "description": "보험 순매수" },
+            { "name": "jjcode_05", "type": "char", "description": "종금투자자코드", "length": 4 },
+            { "name": "ms_05", "type": "int", "description": "종금 매수" },
+            { "name": "md_05", "type": "int", "description": "종금 매도" },
+            { "name": "rate_05", "type": "double", "description": "종금 증감" },
+            { "name": "svolume_05", "type": "int", "description": "종금 순매수" },
+            { "name": "jjcode_06", "type": "char", "description": "기금투자자코드", "length": 4 },
+            { "name": "ms_06", "type": "int", "description": "기금 매수" },
+            { "name": "md_06", "type": "int", "description": "기금 매도" },
+            { "name": "rate_06", "type": "double", "description": "기금 증감" },
+            { "name": "svolume_06", "type": "int", "description": "기금 순매수" },
+            { "name": "jjcode_11", "type": "char", "description": "국가투자자코드", "length": 4 },
+            { "name": "ms_11", "type": "int", "description": "국가 매수" },
+            { "name": "md_11", "type": "int", "description": "국가 매도" },
+            { "name": "rate_11", "type": "double", "description": "국가 증감" },
+            { "name": "svolume_11", "type": "int", "description": "국가 순매수" },
+            { "name": "jjcode_07", "type": "char", "description": "기타투자자코드", "length": 4 },
+            { "name": "ms_07", "type": "int", "description": "기타 매수" },
+            { "name": "md_07", "type": "int", "description": "기타 매도" },
+            { "name": "rate_07", "type": "double", "description": "기타 증감" },
+            { "name": "svolume_07", "type": "int", "description": "기타 순매수" },
+            { "name": "jjcode_00", "type": "char", "description": "사모펀드투자자코드", "length": 4 },
+            { "name": "ms_00", "type": "int", "description": "사모펀드 매수" },
+            { "name": "md_00", "type": "int", "description": "사모펀드 매도" },
+            { "name": "rate_00", "type": "double", "description": "사모펀드 증감" },
+            { "name": "svolume_00", "type": "int", "description": "사모펀드 순매수" }
+          ]
+        },
+        { "name": "t1601OutBlock2", "is_array": false, "description": "세그먼트 2 (구조는 OutBlock1과 동일).", "fields": [] },
+        { "name": "t1601OutBlock3", "is_array": false, "description": "세그먼트 3 (구조는 OutBlock1과 동일).", "fields": [] },
+        { "name": "t1601OutBlock4", "is_array": false, "description": "세그먼트 4 (구조는 OutBlock1과 동일).", "fields": [] },
+        { "name": "t1601OutBlock5", "is_array": false, "description": "세그먼트 5 (구조는 OutBlock1과 동일).", "fields": [] },
+        { "name": "t1601OutBlock6", "is_array": false, "description": "세그먼트 6 (구조는 OutBlock1과 동일).", "fields": [] }
+      ],
+      "continuation": { "supported": false },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t1702",
+      "name": "외인기관 종목별 동향 (일별주체별 종목투자동향)",
+      "category": "외인/기관",
+      "path": "/stock/investor",
+      "description": "단일 종목의 일별 매매주체별 매수·매도·순매수(volvalgb/msmdgb/gubun로 모드 전환). v0.7 A4-C `ls_get_investor_flow` (daily mode) 백엔드. 사모펀드/증권/보험/투신/은행/종금/기금/기타법인/개인/등록외국인/미등록외국인/국가외 + 합산 컬럼(기관/외인계/기타계).",
+      "in_blocks": [
+        {
+          "name": "t1702InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "shcode", "type": "char", "description": "종목코드", "required": true, "length": 6 },
+            { "name": "fromdt", "type": "char", "description": "시작일자 YYYYMMDD", "required": true, "length": 8 },
+            { "name": "todt", "type": "char", "description": "종료일자 YYYYMMDD", "required": true, "length": 8 },
+            { "name": "volvalgb", "type": "char", "description": "금액/수량 구분 (0:금액 1:수량 2:단가)", "required": true, "length": 1 },
+            { "name": "msmdgb", "type": "char", "description": "매매방향 구분 (0:순매수 1:매수 2:매도)", "required": true, "length": 1 },
+            { "name": "gubun", "type": "char", "description": "누적 구분 (0:일간 1:누적)", "required": true, "length": 1 },
+            { "name": "exchgubun", "type": "char", "description": "거래소구분 (K:KRX N:NXT U:통합)", "required": true, "length": 1, "example": "U" }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t1702OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "date", "type": "char", "description": "일자 YYYYMMDD", "length": 8 },
+            { "name": "close", "type": "int", "description": "종가" },
+            { "name": "sign", "type": "char", "description": "전일대비구분", "length": 1 },
+            { "name": "change", "type": "int", "description": "전일대비 변화" },
+            { "name": "diff", "type": "double", "description": "등락률 (%)" },
+            { "name": "volume", "type": "int", "description": "누적 거래량" },
+            { "name": "tjj0000", "type": "int", "description": "사모펀드" },
+            { "name": "tjj0001", "type": "int", "description": "증권" },
+            { "name": "tjj0002", "type": "int", "description": "보험" },
+            { "name": "tjj0003", "type": "int", "description": "투신" },
+            { "name": "tjj0004", "type": "int", "description": "은행" },
+            { "name": "tjj0005", "type": "int", "description": "종금" },
+            { "name": "tjj0006", "type": "int", "description": "기금" },
+            { "name": "tjj0007", "type": "int", "description": "기타법인" },
+            { "name": "tjj0008", "type": "int", "description": "개인" },
+            { "name": "tjj0009", "type": "int", "description": "등록외국인" },
+            { "name": "tjj0010", "type": "int", "description": "미등록외국인" },
+            { "name": "tjj0011", "type": "int", "description": "국가외" },
+            { "name": "tjj0018", "type": "int", "description": "기관 합산" },
+            { "name": "tjj0016", "type": "int", "description": "외인계(등록+미등록) 합산" },
+            { "name": "tjj0017", "type": "int", "description": "기타계(기타+국가) 합산" },
+            { "name": "value", "type": "int", "description": "거래대금" }
+          ]
+        }
+      ],
+      "continuation": { "supported": false },
+      "rate_limit_per_sec": 1
     }
   ]
 }
