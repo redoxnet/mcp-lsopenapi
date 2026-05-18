@@ -57,7 +57,9 @@ public static class GetFundamentalsRankTool
 
         var rows = new List<FundamentalsRankRow>(count);
         int? totalAvailable = null;
-        string idx = "0";
+        // t3341 declares idx as Number (length 4); sending it as a JSON string
+        // ("0") triggers HTTP 500 from LS. Keep it as int across the loop.
+        int idx = 0;
         try
         {
             for (int page = 0; page < MaxPages && rows.Count < count; page++)
@@ -119,9 +121,9 @@ public static class GetFundamentalsRankTool
 
                 if (summary is null) break;
                 int nextIdx = (int)summary.Value.ReadLong("idx");
-                if (rows.Count == beforeCount || nextIdx == 0 || nextIdx.ToString() == idx)
+                if (rows.Count == beforeCount || nextIdx == 0 || nextIdx == idx)
                     break;
-                idx = nextIdx.ToString();
+                idx = nextIdx;
             }
         }
         catch (LsAuthException ex)
