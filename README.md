@@ -1,4 +1,4 @@
-<p align="right">
+﻿<p align="right">
   <strong>한국어</strong> · <a href="README.en.md">English</a>
 </p>
 
@@ -80,7 +80,7 @@ AI가 사전 계산된 ZigZag 변곡점 목록을 받아 *"2022-10 저점에서 
 
 `schema_version` 명시된 단일 JSON. 머지 모드(기본, 중복 skip + 사유 기록) / 교체 모드(`confirm=true` 필요, 덮어쓰기 직전 자동 백업). 캐시(`stocks`, `stock_themes`)는 export 대상 아님 — 시세 enrichment에서 자동 재구축.
 
-## 🆕 v0.5 — 내 포트폴리오, 노트패드처럼 기록
+## v0.5 — 내 포트폴리오, 노트패드처럼 기록
 
 여러 증권사 계좌, 매수/매도 기록, 액면분할 대응까지 — 별도 화면 없이 대화로 관리합니다.
 
