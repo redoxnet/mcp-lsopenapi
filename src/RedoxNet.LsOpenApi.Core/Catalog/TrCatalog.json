@@ -1861,6 +1861,40 @@
       ],
       "continuation": { "supported": false },
       "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t3202",
+      "name": "종목별 증시일정",
+      "category": "투자정보",
+      "path": "/stock/investinfo",
+      "description": "단일 종목의 주주총회/배당/유무상증자/감자/합병분할/스톡옵션행사 등 14종 코퍼레이트 액션 일정. v0.7 A4-C `ls_get_stock_events` 백엔드. recdt='00000000'은 일정 미정(TBD) 행 — wrapper에서 date_tbd=true로 표시. InBlock.date는 단일 anchor (범위 아님) — wrapper는 클라이언트 사이드로 from/to 필터.",
+      "in_blocks": [
+        {
+          "name": "t3202InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "shcode", "type": "char", "description": "종목코드", "required": true, "length": 6 },
+            { "name": "date", "type": "char", "description": "조회일자 YYYYMMDD (빈 값 = 전체)", "required": true, "length": 8 }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t3202OutBlock",
+          "is_array": true,
+          "fields": [
+            { "name": "recdt", "type": "char", "description": "기준일 YYYYMMDD ('00000000' = 일정 미정)", "length": 8 },
+            { "name": "tableid", "type": "char", "description": "테이블 ID", "length": 6 },
+            { "name": "upgu", "type": "char", "description": "업무구분 (01:유상증자 02:무상증자 03:배당 04:감자 05:합병/분할 06:매수청구 07:실권주 08:액면교체 09:주주총회 10:상호변경 11:국내CB전환 12:해외CB전환 13:해외BW행사 14:스톡옵션행사)", "length": 2 },
+            { "name": "custno", "type": "char", "description": "발행체번호", "length": 5 },
+            { "name": "custnm", "type": "char", "description": "발행회사명", "length": 80 },
+            { "name": "shcode", "type": "char", "description": "종목코드", "length": 6 },
+            { "name": "upunm", "type": "char", "description": "업무명", "length": 20 }
+          ]
+        }
+      ],
+      "continuation": { "supported": false },
+      "rate_limit_per_sec": 1
     }
   ]
 }
