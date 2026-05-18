@@ -887,6 +887,81 @@
       "rate_limit_per_sec": 1
     },
     {
+      "tr_code": "t3320",
+      "name": "FNG_요약 (투자정보 요약)",
+      "category": "투자정보",
+      "path": "/stock/investinfo",
+      "description": "지정 종목의 회사 프로필 + 시장구분 + FICS 산업분류명(upgubunnm) + 시가총액/주식수/외국인비율 + 펀더멘털(PER/PBR/ROE/EPS/BPS 등)을 일괄 반환. v0.7 A1 — `stocks.industry_raw`/`industry` enrichment 소스. **주의**: upgubunnm은 KRX 표준 산업분류가 아니라 FICS (Financial Industry Classification System) 형태 — 예: 'FICS 반도체 및 관련장비'. 1 TPS 제한 — bulk refresh는 holdings + watchlist 범위 권장. ETF/SPAC 등 회사 프로필 없는 종목은 rsp_cd=00000으로 응답하지만 OutBlock 필드들이 모두 빈 문자열/0으로 반환됨 (라이브 검증 2026-05-18).",
+      "in_blocks": [
+        {
+          "name": "t3320InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "gicode", "type": "char", "description": "단축종목코드 (6자리). LS 가이드는 7자리로 표기하나 라이브 검증 결과 6자리 shcode가 정상 응답이며 'A'+6자리 형식은 빈 응답을 받음 (rsp_cd=00000 거짓 OK). OutBlock1.gicode는 'A'+6자리 형식으로 echo되지만 입력은 6자리만 사용.", "required": true, "length": 6, "example": "005930" }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t3320OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "upgubunnm", "type": "char", "description": "FICS 산업분류명. 예: 'FICS 반도체 및 관련장비' / 'FICS 증권업'. 'FICS ' prefix 포함된 풀-네임 형식 (라이브 검증 2026-05-18). KRX 표준 산업분류와는 다른 체계 (FICS = Financial Industry Classification System). ETF/SPAC 등 회사 프로필 없는 종목은 빈 문자열.", "length": 40 },
+            { "name": "sijangcd", "type": "char", "description": "시장구분 (1자리 코드)", "length": 1 },
+            { "name": "marketnm", "type": "char", "description": "시장구분명 ('거래소'/'코스닥' 등)", "length": 10 },
+            { "name": "company", "type": "char", "description": "한글기업명", "length": 100 },
+            { "name": "baddress", "type": "char", "description": "본사주소", "length": 100 },
+            { "name": "btelno", "type": "char", "description": "본사전화번호", "length": 20 },
+            { "name": "gsyyyy", "type": "char", "description": "최근결산년도", "length": 4 },
+            { "name": "gsmm", "type": "char", "description": "결산월", "length": 2 },
+            { "name": "gsym", "type": "char", "description": "최근결산년월 (YYYYMM)", "length": 6 },
+            { "name": "lstprice", "type": "long", "description": "주당액면가" },
+            { "name": "gstock", "type": "long", "description": "주식수 (천주)" },
+            { "name": "homeurl", "type": "char", "description": "Homepage", "length": 50 },
+            { "name": "grdnm", "type": "char", "description": "그룹명 (지배기업/그룹사명)", "length": 30 },
+            { "name": "foreignratio", "type": "double", "description": "외국인 보유비율 (%, 소수점 2자리)" },
+            { "name": "irtel", "type": "char", "description": "주담전화 (IR 담당)", "length": 30 },
+            { "name": "capital", "type": "long", "description": "자본금 (억원)" },
+            { "name": "sigavalue", "type": "long", "description": "시가총액 (억원)" },
+            { "name": "cashsis", "type": "long", "description": "배당금 (원)" },
+            { "name": "cashrate", "type": "double", "description": "배당수익율 (%)" },
+            { "name": "price", "type": "long", "description": "현재가" },
+            { "name": "jnilclose", "type": "long", "description": "전일종가" },
+            { "name": "notice1", "type": "char", "description": "위험고지구분1_정리매매 (Y/N)", "length": 1 },
+            { "name": "notice2", "type": "char", "description": "위험고지구분2_투자위험 (Y/N)", "length": 1 },
+            { "name": "notice3", "type": "char", "description": "위험고지구분3_단기과열 (Y/N)", "length": 1 }
+          ]
+        },
+        {
+          "name": "t3320OutBlock1",
+          "is_array": false,
+          "fields": [
+            { "name": "gicode", "type": "char", "description": "기업코드 ('A'+6자리 형식, 예: 'A005930'). InBlock의 6자리 shcode와 다름.", "length": 7 },
+            { "name": "gsym", "type": "char", "description": "결산년월 (YYYYMM)", "length": 6 },
+            { "name": "gsgb", "type": "char", "description": "결산구분 (D=결산/Q=분기)", "length": 1 },
+            { "name": "per", "type": "double", "description": "PER" },
+            { "name": "eps", "type": "long", "description": "EPS" },
+            { "name": "pbr", "type": "double", "description": "PBR" },
+            { "name": "roa", "type": "double", "description": "ROA" },
+            { "name": "roe", "type": "double", "description": "ROE" },
+            { "name": "ebitda", "type": "double", "description": "EBITDA" },
+            { "name": "evebitda", "type": "double", "description": "EV/EBITDA" },
+            { "name": "par", "type": "double", "description": "액면가" },
+            { "name": "sps", "type": "double", "description": "SPS (주당 매출)" },
+            { "name": "cps", "type": "double", "description": "CPS (주당 현금흐름)" },
+            { "name": "bps", "type": "long", "description": "BPS (주당 순자산)" },
+            { "name": "t_per", "type": "double", "description": "T.PER (12M trailing)" },
+            { "name": "t_eps", "type": "long", "description": "T.EPS (12M trailing)" },
+            { "name": "peg", "type": "double", "description": "PEG" },
+            { "name": "t_peg", "type": "double", "description": "T.PEG" },
+            { "name": "t_gsym", "type": "char", "description": "최근분기년도 (YYYYMM)", "length": 6 }
+          ]
+        }
+      ],
+      "continuation": { "supported": false },
+      "rate_limit_per_sec": 1
+    },
+    {
       "tr_code": "t8407",
       "name": "주식 멀티 현재가 조회 API용",
       "category": "주식시세",
