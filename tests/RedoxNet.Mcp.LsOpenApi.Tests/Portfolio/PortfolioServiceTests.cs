@@ -556,6 +556,119 @@ public sealed class PortfolioServiceTests
         await act.Should().ThrowAsync<PortfolioValidationException>();
     }
 
+    // ---------- v0.7 A3: ls_stocks_refresh_metadata ----------
+
+    [Fact]
+    public async Task RefreshStockMetadataAsync_DefaultScope_RefreshesHoldingsAndWatchlistForBothKinds()
+    {
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        Account account = await repository.UpsertAccountAsync("AAA", "main", null, setDefault: false);
+        await repository.SetHoldingAsync(account.Id, "005930", 10, 70000, null);
+        await repository.AddWatchlistItemAsync("373220", "default", null, CancellationToken.None);
+        var quoteService = new FakeQuoteService(
+            themesPerSymbol: new Dictionary<string, IReadOnlyList<ThemeCatalogRow>>(StringComparer.Ordinal)
+            {
+                ["005930"] = new[] { new ThemeCatalogRow("0011", "반도체") },
+                // 373220 deliberately absent → empty themes (ETF-shaped response).
+            },
+            industryPerSymbol: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["005930"] = "FICS 반도체 및 관련장비",
+                ["373220"] = "FICS 2차전지",
+            });
+        var service = new PortfolioService(repository, quoteService);
+
+        RefreshMetadataResult result = await service.RefreshStockMetadataAsync(shcodes: null, kinds: null);
+
+        result.Kinds.Should().BeEquivalentTo("themes", "industry");
+        result.Refreshed.Should().HaveCount(2);
+        result.Refreshed.Should().AllSatisfy(r =>
+        {
+            r.ThemesUpdated.Should().BeTrue();
+            r.IndustryUpdated.Should().BeTrue();
+        });
+        result.Errors.Should().BeEmpty();
+        quoteService.GetStockThemesCallCount("005930").Should().Be(1);
+        quoteService.GetStockIndustryCallCount("373220").Should().Be(1);
+
+        // The cache write must be visible on read back.
+        IReadOnlyDictionary<string, StockIndustryRow> industries =
+            await repository.GetStockIndustriesBatchAsync(new[] { "005930", "373220" });
+        industries["005930"].Industry.Should().Be("반도체 및 관련장비");
+        industries["373220"].Industry.Should().Be("2차전지");
+    }
+
+    [Fact]
+    public async Task RefreshStockMetadataAsync_KindsScope_OnlyHitsRequestedTr()
+    {
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        Account account = await repository.UpsertAccountAsync("AAA", "main", null, setDefault: false);
+        await repository.SetHoldingAsync(account.Id, "005930", 10, 70000, null);
+        var quoteService = new FakeQuoteService(
+            themesPerSymbol: new Dictionary<string, IReadOnlyList<ThemeCatalogRow>>(StringComparer.Ordinal)
+            {
+                ["005930"] = new[] { new ThemeCatalogRow("0011", "반도체") },
+            },
+            industryPerSymbol: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["005930"] = "FICS 반도체 및 관련장비",
+            });
+        var service = new PortfolioService(repository, quoteService);
+
+        RefreshMetadataResult result = await service.RefreshStockMetadataAsync(
+            shcodes: new[] { "005930" }, kinds: new[] { "industry" });
+
+        result.Kinds.Should().BeEquivalentTo("industry");
+        result.Refreshed.Should().ContainSingle().Which.IndustryUpdated.Should().BeTrue();
+        result.Refreshed[0].ThemesUpdated.Should().BeFalse("themes not requested in this call");
+        quoteService.GetStockThemesCallCount("005930").Should().Be(0, "themes kind was filtered out");
+        quoteService.GetStockIndustryCallCount("005930").Should().Be(1);
+    }
+
+    [Fact]
+    public async Task RefreshStockMetadataAsync_LsThemeError_ReportedInErrorsListButIndustryStillUpdates()
+    {
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        Account account = await repository.UpsertAccountAsync("AAA", "main", null, setDefault: false);
+        await repository.SetHoldingAsync(account.Id, "005930", 10, 70000, null);
+        var quoteService = new FakeQuoteService(
+            stockThemesError: "no credentials",
+            industryPerSymbol: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["005930"] = "FICS 반도체 및 관련장비",
+            });
+        var service = new PortfolioService(repository, quoteService);
+
+        RefreshMetadataResult result = await service.RefreshStockMetadataAsync(shcodes: new[] { "005930" }, kinds: null);
+
+        result.Refreshed.Should().ContainSingle();
+        result.Refreshed[0].ThemesUpdated.Should().BeFalse("LS theme call returned an error");
+        result.Refreshed[0].IndustryUpdated.Should().BeTrue("industry kind is independent of themes failure");
+        result.Errors.Should().ContainSingle()
+            .Which.Should().BeEquivalentTo(new { Shcode = "005930", Kind = "themes", Error = "no credentials" });
+    }
+
+    [Fact]
+    public async Task RefreshStockMetadataAsync_UnknownKind_Rejected()
+    {
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        var service = new PortfolioService(repository, new FakeQuoteService());
+
+        Func<Task> act = () => service.RefreshStockMetadataAsync(
+            shcodes: new[] { "005930" }, kinds: new[] { "nonsense" });
+
+        await act.Should().ThrowAsync<PortfolioValidationException>()
+            .WithMessage("*themes*industry*");
+    }
+
     // ---------- v0.6.0 hot-fix coverage (dedup + Fix A + Fix B) ----------
 
     [Fact]

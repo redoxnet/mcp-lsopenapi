@@ -792,7 +792,106 @@ internal sealed class PortfolioService : IPortfolioService
         await EnrichIndustryAsync(normalized, cancellationToken).ConfigureAwait(false);
     }
 
-    async Task EnrichThemesAsync(string normalized, CancellationToken cancellationToken)
+    /// <inheritdoc />
+    public async Task<RefreshMetadataResult> RefreshStockMetadataAsync(
+        IReadOnlyList<string>? shcodes,
+        IReadOnlyList<string>? kinds,
+        CancellationToken cancellationToken = default)
+    {
+        bool wantThemes;
+        bool wantIndustry;
+        IReadOnlyList<string> effectiveKinds;
+        if (kinds is null || kinds.Count == 0)
+        {
+            wantThemes = true;
+            wantIndustry = true;
+            effectiveKinds = new[] { "themes", "industry" };
+        }
+        else
+        {
+            wantThemes = kinds.Any(k => string.Equals(k?.Trim(), "themes", StringComparison.OrdinalIgnoreCase));
+            wantIndustry = kinds.Any(k => string.Equals(k?.Trim(), "industry", StringComparison.OrdinalIgnoreCase));
+            if (!wantThemes && !wantIndustry)
+            {
+                throw new PortfolioValidationException(
+                    "kinds must contain at least one of 'themes' or 'industry'. Pass null/empty for all kinds.");
+            }
+            var seen = new List<string>(2);
+            if (wantThemes) seen.Add("themes");
+            if (wantIndustry) seen.Add("industry");
+            effectiveKinds = seen;
+        }
+
+        IReadOnlyList<string> targets;
+        if (shcodes is not null && shcodes.Count > 0)
+        {
+            targets = shcodes
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Select(s => s.Trim().ToUpperInvariant())
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+        }
+        else
+        {
+            // Default scope: holdings ∪ watchlist symbols. Same dedup the
+            // import-time enrichment path uses, just synchronous.
+            IReadOnlyList<Holding> allHoldings = await _repository.ListAllHoldingsAsync(cancellationToken).ConfigureAwait(false);
+            IReadOnlyList<WatchlistItem> watchlist = await _repository.ListWatchlistAsync(null, cancellationToken).ConfigureAwait(false);
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var symbols = new List<string>(allHoldings.Count + watchlist.Count);
+            foreach (Holding h in allHoldings)
+            {
+                if (seen.Add(h.Symbol))
+                    symbols.Add(h.Symbol);
+            }
+            foreach (WatchlistItem w in watchlist)
+            {
+                if (seen.Add(w.Symbol))
+                    symbols.Add(w.Symbol);
+            }
+            targets = symbols;
+        }
+
+        var refreshed = new List<RefreshedRow>(targets.Count);
+        var errors = new List<RefreshErrorRow>();
+        // Sequential per-symbol, per-kind. t1532 and t3320 are 1 TPS at the LS
+        // side; we keep the rate-limit pressure deterministic and avoid
+        // surprising the user with concurrent burst behaviour.
+        foreach (string symbol in targets)
+        {
+            bool themesUpdated = false;
+            bool industryUpdated = false;
+            if (wantThemes)
+            {
+                EnrichKindResult result = await EnrichThemesAsync(symbol, cancellationToken).ConfigureAwait(false);
+                themesUpdated = result.Updated;
+                if (!result.Updated && result.Error is not null)
+                    errors.Add(new RefreshErrorRow(symbol, "themes", result.Error));
+            }
+            if (wantIndustry)
+            {
+                EnrichKindResult result = await EnrichIndustryAsync(symbol, cancellationToken).ConfigureAwait(false);
+                industryUpdated = result.Updated;
+                if (!result.Updated && result.Error is not null)
+                    errors.Add(new RefreshErrorRow(symbol, "industry", result.Error));
+            }
+            refreshed.Add(new RefreshedRow(symbol, themesUpdated, industryUpdated));
+
+            // Mark the symbol as recently refreshed so concurrent fire-and-forget
+            // dispatch (e.g. from a write that happened mid-refresh) doesn't
+            // immediately re-pull within the cooldown window.
+            _enrichRecentlyDone[symbol] = DateTimeOffset.UtcNow;
+        }
+
+        return new RefreshMetadataResult(effectiveKinds, refreshed, errors);
+    }
+
+    /// <summary>Result of a single enrichment kind for one symbol. Used by both the fire-and-forget path (return ignored) and the synchronous A3 refresh.</summary>
+    /// <param name="Updated">True when the cache was written (including the fetched-but-empty marker). False on LS / repository failure.</param>
+    /// <param name="Error">Error message when Updated is false; null on success.</param>
+    internal readonly record struct EnrichKindResult(bool Updated, string? Error);
+
+    async Task<EnrichKindResult> EnrichThemesAsync(string normalized, CancellationToken cancellationToken)
     {
         StockThemesFetchResult fetched;
         try
@@ -806,7 +905,7 @@ internal sealed class PortfolioService : IPortfolioService
             _logger.LogWarning(ex,
                 "Theme enrichment fetch threw for {Symbol}; leaving stock_themes cache as-is (next write retries).",
                 normalized);
-            return;
+            return new EnrichKindResult(Updated: false, Error: ex.Message);
         }
 
         if (fetched.Error is not null)
@@ -816,22 +915,24 @@ internal sealed class PortfolioService : IPortfolioService
             _logger.LogDebug(
                 "Theme enrichment for {Symbol} skipped: {Error}",
                 normalized, fetched.Error);
-            return;
+            return new EnrichKindResult(Updated: false, Error: fetched.Error);
         }
 
         try
         {
             await _repository.ReplaceStockThemesAsync(normalized, fetched.Themes, cancellationToken).ConfigureAwait(false);
+            return new EnrichKindResult(Updated: true, Error: null);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex,
                 "Theme enrichment cache write failed for {Symbol} ({Count} themes).",
                 normalized, fetched.Themes.Count);
+            return new EnrichKindResult(Updated: false, Error: ex.Message);
         }
     }
 
-    async Task EnrichIndustryAsync(string normalized, CancellationToken cancellationToken)
+    async Task<EnrichKindResult> EnrichIndustryAsync(string normalized, CancellationToken cancellationToken)
     {
         StockIndustryFetchResult fetched;
         try
@@ -843,7 +944,7 @@ internal sealed class PortfolioService : IPortfolioService
             _logger.LogWarning(ex,
                 "Industry enrichment fetch threw for {Symbol}; leaving industry cache as-is (next refresh retries).",
                 normalized);
-            return;
+            return new EnrichKindResult(Updated: false, Error: ex.Message);
         }
 
         if (fetched.Error is not null)
@@ -851,7 +952,7 @@ internal sealed class PortfolioService : IPortfolioService
             _logger.LogDebug(
                 "Industry enrichment for {Symbol} skipped: {Error}",
                 normalized, fetched.Error);
-            return;
+            return new EnrichKindResult(Updated: false, Error: fetched.Error);
         }
 
         // Even when both Raw / Normalized are null (ETF/SPAC empty profile), persist
@@ -860,12 +961,14 @@ internal sealed class PortfolioService : IPortfolioService
         try
         {
             await _repository.UpsertStockIndustryAsync(normalized, fetched.Raw, fetched.Normalized, cancellationToken).ConfigureAwait(false);
+            return new EnrichKindResult(Updated: true, Error: null);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex,
                 "Industry enrichment cache write failed for {Symbol}.",
                 normalized);
+            return new EnrichKindResult(Updated: false, Error: ex.Message);
         }
     }
 

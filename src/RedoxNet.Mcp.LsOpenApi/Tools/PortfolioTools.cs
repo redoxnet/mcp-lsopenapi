@@ -285,6 +285,35 @@ internal static class PortfolioTools
         CancellationToken cancellationToken = default) =>
         await SerializeAsync(() => portfolio.ListHoldingsAsync(account, theme_code, theme_keyword, industry, cancellationToken)).ConfigureAwait(false);
 
+    // ---------------------- Metadata refresh ----------------------
+
+    [McpServerTool(Name = "ls_stocks_refresh_metadata")]
+    [Description("""
+        Synchronously refreshes the local metadata cache (themes / FICS industry) for the requested symbols. Blocks until every fetch completes — typical cold cost is ~1s per symbol per kind due to LS's 1 TPS limit on t1532 and t3320.
+
+        USE WHEN: the user explicitly asks to "다시 가져와", "업데이트해 줘", "refresh", or wants a known-bad cache row repaired right now without waiting for a write-path fire-and-forget.
+        AVOID WHEN: you're just listing holdings — the list path already dispatches enrichment in the background.
+
+        shcodes omitted → refreshes every symbol across holdings ∪ watchlist (deduplicated). Pass an explicit list for targeted refresh.
+        kinds omitted → refreshes BOTH themes and industry. Pass ["themes"] or ["industry"] to scope a single kind.
+
+        Response shape:
+          {
+            kinds: ["themes", "industry"],
+            refreshed: [{ shcode, themes_updated, industry_updated }, ...],
+            errors:    [{ shcode, kind, error }, ...]
+          }
+        themes_updated / industry_updated are TRUE when the cache landed (including fetched-but-empty sentinels for ETF / SPAC); errors lists per-(shcode, kind) failures.
+        """)]
+    public static async Task<string> StocksRefreshMetadata(
+        IPortfolioService portfolio,
+        [Description("Optional list of 6-char short codes. Omit to refresh every holding + watchlist symbol.")]
+        string[]? shcodes = null,
+        [Description("Optional subset of kinds to refresh: 'themes', 'industry'. Omit for both.")]
+        string[]? kinds = null,
+        CancellationToken cancellationToken = default) =>
+        await SerializeAsync(() => portfolio.RefreshStockMetadataAsync(shcodes, kinds, cancellationToken)).ConfigureAwait(false);
+
     // ---------------------- Corporate actions ----------------------
 
     /// <summary>

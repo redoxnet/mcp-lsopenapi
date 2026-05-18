@@ -56,6 +56,18 @@ internal interface IPortfolioService
     /// </summary>
     Task EnrichStockMetadataAsync(string symbol, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// v0.7 A3: synchronously refreshes the local metadata cache for one or
+    /// more symbols. Scope defaults to <c>holdings ∪ watchlist</c>; kinds
+    /// default to both <c>themes</c> and <c>industry</c>. Calls LS sequentially
+    /// per kind to keep rate-limit pressure deterministic. The returned envelope
+    /// reports which (shcode, kind) pairs landed in cache and which failed.
+    /// </summary>
+    Task<RefreshMetadataResult> RefreshStockMetadataAsync(
+        IReadOnlyList<string>? shcodes,
+        IReadOnlyList<string>? kinds,
+        CancellationToken cancellationToken = default);
+
     // -------- Portfolio I/O --------
 
     /// <summary>

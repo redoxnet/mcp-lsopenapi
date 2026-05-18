@@ -163,6 +163,29 @@ internal sealed record StockThemesFetchResult(IReadOnlyList<ThemeCatalogRow> The
 internal sealed record StockIndustryFetchResult(string? Raw, string? Normalized, string? Error);
 
 /// <summary>
+/// Per-symbol result row inside <c>ls_stocks_refresh_metadata</c>. Reports
+/// whether each metadata kind was written to the local cache during this
+/// blocking refresh call. A <c>true</c> for an "empty" kind (ETF with no
+/// industry / themes) still counts as updated — the fetched-but-empty
+/// marker is what stops perpetual re-dispatch.
+/// </summary>
+internal sealed record RefreshedRow(string Shcode, bool ThemesUpdated, bool IndustryUpdated);
+
+/// <summary>
+/// Per-symbol, per-kind failure inside <c>ls_stocks_refresh_metadata</c>.
+/// </summary>
+internal sealed record RefreshErrorRow(string Shcode, string Kind, string Error);
+
+/// <summary>
+/// Top-level envelope for <c>ls_stocks_refresh_metadata</c>. Both lists are
+/// always present (possibly empty) so the response shape is stable.
+/// </summary>
+internal sealed record RefreshMetadataResult(
+    IReadOnlyList<string> Kinds,
+    IReadOnlyList<RefreshedRow> Refreshed,
+    IReadOnlyList<RefreshErrorRow> Errors);
+
+/// <summary>
 /// Per-stock industry cache row used inside PortfolioService projections.
 /// Mirrors the <c>stocks.industry_*</c> columns. A row with both <see cref="IndustryRaw"/>
 /// and <see cref="Industry"/> null but <see cref="IndustryFetchedAt"/> populated is the
