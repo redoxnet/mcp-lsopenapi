@@ -1812,7 +1812,7 @@
       "tr_code": "t1702",
       "name": "외인기관 종목별 동향 (일별주체별 종목투자동향)",
       "category": "외인/기관",
-      "path": "/stock/investor",
+      "path": "/stock/frgr-itt",
       "description": "단일 종목의 일별 매매주체별 매수·매도·순매수(volvalgb/msmdgb/gubun로 모드 전환). v0.7 A4-C `ls_get_investor_flow` (daily mode) 백엔드. 사모펀드/증권/보험/투신/은행/종금/기금/기타법인/개인/등록외국인/미등록외국인/국가외 + 합산 컬럼(기관/외인계/기타계).",
       "in_blocks": [
         {

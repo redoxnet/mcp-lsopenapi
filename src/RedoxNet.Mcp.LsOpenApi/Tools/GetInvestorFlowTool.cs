@@ -41,12 +41,22 @@ public static class GetInvestorFlowTool
         new("private_equity",        "사모펀드", "00", "00"),
     };
 
+    /// <summary>Default investor subset surfaced when caller does not pin a list.</summary>
+    /// <remarks>
+    /// Most questions ("외인 매수?" / "기관 흐름") only need the three macro categories.
+    /// Drilling into 증권 / 투신 / 은행 / 보험 / 종금 / 기금 / 국가 / 기타 / 사모펀드 is
+    /// the exception, so default 3-of-12 cuts ~75% of token weight while keeping the
+    /// answers the model writes verbatim. Pass `investors=["all"]` (or any explicit
+    /// subset) to expand.
+    /// </remarks>
+    static readonly string[] DefaultInvestors = { "foreign", "institution_total", "individual" };
+
     [McpServerTool(Name = "ls_get_investor_flow")]
     [Description("""
-        Returns investor-type flow (개인 / 외국인 / 기관 / 증권 / 투신 / 은행 / 보험 / 종금 / 기금 / 국가 / 기타 / 사모펀드) in one of two modes.
+        Returns investor-type flow in one of two modes. Up to 12 LS-tracked investor categories are available (개인 / 외국인 / 기관계 / 증권 / 투신 / 은행 / 보험 / 종금 / 기금 / 국가 / 기타 / 사모펀드), but the wrapper surfaces only the three macro categories (`foreign`, `institution_total`, `individual`) by default to keep responses compact. Pass `investors=["all"]` or an explicit subset to expand.
 
-        - INTRADAY MARKET-WIDE MODE (`shcode` 미지정): wraps t1601. Returns one snapshot per market segment LS ships (KOSPI / KOSDAQ / 선물 / 옵션 등). LS does not label the segments in the wire response, so the wrapper surfaces them as `segments[].block_index = 1..6` with the raw OutBlock contents intact. Use this for *"지금 외인 / 기관 누가 사고 있어?"* style market commentary.
-        - SINGLE-STOCK DAILY MODE (`shcode` 지정): wraps t1702. Returns a daily time series of investor-type flow for the named stock. `fromdt` / `todt` clip the range; `direction` picks net / buy / sell (LS-side msmdgb); `metric` picks 수량 / 금액 / 단가; `cumulative=true` reports running totals instead of per-day deltas.
+        - INTRADAY MARKET-WIDE MODE (`shcode` 미지정): wraps t1601. Returns one snapshot per market segment LS ships (KOSPI / KOSDAQ / 선물 / 옵션 등). LS does not label the segments in the wire response, so the wrapper surfaces them as `segments[].block_index = 1..6` with each segment's selected investors as a `{kind: {buy, sell, net, change}}` map. Use this for *"지금 외인 / 기관 누가 사고 있어?"* style market commentary.
+        - SINGLE-STOCK DAILY MODE (`shcode` 지정): wraps t1702. Returns a daily time series of investor-type flow for the named stock plus a `summary` block (period totals + per-investor largest buy/sell day). `fromdt` / `todt` clip the range; `direction` picks net / buy / sell (LS-side msmdgb); `metric` picks 수량 / 금액 / 단가; `cumulative=true` reports running totals instead of per-day deltas.
 
         AVOID WHEN: the user wants top-N stocks by foreign / institution net buying — that's a separate ranking TR (t1471/t1717) not in v0.7. AVOID using daily mode without a shcode (will error).
 
@@ -72,16 +82,60 @@ public static class GetInvestorFlowTool
         bool cumulative = false,
         [Description("Exchange filter: 'unified' (통합 — default), 'krx', or 'nxt'.")]
         string exchange = "unified",
+        [Description("Investor categories to surface. Default is the three macro categories ['foreign','institution_total','individual']. Pass ['all'] to include all 12, or list specific kinds: securities, investment_trust, bank, insurance, merchant_bank, pension_fund, national, etc, private_equity.")]
+        string[]? investors = null,
         CancellationToken cancellationToken = default)
     {
         if (!TryResolveExchange(exchange, out string exchgubun, out string normalizedExchange))
             return McpJson.Error($"exchange '{exchange}' is not recognized. Use 'unified', 'krx', or 'nxt'.");
 
+        if (!TryResolveInvestors(investors, out IReadOnlyList<InvestorKind> selectedInvestors, out string? investorsError))
+            return McpJson.Error(investorsError!);
+
         if (string.IsNullOrWhiteSpace(shcode))
-            return await GetIntradayMarket(apiClient, unit, exchgubun, normalizedExchange, cancellationToken).ConfigureAwait(false);
+            return await GetIntradayMarket(apiClient, unit, exchgubun, normalizedExchange, selectedInvestors, cancellationToken).ConfigureAwait(false);
 
         string trimmed = shcode.Trim();
-        return await GetDailyStock(apiClient, trimmed, fromdt, todt, count, metric, direction, cumulative, exchgubun, normalizedExchange, cancellationToken).ConfigureAwait(false);
+        return await GetDailyStock(apiClient, trimmed, fromdt, todt, count, metric, direction, cumulative, exchgubun, normalizedExchange, selectedInvestors, cancellationToken).ConfigureAwait(false);
+    }
+
+    static bool TryResolveInvestors(string[]? raw, out IReadOnlyList<InvestorKind> selected, out string? error)
+    {
+        if (raw is null || raw.Length == 0)
+        {
+            selected = DefaultInvestors
+                .Select(code => Investors.First(k => k.Code == code))
+                .ToList();
+            error = null;
+            return true;
+        }
+
+        // Special token "all" expands to the full 12.
+        if (raw.Any(s => string.Equals(s?.Trim(), "all", StringComparison.OrdinalIgnoreCase)))
+        {
+            selected = Investors;
+            error = null;
+            return true;
+        }
+
+        var picked = new List<InvestorKind>(raw.Length);
+        foreach (string item in raw)
+        {
+            string trimmed = (item ?? "").Trim().ToLowerInvariant();
+            InvestorKind? kind = Investors.FirstOrDefault(k => k.Code == trimmed)
+                                ?? Investors.FirstOrDefault(k => string.Equals(k.Korean, item?.Trim(), StringComparison.Ordinal));
+            if (kind is null)
+            {
+                selected = Array.Empty<InvestorKind>();
+                error = $"investor '{item}' is not recognized. See the tool description for the supported set.";
+                return false;
+            }
+            if (!picked.Contains(kind))
+                picked.Add(kind);
+        }
+        selected = picked;
+        error = null;
+        return true;
     }
 
     static async Task<string> GetIntradayMarket(
@@ -89,6 +143,7 @@ public static class GetInvestorFlowTool
         string unit,
         string exchgubun,
         string normalizedExchange,
+        IReadOnlyList<InvestorKind> investors,
         CancellationToken cancellationToken)
     {
         if (!TryResolveIntradayUnit(unit, out string unitCode, out string normalizedUnit))
@@ -126,7 +181,7 @@ public static class GetInvestorFlowTool
                     continue;
                 segments.Add(new IntradaySegment(
                     BlockIndex: i,
-                    Investors: ReadIntradayInvestors(block.Value)));
+                    Investors: ReadIntradayInvestors(block.Value, investors)));
             }
 
             var payload = new InvestorFlowPayload
@@ -134,6 +189,7 @@ public static class GetInvestorFlowTool
                 Mode = "intraday",
                 Unit = normalizedUnit,
                 Exchange = normalizedExchange,
+                InvestorsShown = investors.Select(k => k.Code).ToArray(),
                 Segments = segments,
             };
             return JsonSerializer.Serialize(payload, McpJson.Tool);
@@ -159,6 +215,7 @@ public static class GetInvestorFlowTool
         bool cumulative,
         string exchgubun,
         string normalizedExchange,
+        IReadOnlyList<InvestorKind> investors,
         CancellationToken cancellationToken)
     {
         if (!TryResolveDailyMetric(metric, out string volvalgb, out string normalizedMetric))
@@ -210,9 +267,11 @@ public static class GetInvestorFlowTool
                         continue;
                     if (series.Count >= count)
                         break;
-                    series.Add(ReadDailyFlowPoint(row));
+                    series.Add(ReadDailyFlowPoint(row, investors));
                 }
             }
+
+            var summary = BuildDailySummary(series, investors);
 
             var payload = new InvestorFlowPayload
             {
@@ -224,6 +283,8 @@ public static class GetInvestorFlowTool
                 Direction = normalizedDirection,
                 Cumulative = cumulative,
                 Exchange = normalizedExchange,
+                InvestorsShown = investors.Select(k => k.Code).ToArray(),
+                Summary = summary,
                 TimeSeries = series,
             };
             return JsonSerializer.Serialize(payload, McpJson.Tool);
@@ -238,43 +299,78 @@ public static class GetInvestorFlowTool
         }
     }
 
-    static IReadOnlyList<IntradayInvestorRow> ReadIntradayInvestors(JsonElement block)
+    static DailySummary BuildDailySummary(IReadOnlyList<DailyFlowPoint> series, IReadOnlyList<InvestorKind> investors)
     {
-        var rows = new List<IntradayInvestorRow>(Investors.Count);
-        foreach (InvestorKind kind in Investors)
+        // Period totals + per-investor largest single-day buy/sell. Today's row
+        // can have all-zero flows when LS hasn't settled it yet — we count those
+        // days in trading_days but they contribute 0 to the totals (no-op).
+        var totals = new Dictionary<string, long>(investors.Count);
+        var biggestBuy = new Dictionary<string, FlowExtreme>(investors.Count);
+        var biggestSell = new Dictionary<string, FlowExtreme>(investors.Count);
+
+        foreach (InvestorKind kind in investors)
+        {
+            totals[kind.Code] = 0;
+        }
+
+        foreach (DailyFlowPoint point in series)
+        {
+            foreach (InvestorKind kind in investors)
+            {
+                if (!point.Flows.TryGetValue(kind.Code, out long value))
+                    continue;
+                totals[kind.Code] += value;
+
+                if (value > 0)
+                {
+                    if (!biggestBuy.TryGetValue(kind.Code, out FlowExtreme? prevBuy) || value > prevBuy.Value)
+                        biggestBuy[kind.Code] = new FlowExtreme(point.Date, value);
+                }
+                else if (value < 0)
+                {
+                    if (!biggestSell.TryGetValue(kind.Code, out FlowExtreme? prevSell) || value < prevSell.Value)
+                        biggestSell[kind.Code] = new FlowExtreme(point.Date, value);
+                }
+            }
+        }
+
+        return new DailySummary(
+            TradingDays: series.Count,
+            PeriodTotals: totals,
+            LargestBuyByInvestor: biggestBuy,
+            LargestSellByInvestor: biggestSell);
+    }
+
+    static IReadOnlyDictionary<string, IntradayInvestorRow> ReadIntradayInvestors(JsonElement block, IReadOnlyList<InvestorKind> investors)
+    {
+        var rows = new Dictionary<string, IntradayInvestorRow>(investors.Count);
+        foreach (InvestorKind kind in investors)
         {
             // t1601 uses code 17 for foreigners (registered only) — no aggregate.
             string suffix = kind.T1601Suffix;
-            rows.Add(new IntradayInvestorRow(
-                Kind: kind.Code,
-                KoreanLabel: kind.Korean,
+            rows[kind.Code] = new IntradayInvestorRow(
                 Buy: block.ReadLong($"ms_{suffix}"),
                 Sell: block.ReadLong($"md_{suffix}"),
                 Net: block.ReadLong($"svolume_{suffix}"),
-                Change: block.ReadDouble($"rate_{suffix}")));
+                Change: block.ReadDouble($"rate_{suffix}"));
         }
         return rows;
     }
 
-    static DailyFlowPoint ReadDailyFlowPoint(JsonElement row)
+    static DailyFlowPoint ReadDailyFlowPoint(JsonElement row, IReadOnlyList<InvestorKind> investors)
     {
-        // LS encodes change sign as a separate "sign" code (2/5 = up/down etc).
-        // The change/diff magnitudes are unsigned in some legacy responses, but
-        // t1702 in modern wire format ships them already signed; pass through as-is.
-        var flows = new List<DailyInvestorFlow>(Investors.Count);
-        foreach (InvestorKind kind in Investors)
+        // The change/diff magnitudes ship pre-signed on t1702 modern responses;
+        // we keep change_pct as the single delta signal (sign + change kept off
+        // the wire — caller can derive from change_pct).
+        var flows = new Dictionary<string, long>(investors.Count);
+        foreach (InvestorKind kind in investors)
         {
             string field = $"tjj00{kind.T1702Suffix.PadLeft(2, '0')}";
-            flows.Add(new DailyInvestorFlow(
-                Kind: kind.Code,
-                KoreanLabel: kind.Korean,
-                Value: row.ReadLong(field)));
+            flows[kind.Code] = row.ReadLong(field);
         }
         return new DailyFlowPoint(
             Date: row.ReadString("date")?.Trim() ?? "",
             Close: row.ReadDouble("close"),
-            Sign: row.ReadString("sign"),
-            Change: row.ReadDouble("change"),
             ChangePct: row.ReadDouble("diff"),
             Volume: row.ReadLong("volume"),
             Value: row.ReadLong("value"),
@@ -396,31 +492,34 @@ public static class GetInvestorFlowTool
 
         public string Exchange { get; init; } = "";
 
+        public IReadOnlyList<string> InvestorsShown { get; init; } = Array.Empty<string>();
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public DailySummary? Summary { get; init; }
+
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public IReadOnlyList<IntradaySegment>? Segments { get; init; }
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public IReadOnlyList<DailyFlowPoint>? TimeSeries { get; init; }
     }
 
-    sealed record IntradaySegment(int BlockIndex, IReadOnlyList<IntradayInvestorRow> Investors);
+    sealed record IntradaySegment(int BlockIndex, IReadOnlyDictionary<string, IntradayInvestorRow> Investors);
 
-    sealed record IntradayInvestorRow(
-        string Kind,
-        string KoreanLabel,
-        long Buy,
-        long Sell,
-        long Net,
-        double Change);
+    sealed record IntradayInvestorRow(long Buy, long Sell, long Net, double Change);
 
     sealed record DailyFlowPoint(
         string Date,
         double Close,
-        string? Sign,
-        double Change,
         double ChangePct,
         long Volume,
         long Value,
-        IReadOnlyList<DailyInvestorFlow> Flows);
+        IReadOnlyDictionary<string, long> Flows);
 
-    sealed record DailyInvestorFlow(string Kind, string KoreanLabel, long Value);
+    sealed record DailySummary(
+        int TradingDays,
+        IReadOnlyDictionary<string, long> PeriodTotals,
+        IReadOnlyDictionary<string, FlowExtreme> LargestBuyByInvestor,
+        IReadOnlyDictionary<string, FlowExtreme> LargestSellByInvestor);
+
+    sealed record FlowExtreme(string Date, long Value);
 }

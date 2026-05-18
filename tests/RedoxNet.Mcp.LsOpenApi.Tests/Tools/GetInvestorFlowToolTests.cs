@@ -85,7 +85,7 @@ public sealed class GetInvestorFlowToolTests
     });
 
     [Fact]
-    public async Task GetInvestorFlow_NoShcode_CallsT1601_DefaultsVolumeUnit()
+    public async Task GetInvestorFlow_NoShcode_CallsT1601_DefaultsVolumeUnit_AndThreeInvestors()
     {
         var (client, handler) = TestClientFactory.Create((_, _) => Ok(IntradayTwoSegmentSample));
 
@@ -104,15 +104,52 @@ public sealed class GetInvestorFlowToolTests
         root.GetProperty("mode").GetString().Should().Be("intraday");
         root.GetProperty("unit").GetString().Should().Be("volume");
         root.GetProperty("exchange").GetString().Should().Be("unified");
+        JsonElement investorsShown = root.GetProperty("investors_shown");
+        investorsShown.EnumerateArray().Select(e => e.GetString()).Should().BeEquivalentTo(new[] { "foreign", "institution_total", "individual" });
+
         JsonElement segments = root.GetProperty("segments");
         segments.GetArrayLength().Should().Be(2, "OutBlocks 3..6 are absent in the sample so only two segments surface");
         segments[0].GetProperty("block_index").GetInt32().Should().Be(1);
-        JsonElement firstInvestor = segments[0].GetProperty("investors")[0];
-        firstInvestor.GetProperty("kind").GetString().Should().Be("individual");
-        firstInvestor.GetProperty("korean_label").GetString().Should().Be("개인");
-        firstInvestor.GetProperty("net").GetInt64().Should().Be(-8398);
-        firstInvestor.GetProperty("buy").GetInt64().Should().Be(205539);
-        firstInvestor.GetProperty("sell").GetInt64().Should().Be(213937);
+        JsonElement investors = segments[0].GetProperty("investors");
+        investors.TryGetProperty("foreign", out _).Should().BeTrue();
+        investors.TryGetProperty("institution_total", out _).Should().BeTrue();
+        investors.TryGetProperty("individual", out _).Should().BeTrue();
+        investors.TryGetProperty("securities", out _).Should().BeFalse("subdivisions are off by default");
+
+        JsonElement individual = investors.GetProperty("individual");
+        individual.GetProperty("net").GetInt64().Should().Be(-8398);
+        individual.GetProperty("buy").GetInt64().Should().Be(205539);
+        individual.GetProperty("sell").GetInt64().Should().Be(213937);
+    }
+
+    [Fact]
+    public async Task GetInvestorFlow_InvestorsAll_ExpandsToTwelveTypes()
+    {
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(IntradayTwoSegmentSample));
+
+        string result = await GetInvestorFlowTool.GetInvestorFlow(client, investors: new[] { "all" });
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        root.GetProperty("investors_shown").GetArrayLength().Should().Be(12);
+        JsonElement firstSegment = root.GetProperty("segments")[0].GetProperty("investors");
+        firstSegment.TryGetProperty("securities", out _).Should().BeTrue("'all' opts in to subdivisions");
+        firstSegment.TryGetProperty("private_equity", out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetInvestorFlow_InvestorsExplicit_KeepsOrderAndRejectsUnknown()
+    {
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(IntradayTwoSegmentSample));
+
+        // Valid subset
+        string result = await GetInvestorFlowTool.GetInvestorFlow(client, investors: new[] { "pension_fund", "foreign" });
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+        root.GetProperty("investors_shown").EnumerateArray().Select(e => e.GetString())
+            .Should().BeEquivalentTo(new[] { "pension_fund", "foreign" });
+
+        // Unknown name → validation error
+        string err = await GetInvestorFlowTool.GetInvestorFlow(client, investors: new[] { "rubbish_kind" });
+        JsonDocument.Parse(err).RootElement.GetProperty("error").GetString().Should().Contain("rubbish_kind");
     }
 
     [Fact]
@@ -129,7 +166,7 @@ public sealed class GetInvestorFlowToolTests
     }
 
     [Fact]
-    public async Task GetInvestorFlow_WithShcode_CallsT1702_WithDefaultDailyArgs()
+    public async Task GetInvestorFlow_WithShcode_CallsT1702_WithDefaultDailyArgs_AndCompactFlows()
     {
         var (client, handler) = TestClientFactory.Create((_, _) => Ok(DailyThreeRowSample));
 
@@ -150,20 +187,54 @@ public sealed class GetInvestorFlowToolTests
         root.GetProperty("metric").GetString().Should().Be("volume");
         root.GetProperty("direction").GetString().Should().Be("net");
         root.GetProperty("cumulative").GetBoolean().Should().BeFalse();
+        root.GetProperty("investors_shown").GetArrayLength().Should().Be(3, "default macro categories only");
+
         JsonElement series = root.GetProperty("time_series");
         series.GetArrayLength().Should().Be(3);
         JsonElement first = series[0];
         first.GetProperty("date").GetString().Should().Be("20250805");
         first.GetProperty("close").GetDouble().Should().Be(3280);
         first.GetProperty("change_pct").GetDouble().Should().BeApproximately(1.86, 1e-2);
+        first.TryGetProperty("sign", out _).Should().BeFalse("sign dropped — change_pct is signed");
+        first.TryGetProperty("change", out _).Should().BeFalse("absolute change dropped — change_pct alone is enough");
+
         JsonElement flows = first.GetProperty("flows");
-        flows.GetArrayLength().Should().Be(12);
-        // Individual (개인) maps to tjj0008.
-        JsonElement individualFlow = flows.EnumerateArray().Single(e => e.GetProperty("kind").GetString() == "individual");
-        individualFlow.GetProperty("value").GetInt64().Should().Be(-554);
-        // Foreign (외국인) maps to tjj0016 combined registered+unregistered.
-        JsonElement foreignFlow = flows.EnumerateArray().Single(e => e.GetProperty("kind").GetString() == "foreign");
-        foreignFlow.GetProperty("value").GetInt64().Should().Be(387);
+        // Compact map shape, not array — kind names as keys.
+        flows.ValueKind.Should().Be(JsonValueKind.Object);
+        flows.GetProperty("individual").GetInt64().Should().Be(-554);
+        flows.GetProperty("foreign").GetInt64().Should().Be(387, "foreign maps to tjj0016 combined registered+unregistered");
+        flows.GetProperty("institution_total").GetInt64().Should().Be(171);
+        flows.TryGetProperty("securities", out _).Should().BeFalse("default skips subdivisions");
+    }
+
+    [Fact]
+    public async Task GetInvestorFlow_DailySummary_AggregatesPeriodTotalsAndExtremes()
+    {
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(DailyThreeRowSample));
+
+        string result = await GetInvestorFlowTool.GetInvestorFlow(client, shcode: "001200");
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        JsonElement summary = root.GetProperty("summary");
+        summary.GetProperty("trading_days").GetInt32().Should().Be(3);
+
+        // Foreign per-day: 387, 230, 1143 → total 1760.
+        JsonElement totals = summary.GetProperty("period_totals");
+        totals.GetProperty("foreign").GetInt64().Should().Be(1760);
+        // Individual: -554, -68, -1023 → total -1645.
+        totals.GetProperty("individual").GetInt64().Should().Be(-1645);
+
+        // Largest foreign buy = 1143 on 20250801.
+        JsonElement biggestBuy = summary.GetProperty("largest_buy_by_investor").GetProperty("foreign");
+        biggestBuy.GetProperty("date").GetString().Should().Be("20250801");
+        biggestBuy.GetProperty("value").GetInt64().Should().Be(1143);
+
+        // Foreign has no negative day in the fixture → no entry in sell extremes.
+        summary.GetProperty("largest_sell_by_investor").TryGetProperty("foreign", out _).Should().BeFalse();
+        // Individual largest sell = -1023 on 20250801.
+        JsonElement biggestSell = summary.GetProperty("largest_sell_by_investor").GetProperty("individual");
+        biggestSell.GetProperty("date").GetString().Should().Be("20250801");
+        biggestSell.GetProperty("value").GetInt64().Should().Be(-1023);
     }
 
     [Theory]
