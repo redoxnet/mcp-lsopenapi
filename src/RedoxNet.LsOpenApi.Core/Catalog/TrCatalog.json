@@ -1660,6 +1660,57 @@
       ],
       "continuation": { "supported": true, "in_key_fields": ["date"], "out_key_field_hint": "OutBlock1 마지막 row 의 date" },
       "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t3341",
+      "name": "재무순위종합",
+      "category": "투자정보",
+      "path": "/stock/investinfo",
+      "description": "재무 지표 순위 — 매출액증가율 / 영업이익증가율 / 세전계속이익증가율 / 부채비율 / 유보율 / EPS / BPS / ROE / PER / PBR / PEG 중 하나를 기준으로 종목 랭킹. PER / PBR / PEG는 LS-side 강제 오름차순 (저평가 종목 위주). v0.7 A4-C `ls_get_fundamentals_rank` wrapper의 백엔드.",
+      "in_blocks": [
+        {
+          "name": "t3341InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "gubun", "type": "char", "description": "시장구분 (0:전체 1:코스피 2:코스닥)", "required": true, "length": 1, "example": "0" },
+            { "name": "gubun1", "type": "char", "description": "순위구분 (1:매출액증가율 2:영업이익증가율 3:세전계속이익증가율 4:부채비율 5:유보율 6:EPS 7:BPS 8:ROE 9:PER(asc) a:PBR(asc) b:PEG(asc))", "required": true, "length": 1, "example": "9" },
+            { "name": "gubun2", "type": "char", "description": "대비구분 (현재 '1' 고정)", "required": true, "length": 1, "example": "1" },
+            { "name": "idx", "type": "int", "description": "페이징 offset. 첫 호출은 0 또는 스페이스; 다음 페이지는 직전 OutBlock.idx 값을 그대로 echo.", "required": true, "length": 4, "example": "0" }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t3341OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "cnt", "type": "int", "description": "조건에 맞는 전체 종목 수" },
+            { "name": "idx", "type": "int", "description": "다음 페이지 offset (페이지가 더 있을 때만 의미)" }
+          ]
+        },
+        {
+          "name": "t3341OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "rank", "type": "int", "description": "순위" },
+            { "name": "hname", "type": "char", "description": "기업명", "length": 20 },
+            { "name": "shcode", "type": "char", "description": "단축종목코드", "length": 6 },
+            { "name": "salesgrowth", "type": "double", "description": "매출액 증가율 (%)" },
+            { "name": "operatingincomegrowt", "type": "double", "description": "영업이익 증가율 (%) — 필드명 오타는 LS-as-shipped" },
+            { "name": "ordinaryincomegrowth", "type": "double", "description": "세전계속이익 증가율 (%)" },
+            { "name": "liabilitytoequity", "type": "double", "description": "부채비율 (%)" },
+            { "name": "enterpriseratio", "type": "double", "description": "유보율 (%)" },
+            { "name": "eps", "type": "double", "description": "EPS (원)" },
+            { "name": "bps", "type": "double", "description": "BPS (원)" },
+            { "name": "roe", "type": "double", "description": "ROE (%)" },
+            { "name": "per", "type": "double", "description": "PER" },
+            { "name": "pbr", "type": "double", "description": "PBR" },
+            { "name": "peg", "type": "double", "description": "PEG" }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "in_key_fields": ["idx"], "out_key_field_hint": "OutBlock.idx" },
+      "rate_limit_per_sec": 1
     }
   ]
 }
