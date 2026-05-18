@@ -922,15 +922,19 @@ internal sealed class PortfolioService : IPortfolioService
                 allQuoted = false;
             }
 
-            // Theme cache projection: rows present → "ok" (status omitted in
-            // envelope to save tokens); no rows → "pending" so the model can
-            // surface the freshness hint. A truly themeless stock will look
-            // pending until next-write retry — harmless false positive.
+            // Theme cache projection (v0.7 B2):
+            //   - key present + non-empty list → real memberships → emit themes.
+            //   - key present + empty list (sentinel filtered by the repository)
+            //     → fetched, theme-less symbol (ETF/SPAC) → omit both fields.
+            //   - key absent → enrichment never ran → "pending" so the model
+            //     can surface the freshness hint and the next list call retries.
             IReadOnlyList<ThemeCatalogRow>? themes = null;
             string? themesStatus = null;
-            if (themesMap.TryGetValue(holding.Symbol, out IReadOnlyList<StockTheme>? cached) && cached.Count > 0)
+            if (themesMap.TryGetValue(holding.Symbol, out IReadOnlyList<StockTheme>? cached))
             {
-                themes = cached.Select(t => new ThemeCatalogRow(t.ThemeCode, t.ThemeName)).ToList();
+                if (cached.Count > 0)
+                    themes = cached.Select(t => new ThemeCatalogRow(t.ThemeCode, t.ThemeName)).ToList();
+                // else: theme-less symbol, both fields stay null (omitted in JSON).
             }
             else
             {

@@ -10,6 +10,15 @@ namespace RedoxNet.Mcp.LsOpenApi.Portfolio;
 /// </summary>
 internal sealed class SqlitePortfolioRepository : IPortfolioRepository
 {
+    /// <summary>
+    /// Storage-internal theme_code marking a "fetched, no themes" cache entry.
+    /// v0.7 B2: ETFs and other theme-less symbols (t1532 returns []) get one
+    /// sentinel row so the cache key exists and ListHoldingsAsync stops
+    /// re-dispatching enrichment. The projection layer filters this out so
+    /// callers never see it in stock_themes batches.
+    /// </summary>
+    const string SentinelThemeCode = "__NONE__";
+
     /// <summary>Environment variable used to override the default database path.</summary>
     public const string DatabasePathEnvVar = "LSOPENAPI_DB_PATH";
     /// <summary>
@@ -865,29 +874,55 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
         // Ensure the FK target row exists before inserting stock_themes rows.
         await UpsertStockAsync(connection, normalizedSymbol, normalizedSymbol, "unknown", null, cancellationToken, updateExisting: false).ConfigureAwait(false);
 
+        // Wipe prior rows (real memberships + any prior sentinel) so the cache
+        // stays in sync with the latest fetch.
         await connection.ExecuteAsync(new CommandDefinition(
             "DELETE FROM stock_themes WHERE symbol = @Symbol;",
             new { Symbol = normalizedSymbol }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
 
+        // Materialise once so we can detect the "fetched-but-empty" case
+        // cleanly without iterating the source twice.
+        var effective = new List<ThemeCatalogRow>(themes.Count);
         foreach (ThemeCatalogRow theme in themes)
         {
-            if (string.IsNullOrWhiteSpace(theme.Code))
-                continue;
+            if (!string.IsNullOrWhiteSpace(theme.Code))
+                effective.Add(theme);
+        }
+
+        if (effective.Count == 0)
+        {
+            // v0.7 B2: ETF/SPAC and other theme-less symbols (t1532 returns [])
+            // record a sentinel row so themesMap.ContainsKey is true and the
+            // list path stops re-dispatching enrichment forever. Projection in
+            // GetStockThemesBatchAsync filters this row out of the returned set.
             await connection.ExecuteAsync(new CommandDefinition(
                 """
                 INSERT INTO stock_themes(symbol, theme_code, theme_name, updated_at)
-                VALUES (@Symbol, @ThemeCode, @ThemeName, datetime('now'))
-                ON CONFLICT(symbol, theme_code) DO UPDATE SET
-                    theme_name = excluded.theme_name,
-                    updated_at = datetime('now');
+                VALUES (@Symbol, @ThemeCode, '', datetime('now'));
                 """,
-                new
-                {
-                    Symbol = normalizedSymbol,
-                    ThemeCode = theme.Code.Trim().ToUpperInvariant(),
-                    ThemeName = (theme.Name ?? "").Trim(),
-                },
+                new { Symbol = normalizedSymbol, ThemeCode = SentinelThemeCode },
                 transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        else
+        {
+            foreach (ThemeCatalogRow theme in effective)
+            {
+                await connection.ExecuteAsync(new CommandDefinition(
+                    """
+                    INSERT INTO stock_themes(symbol, theme_code, theme_name, updated_at)
+                    VALUES (@Symbol, @ThemeCode, @ThemeName, datetime('now'))
+                    ON CONFLICT(symbol, theme_code) DO UPDATE SET
+                        theme_name = excluded.theme_name,
+                        updated_at = datetime('now');
+                    """,
+                    new
+                    {
+                        Symbol = normalizedSymbol,
+                        ThemeCode = theme.Code.Trim().ToUpperInvariant(),
+                        ThemeName = (theme.Name ?? "").Trim(),
+                    },
+                    transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            }
         }
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -1305,7 +1340,14 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
         var result = new Dictionary<string, IReadOnlyList<StockTheme>>(StringComparer.Ordinal);
         foreach (IGrouping<string, StockTheme> group in rows.GroupBy(r => r.Symbol, StringComparer.Ordinal))
         {
-            result[group.Key] = group.ToList();
+            // v0.7 B2: sentinel rows record "fetched, no themes" — preserve the
+            // dictionary key so callers stop re-dispatching, but strip the
+            // sentinel from the returned list so it never reaches the response
+            // envelope.
+            var filtered = group
+                .Where(t => !string.Equals(t.ThemeCode, SentinelThemeCode, StringComparison.Ordinal))
+                .ToList();
+            result[group.Key] = filtered;
         }
         return result;
     }

@@ -308,6 +308,32 @@ public sealed class PortfolioServiceTests
     }
 
     [Fact]
+    public async Task ListHoldingsAsync_EtfAfterEmptyEnrichment_OmitsThemesAndStaysFullyEnriched()
+    {
+        // v0.7 B2: ETFs return [] from t1532. ReplaceStockThemesAsync writes a
+        // sentinel row so themesMap.ContainsKey is true and ListHoldingsAsync
+        // treats it as cache hit with no memberships — themes / themes_status
+        // are both omitted and MetadataFreshness does not count the ETF as
+        // pending. Before the fix this row stayed perpetually "pending" and
+        // re-fired enrichment on every list call past the 60s cooldown.
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        Account account = await repository.UpsertAccountAsync("AAA", "main", null, setDefault: false);
+        await repository.SetHoldingAsync(account.Id, "069500", 50, 32000, null); // KODEX 200 ETF
+        await repository.ReplaceStockThemesAsync("069500", Array.Empty<ThemeCatalogRow>());
+        var service = new PortfolioService(repository, new FakeQuoteService());
+
+        HoldingListResult result = await service.ListHoldingsAsync(accountIdentifier: null);
+
+        result.MetadataFreshness!.FullyEnriched.Should().BeTrue("sentinel row marks enrichment as completed even with zero themes");
+        result.MetadataFreshness.Pending.Should().NotContainKey("themes");
+        HoldingWithQuote etf = result.Accounts[0].Holdings.Single(h => h.Shcode == "069500");
+        etf.Themes.Should().BeNull("theme-less symbols omit the themes array");
+        etf.ThemesStatus.Should().BeNull("theme-less symbols do not report pending after enrichment");
+    }
+
+    [Fact]
     public async Task ListHoldingsAsync_ThemeCodeFilter_KeepsExactMatches()
     {
         await using TestDatabase db = new();

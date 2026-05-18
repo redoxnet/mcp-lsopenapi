@@ -339,6 +339,44 @@ public sealed class SqlitePortfolioRepositoryTests
     }
 
     [Fact]
+    public async Task ReplaceStockThemesAsync_EmptyArray_KeepsSymbolInBatchResultWithEmptyList()
+    {
+        // v0.7 B2: ETFs return [] from t1532. A sentinel row records the fetch
+        // so themesMap.ContainsKey is true (no perpetual re-dispatch) while the
+        // projection layer still surfaces the symbol with an empty theme list.
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+
+        await repository.ReplaceStockThemesAsync("069500", Array.Empty<ThemeCatalogRow>());
+
+        IReadOnlyDictionary<string, IReadOnlyList<StockTheme>> result =
+            await repository.GetStockThemesBatchAsync(new[] { "069500" });
+
+        result.Should().ContainKey("069500", "sentinel row keeps the symbol in the cache hit set");
+        result["069500"].Should().BeEmpty("sentinel is stripped from the returned list — caller sees an empty membership set");
+    }
+
+    [Fact]
+    public async Task ReplaceStockThemesAsync_EmptyAfterReal_SwitchesSymbolToSentinel()
+    {
+        // Defensive: a real-themes fetch followed by an empty refetch (rare —
+        // e.g. theme catalog re-organisation) should leave the symbol cached
+        // with an empty list, not the stale memberships.
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        await repository.ReplaceStockThemesAsync("005930", new[] { new ThemeCatalogRow("0011", "반도체") });
+
+        await repository.ReplaceStockThemesAsync("005930", Array.Empty<ThemeCatalogRow>());
+
+        IReadOnlyDictionary<string, IReadOnlyList<StockTheme>> result =
+            await repository.GetStockThemesBatchAsync(new[] { "005930" });
+        result.Should().ContainKey("005930");
+        result["005930"].Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task GetStockThemesBatchAsync_GroupsBySymbolAndOmitsAbsentSymbols()
     {
         await using TestDatabase db = new();
