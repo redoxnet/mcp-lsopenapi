@@ -109,11 +109,18 @@ internal interface IPortfolioRepository
     Task<IReadOnlyList<Holding>> ListAllHoldingsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Applies a corporate action multiplier to a single holding. Quantity is multiplied by
-    /// <paramref name="qtyMultiplier"/> and average price by <paramref name="priceMultiplier"/>.
-    /// Caller is responsible for divisibility checks on integer share counts.
+    /// Applies a corporate action to a single holding using a rational quantity ratio
+    /// (<paramref name="qtyNum"/>/<paramref name="qtyDen"/>). Price is adjusted by the
+    /// reciprocal so cost basis is preserved. Storage is integer fractional-won so the
+    /// primary case (split↔reverse_split with integer ratios) round-trips exactly when
+    /// the starting value is divisible by the split factor at fr resolution.
+    /// Throws <see cref="ArgumentOutOfRangeException"/> when quantity doesn't divide
+    /// evenly so reverse_split of a non-divisible position fails fast.
     /// </summary>
-    Task<Holding?> ApplyCorporateActionAsync(long accountId, string symbol, double qtyMultiplier, double priceMultiplier, CancellationToken cancellationToken = default);
+    Task<Holding?> ApplyCorporateActionAsync(
+        long accountId, string symbol,
+        long qtyNum, long qtyDen,
+        CancellationToken cancellationToken = default);
 
     // -------- Stock metadata cache --------
 

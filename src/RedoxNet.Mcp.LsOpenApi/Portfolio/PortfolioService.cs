@@ -408,22 +408,42 @@ internal sealed class PortfolioService : IPortfolioService
     {
         if (ratio < 2)
             throw new PortfolioValidationException("split ratio must be 2 or greater.");
-        return ApplyCorporateActionAsync(symbol, "split", ratio, qtyMultiplier: ratio, priceMultiplier: 1.0 / ratio, accountIdentifier, cancellationToken);
+        return ApplyCorporateActionAsync(symbol, "split", ratio, qtyNum: ratio, qtyDen: 1, accountIdentifier, cancellationToken);
     }
 
     public Task<CorporateActionResult> ReverseSplitHoldingAsync(string symbol, int ratio, string? accountIdentifier, CancellationToken cancellationToken = default)
     {
         if (ratio < 2)
             throw new PortfolioValidationException("reverse-split ratio must be 2 or greater.");
-        return ApplyCorporateActionAsync(symbol, "reverse_split", ratio, qtyMultiplier: 1.0 / ratio, priceMultiplier: ratio, accountIdentifier, cancellationToken);
+        return ApplyCorporateActionAsync(symbol, "reverse_split", ratio, qtyNum: 1, qtyDen: ratio, accountIdentifier, cancellationToken);
     }
 
     public Task<CorporateActionResult> BonusHoldingAsync(string symbol, double ratio, string? accountIdentifier, CancellationToken cancellationToken = default)
     {
         if (ratio <= 0)
             throw new PortfolioValidationException("bonus ratio must be positive.");
-        double multiplier = 1.0 + ratio;
-        return ApplyCorporateActionAsync(symbol, "bonus", ratio, qtyMultiplier: multiplier, priceMultiplier: 1.0 / multiplier, accountIdentifier, cancellationToken);
+        // Convert (1 + ratio) into a rational with ≤4 decimal digits — matches the storage
+        // resolution (fractional won ×10000). Bonus ratios in practice are clean decimals
+        // (0.1, 0.05, 0.5), so the resulting num/den stays small after gcd reduction.
+        (long mulNum, long mulDen) = BonusMultiplierToRational(ratio);
+        return ApplyCorporateActionAsync(symbol, "bonus", ratio, qtyNum: mulNum, qtyDen: mulDen, accountIdentifier, cancellationToken);
+    }
+
+    static (long Num, long Den) BonusMultiplierToRational(double ratio)
+    {
+        decimal mul = 1m + (decimal)ratio;
+        const long resolution = 10_000;
+        long num = (long)decimal.Round(mul * resolution, MidpointRounding.AwayFromZero);
+        long den = resolution;
+        long g = Gcd(num, den);
+        return (num / g, den / g);
+    }
+
+    static long Gcd(long a, long b)
+    {
+        a = Math.Abs(a); b = Math.Abs(b);
+        while (b != 0) (a, b) = (b, a % b);
+        return a == 0 ? 1 : a;
     }
 
     // -------- Portfolio I/O --------
@@ -585,8 +605,8 @@ internal sealed class PortfolioService : IPortfolioService
         string symbol,
         string actionName,
         double ratio,
-        double qtyMultiplier,
-        double priceMultiplier,
+        long qtyNum,
+        long qtyDen,
         string? accountIdentifier,
         CancellationToken cancellationToken)
     {
@@ -615,7 +635,7 @@ internal sealed class PortfolioService : IPortfolioService
             Holding? after;
             try
             {
-                after = await _repository.ApplyCorporateActionAsync(account.Id, symbol, qtyMultiplier, priceMultiplier, cancellationToken).ConfigureAwait(false);
+                after = await _repository.ApplyCorporateActionAsync(account.Id, symbol, qtyNum, qtyDen, cancellationToken).ConfigureAwait(false);
             }
             catch (ArgumentOutOfRangeException ex)
             {

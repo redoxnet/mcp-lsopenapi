@@ -138,7 +138,8 @@ public sealed class SqlitePortfolioRepositoryTests
         first.Quantity.Should().Be(10);
         first.AvgPrice.Should().Be(70000);
         second.Quantity.Should().Be(15);
-        second.AvgPrice.Should().BeApproximately((10 * 70000 + 5 * 80000) / 15.0, 1e-6);
+        // v0.7 stores avg_price as fractional won (×10000); 1_100_000 / 15 rounds to 73333.3333.
+        second.AvgPrice.Should().BeApproximately((10 * 70000 + 5 * 80000) / 15.0, 1.0 / Holding.AvgPriceScale);
     }
 
     [Fact]
@@ -150,10 +151,10 @@ public sealed class SqlitePortfolioRepositoryTests
         Account account = await repository.UpsertAccountAsync("AAA", "main", null, setDefault: false);
         await repository.SetHoldingAsync(account.Id, "005930", 10, 2500000, null);
 
-        Holding? after = await repository.ApplyCorporateActionAsync(account.Id, "005930", qtyMultiplier: 50, priceMultiplier: 1.0 / 50);
+        Holding? after = await repository.ApplyCorporateActionAsync(account.Id, "005930", qtyNum: 50, qtyDen: 1);
 
         after!.Quantity.Should().Be(500);
-        after.AvgPrice.Should().BeApproximately(50000, 1e-3);
+        after.AvgPrice.Should().Be(50000);
     }
 
     [Fact]
@@ -165,11 +166,32 @@ public sealed class SqlitePortfolioRepositoryTests
         Account account = await repository.UpsertAccountAsync("AAA", "main", null, setDefault: false);
         await repository.SetHoldingAsync(account.Id, "005930", 7, 50000, null);
 
-        Func<Task> act = () => repository.ApplyCorporateActionAsync(account.Id, "005930", qtyMultiplier: 1.0 / 3, priceMultiplier: 3);
+        Func<Task> act = () => repository.ApplyCorporateActionAsync(account.Id, "005930", qtyNum: 1, qtyDen: 3);
 
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
         Holding? unchanged = await repository.GetHoldingAsync(account.Id, "005930");
         unchanged!.Quantity.Should().Be(7);
+    }
+
+    [Fact]
+    public async Task CorporateAction_SplitReverseSplitRoundTrip_ExactInIntegerStorage()
+    {
+        // v0.7 B1 fix: v0.6 stored avg_price as REAL so 1_003_502 → split(10) →
+        // reverse_split(10) drifted by 1e-10. v0.7 stores fractional won as INTEGER
+        // and uses rational math, so identical round-trips are exact.
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        Account account = await repository.UpsertAccountAsync("AAA", "main", null, setDefault: false);
+        await repository.SetHoldingAsync(account.Id, "005930", 100, 1_003_502, null);
+
+        Holding? afterSplit = await repository.ApplyCorporateActionAsync(account.Id, "005930", qtyNum: 10, qtyDen: 1);
+        afterSplit!.Quantity.Should().Be(1000);
+        afterSplit.AvgPrice.Should().Be(100_350.2);
+
+        Holding? afterReverse = await repository.ApplyCorporateActionAsync(account.Id, "005930", qtyNum: 1, qtyDen: 10);
+        afterReverse!.Quantity.Should().Be(100);
+        afterReverse.AvgPrice.Should().Be(1_003_502, "integer fractional-won storage round-trips split↔reverse_split exactly");
     }
 
     [Fact]

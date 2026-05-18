@@ -111,7 +111,8 @@ public sealed class PortfolioServiceTests
         HoldingWriteResult second = await service.BuyHoldingAsync("005930", 5, 80000, accountIdentifier: null);
 
         second.Quantity.Should().Be(15);
-        second.AvgPrice.Should().BeApproximately((10 * 70000 + 5 * 80000) / 15.0, 1e-6);
+        // v0.7 stores avg_price as fractional won (×10000); 1_100_000 / 15 rounds to 73333.3333.
+        second.AvgPrice.Should().BeApproximately((10 * 70000 + 5 * 80000) / 15.0, 1.0 / Holding.AvgPriceScale);
         second.AppliedTo.AccountNumber.Should().Be("AAA");
     }
 

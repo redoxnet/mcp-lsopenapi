@@ -78,9 +78,29 @@ internal sealed class Holding
     public string Name { get; init; } = "";
     public string Market { get; init; } = "";
     public int Quantity { get; init; }
-    public double AvgPrice { get; init; }
+
+    /// <summary>
+    /// Average price as fractional won (×<see cref="AvgPriceScale"/>). v0.7 schema v4 stores
+    /// this as <c>INTEGER</c> so split↔reverse_split round-trips are exact and cost basis math
+    /// stays drift-free. Materialised directly from the <c>avg_price</c> column.
+    /// </summary>
+    public long AvgPriceFr { get; init; }
+
+    /// <summary>Multiplier converting won to fractional-won storage. 1 won = 10000 fr.</summary>
+    public const long AvgPriceScale = 10_000;
+
+    /// <summary>
+    /// Average price in won (display form). Computed from <see cref="AvgPriceFr"/>; do not
+    /// use for arithmetic that needs to be reversible. Internal math should stay in fr.
+    /// </summary>
+    public double AvgPrice => AvgPriceFr / (double)AvgPriceScale;
+
     public string? Notes { get; init; }
     public string UpdatedAt { get; init; } = "";
+
+    /// <summary>Converts a won price (e.g. user input) to fractional-won storage.</summary>
+    public static long ToFractionalWon(double won) =>
+        (long)Math.Round(won * AvgPriceScale, MidpointRounding.AwayFromZero);
 }
 
 /// <summary>

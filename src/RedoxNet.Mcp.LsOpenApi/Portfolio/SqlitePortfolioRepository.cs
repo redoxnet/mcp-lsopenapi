@@ -112,6 +112,30 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
             CREATE INDEX idx_stock_themes_theme_code ON stock_themes(theme_code);
             CREATE INDEX idx_stock_themes_theme_name ON stock_themes(theme_name);
             """),
+        (4, """
+            -- v0.7 B1: migrate holdings.avg_price from REAL to INTEGER fractional won
+            -- (×10000). v0.6 round-trips of split↔reverse_split drifted by 1e-10 because
+            -- the column held IEEE 754 doubles; v0.7 service-layer math is rational
+            -- (qtyNum/qtyDen) and storage is integer so identical round-trips are exact.
+            CREATE TABLE holdings_new (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                symbol     TEXT NOT NULL REFERENCES stocks(symbol),
+                quantity   INTEGER NOT NULL CHECK(quantity >= 0),
+                avg_price  INTEGER NOT NULL CHECK(avg_price >= 0),
+                notes      TEXT,
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(account_id, symbol)
+            );
+            INSERT INTO holdings_new (id, account_id, symbol, quantity, avg_price, notes, updated_at)
+            SELECT id, account_id, symbol, quantity,
+                   CAST(ROUND(avg_price * 10000) AS INTEGER),
+                   notes, updated_at
+            FROM holdings;
+            DROP TABLE holdings;
+            ALTER TABLE holdings_new RENAME TO holdings;
+            CREATE INDEX IF NOT EXISTS idx_holdings_symbol ON holdings(symbol);
+            """),
     ];
 
     readonly string _databasePath;
@@ -591,6 +615,7 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
             throw new ArgumentOutOfRangeException(nameof(avgPrice), "Average price must be non-negative.");
 
         string normalizedSymbol = NormalizeSymbol(symbol);
+        long avgPriceFr = Holding.ToFractionalWon(avgPrice);
         await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await EnsureStockAsync(connection, normalizedSymbol, cancellationToken).ConfigureAwait(false);
         await connection.ExecuteAsync(new CommandDefinition(
@@ -603,7 +628,7 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
                 notes = excluded.notes,
                 updated_at = datetime('now');
             """,
-            new { AccountId = accountId, Symbol = normalizedSymbol, Quantity = quantity, AvgPrice = avgPrice, Notes = NullIfWhiteSpace(notes) },
+            new { AccountId = accountId, Symbol = normalizedSymbol, Quantity = quantity, AvgPrice = avgPriceFr, Notes = NullIfWhiteSpace(notes) },
             cancellationToken: cancellationToken)).ConfigureAwait(false);
         return await GetHoldingAsync(connection, accountId, normalizedSymbol, cancellationToken).ConfigureAwait(false)
                ?? throw new InvalidOperationException("Failed to upsert holding.");
@@ -624,19 +649,23 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
         await EnsureStockAsync(connection, normalizedSymbol, cancellationToken).ConfigureAwait(false);
 
         Holding? existing = await GetHoldingAsync(connection, accountId, normalizedSymbol, cancellationToken, transaction).ConfigureAwait(false);
+        long buyAvgFr = Holding.ToFractionalWon(price);
         int newQty;
-        double newAvg;
+        long newAvgFr;
         if (existing is null)
         {
             newQty = quantity;
-            newAvg = price;
+            newAvgFr = buyAvgFr;
         }
         else
         {
             newQty = existing.Quantity + quantity;
-            double existingCost = existing.Quantity * existing.AvgPrice;
-            double buyCost = quantity * price;
-            newAvg = newQty == 0 ? 0 : (existingCost + buyCost) / newQty;
+            // Weighted average in fractional-won integer math. Total cost stays exact;
+            // the only rounding is one division at the end, round-half-up.
+            long existingCostFr = checked((long)existing.Quantity * existing.AvgPriceFr);
+            long buyCostFr = checked((long)quantity * buyAvgFr);
+            long sumFr = checked(existingCostFr + buyCostFr);
+            newAvgFr = newQty == 0 ? 0 : (sumFr + newQty / 2) / newQty;
         }
 
         await connection.ExecuteAsync(new CommandDefinition(
@@ -648,7 +677,7 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
                 avg_price = excluded.avg_price,
                 updated_at = datetime('now');
             """,
-            new { AccountId = accountId, Symbol = normalizedSymbol, Quantity = newQty, AvgPrice = newAvg },
+            new { AccountId = accountId, Symbol = normalizedSymbol, Quantity = newQty, AvgPrice = newAvgFr },
             transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         Holding result = await GetHoldingAsync(connection, accountId, normalizedSymbol, cancellationToken, transaction).ConfigureAwait(false)
@@ -730,7 +759,7 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
             """
             SELECT h.id AS Id, h.account_id AS AccountId, h.symbol AS Symbol,
                    s.name AS Name, s.market AS Market,
-                   h.quantity AS Quantity, h.avg_price AS AvgPrice, h.notes AS Notes, h.updated_at AS UpdatedAt
+                   h.quantity AS Quantity, h.avg_price AS AvgPriceFr, h.notes AS Notes, h.updated_at AS UpdatedAt
             FROM holdings h
             JOIN stocks s ON s.symbol = h.symbol
             WHERE h.account_id = @AccountId
@@ -749,7 +778,7 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
             """
             SELECT h.id AS Id, h.account_id AS AccountId, h.symbol AS Symbol,
                    s.name AS Name, s.market AS Market,
-                   h.quantity AS Quantity, h.avg_price AS AvgPrice, h.notes AS Notes, h.updated_at AS UpdatedAt
+                   h.quantity AS Quantity, h.avg_price AS AvgPriceFr, h.notes AS Notes, h.updated_at AS UpdatedAt
             FROM holdings h
             JOIN stocks s ON s.symbol = h.symbol
             ORDER BY h.account_id, h.updated_at DESC, h.symbol;
@@ -759,13 +788,16 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
     }
 
     /// <inheritdoc />
-    public async Task<Holding?> ApplyCorporateActionAsync(long accountId, string symbol, double qtyMultiplier, double priceMultiplier, CancellationToken cancellationToken = default)
+    public async Task<Holding?> ApplyCorporateActionAsync(
+        long accountId, string symbol,
+        long qtyNum, long qtyDen,
+        CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
-        if (qtyMultiplier <= 0)
-            throw new ArgumentOutOfRangeException(nameof(qtyMultiplier), "Quantity multiplier must be positive.");
-        if (priceMultiplier <= 0)
-            throw new ArgumentOutOfRangeException(nameof(priceMultiplier), "Price multiplier must be positive.");
+        if (qtyNum <= 0)
+            throw new ArgumentOutOfRangeException(nameof(qtyNum), "Quantity numerator must be positive.");
+        if (qtyDen <= 0)
+            throw new ArgumentOutOfRangeException(nameof(qtyDen), "Quantity denominator must be positive.");
 
         string normalizedSymbol = NormalizeSymbol(symbol);
         await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -778,16 +810,24 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
             return null;
         }
 
-        double scaledQty = existing.Quantity * qtyMultiplier;
-        int newQty = (int)Math.Round(scaledQty, MidpointRounding.AwayFromZero);
-        if (Math.Abs(scaledQty - newQty) > 1e-9)
-            throw new ArgumentOutOfRangeException(nameof(qtyMultiplier),
-                $"Corporate action produces non-integer share count ({scaledQty:G}). Reverse-split ratios must evenly divide the current quantity.");
-        if (newQty <= 0)
-            throw new ArgumentOutOfRangeException(nameof(qtyMultiplier),
-                "Corporate action would zero or invert the position.");
+        // Quantity must divide evenly — reverse_split of a non-divisible position is rejected
+        // upstream as a ValidationError so the user can correct the input before the write.
+        long scaledQty = checked((long)existing.Quantity * qtyNum);
+        if (scaledQty % qtyDen != 0)
+            throw new ArgumentOutOfRangeException(nameof(qtyDen),
+                $"Corporate action produces non-integer share count ({scaledQty}/{qtyDen}). Reverse-split ratios must evenly divide the current quantity.");
+        long newQtyLong = scaledQty / qtyDen;
+        if (newQtyLong <= 0 || newQtyLong > int.MaxValue)
+            throw new ArgumentOutOfRangeException(nameof(qtyNum),
+                "Corporate action would zero, invert, or overflow the position.");
+        int newQty = (int)newQtyLong;
 
-        double newAvg = existing.AvgPrice * priceMultiplier;
+        // Price ratio is the reciprocal of the quantity ratio so cost basis stays constant.
+        // round-half-up matches BuyHoldingAsync; bonus actions can drift by ≤1 fr (0.0001 won)
+        // but the primary case (split↔reverse_split with integer ratios) is exact when the
+        // starting value is a multiple of the split factor at the fractional-won scale.
+        long avgScaled = checked(existing.AvgPriceFr * qtyDen);
+        long newAvgFr = (avgScaled + qtyNum / 2) / qtyNum;
 
         await connection.ExecuteAsync(new CommandDefinition(
             """
@@ -795,7 +835,7 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
             SET quantity = @Quantity, avg_price = @AvgPrice, updated_at = datetime('now')
             WHERE account_id = @AccountId AND symbol = @Symbol;
             """,
-            new { AccountId = accountId, Symbol = normalizedSymbol, Quantity = newQty, AvgPrice = newAvg },
+            new { AccountId = accountId, Symbol = normalizedSymbol, Quantity = newQty, AvgPrice = newAvgFr },
             transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         Holding result = await GetHoldingAsync(connection, accountId, normalizedSymbol, cancellationToken, transaction).ConfigureAwait(false)
@@ -868,7 +908,7 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
             """
             SELECT h.id AS Id, h.account_id AS AccountId, h.symbol AS Symbol,
                    s.name AS Name, s.market AS Market,
-                   h.quantity AS Quantity, h.avg_price AS AvgPrice, h.notes AS Notes, h.updated_at AS UpdatedAt
+                   h.quantity AS Quantity, h.avg_price AS AvgPriceFr, h.notes AS Notes, h.updated_at AS UpdatedAt
             FROM holdings h
             JOIN stocks s ON s.symbol = h.symbol
             ORDER BY h.account_id, h.id;
@@ -1075,7 +1115,7 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
                         AccountId = accountId,
                         Symbol = normalizedSymbol,
                         h.Quantity,
-                        h.AvgPrice,
+                        AvgPrice = Holding.ToFractionalWon(h.AvgPrice),
                         h.Notes,
                         UpdatedAt = updatedAt,
                     },
@@ -1393,7 +1433,7 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
             """
             SELECT h.id AS Id, h.account_id AS AccountId, h.symbol AS Symbol,
                    s.name AS Name, s.market AS Market,
-                   h.quantity AS Quantity, h.avg_price AS AvgPrice, h.notes AS Notes, h.updated_at AS UpdatedAt
+                   h.quantity AS Quantity, h.avg_price AS AvgPriceFr, h.notes AS Notes, h.updated_at AS UpdatedAt
             FROM holdings h
             JOIN stocks s ON s.symbol = h.symbol
             WHERE h.account_id = @AccountId AND h.symbol = @Symbol;
