@@ -125,7 +125,7 @@ internal interface IPortfolioRepository
     // -------- Stock metadata cache --------
 
     /// <summary>Creates or updates locally cached stock metadata.</summary>
-    Task UpsertStockAsync(string symbol, string name, string market, string? krxSector, CancellationToken cancellationToken = default);
+    Task UpsertStockAsync(string symbol, string name, string market, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Atomically replaces the stock_themes rows for one symbol with the supplied list,
@@ -140,6 +140,25 @@ internal interface IPortfolioRepository
     /// missing as "pending" enrichment).
     /// </summary>
     Task<IReadOnlyDictionary<string, IReadOnlyList<StockTheme>>> GetStockThemesBatchAsync(
+        IReadOnlyCollection<string> symbols,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// v0.7 A1: records the FICS industry triple for one symbol (raw label,
+    /// "FICS "-stripped normalized label, fetched_at). Both raw and normalized may
+    /// be null when LS reports an empty <c>upgubunnm</c> (ETF / SPAC); the row is
+    /// still updated so <c>industry_fetched_at</c> reflects the attempt and the
+    /// enrichment path stops retrying perpetually.
+    /// </summary>
+    Task UpsertStockIndustryAsync(string symbol, string? industryRaw, string? industry, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the cached industry rows for many symbols at once. Symbols whose
+    /// <c>industry_fetched_at</c> is NULL are absent from the dictionary (caller
+    /// treats absent as "pending"). Symbols with a fetched-but-empty record appear
+    /// with <c>Raw</c> / <c>Industry</c> both null but a populated <c>FetchedAt</c>.
+    /// </summary>
+    Task<IReadOnlyDictionary<string, StockIndustryRow>> GetStockIndustriesBatchAsync(
         IReadOnlyCollection<string> symbols,
         CancellationToken cancellationToken = default);
 

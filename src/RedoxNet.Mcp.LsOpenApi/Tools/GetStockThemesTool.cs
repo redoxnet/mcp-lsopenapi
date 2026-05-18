@@ -19,7 +19,7 @@ public static class GetStockThemesTool
         Returns every LS curated theme (tmcode) that a Korean stock belongs to, with the theme's recent average percent change. Wraps LS t1532. An empty array is a valid response — many stocks aren't pinned to any theme.
 
         USE WHEN: the user asks "삼성전자는 어떤 테마야?", "이 종목 테마 묶음", or before calling ls_get_theme_stocks to discover the actual tmcode.
-        AVOID WHEN: the user wants the KRX industry/sector classification — that's stocks.krx_sector / t1102, not LS themes.
+        AVOID WHEN: the user wants the industry classification ("이 종목 업종은?") — that's the FICS industry sourced from t3320 and surfaced on ls_holdings_list as `industry` / `industry_raw`, not LS themes.
         """)]
     public static async Task<string> GetStockThemes(
         LsApiClient apiClient,

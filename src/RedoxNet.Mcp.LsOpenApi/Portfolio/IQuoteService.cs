@@ -25,5 +25,14 @@ internal interface IQuoteService
     /// only fires once on each write.
     /// </summary>
     Task<StockThemesFetchResult> GetStockThemesAsync(string symbol, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Fetches the FICS industry label for a single stock via t3320 (FNG_요약).
+    /// Returns (Raw=null, Normalized=null, Error=null) when LS responds rsp_cd=00000
+    /// with an empty <c>upgubunnm</c> — the "fetched-but-empty" case for ETF / SPAC.
+    /// Used by the v0.7 industry enrichment path; 1 TPS rate-limit at the LS side
+    /// so callers should serialise their calls.
+    /// </summary>
+    Task<StockIndustryFetchResult> GetStockIndustryAsync(string symbol, CancellationToken cancellationToken = default);
 }
 

@@ -257,11 +257,13 @@ internal sealed class PortfolioService : IPortfolioService
         string? accountIdentifier,
         string? themeCode = null,
         string? themeKeyword = null,
+        string? industry = null,
         CancellationToken cancellationToken = default)
     {
         string? normalizedThemeCode = string.IsNullOrWhiteSpace(themeCode) ? null : themeCode.Trim().ToUpperInvariant();
         string? normalizedThemeKeyword = string.IsNullOrWhiteSpace(themeKeyword) ? null : themeKeyword.Trim();
-        bool hasFilter = normalizedThemeCode is not null || normalizedThemeKeyword is not null;
+        string? normalizedIndustry = string.IsNullOrWhiteSpace(industry) ? null : industry.Trim();
+        bool hasFilter = normalizedThemeCode is not null || normalizedThemeKeyword is not null || normalizedIndustry is not null;
 
         IReadOnlyList<Account> accounts;
         if (!string.IsNullOrWhiteSpace(accountIdentifier))
@@ -275,15 +277,21 @@ internal sealed class PortfolioService : IPortfolioService
         }
 
         HoldingsFilterEcho? filterEcho = hasFilter
-            ? new HoldingsFilterEcho { ThemeCode = normalizedThemeCode, ThemeKeyword = normalizedThemeKeyword }
+            ? new HoldingsFilterEcho
+            {
+                ThemeCode = normalizedThemeCode,
+                ThemeKeyword = normalizedThemeKeyword,
+                Industry = normalizedIndustry,
+            }
             : null;
 
         if (accounts.Count == 0)
             return new HoldingListResult(Array.Empty<AccountHoldings>(), EmptySummary(), null)
             {
-                MetadataFreshness = BuildFreshness(themesPending: 0),
+                MetadataFreshness = BuildFreshness(themesPending: 0, industryPending: 0),
                 Filter = filterEcho,
-                MatchedThemes = hasFilter ? Array.Empty<string>() : null,
+                MatchedThemes = (normalizedThemeCode is not null || normalizedThemeKeyword is not null) ? Array.Empty<string>() : null,
+                MatchedIndustries = normalizedIndustry is not null ? Array.Empty<string>() : null,
             };
 
         IReadOnlyList<Holding> allHoldings;
@@ -300,25 +308,32 @@ internal sealed class PortfolioService : IPortfolioService
         QuoteBatchResult<StockQuote> quoteResult = await EnrichStocksAsync(distinctSymbols, cancellationToken).ConfigureAwait(false);
         IReadOnlyDictionary<string, IReadOnlyList<StockTheme>> themesMap =
             await _repository.GetStockThemesBatchAsync(distinctSymbols, cancellationToken).ConfigureAwait(false);
+        IReadOnlyDictionary<string, StockIndustryRow> industriesMap =
+            await _repository.GetStockIndustriesBatchAsync(distinctSymbols, cancellationToken).ConfigureAwait(false);
 
-        // Fix A: lazy enrichment dispatch on cache miss. Holdings registered
-        // in prior sessions or imported via ls_portfolio_import never had a
+        // Fix A: lazy enrichment dispatch on cache miss. Holdings registered in
+        // prior sessions or imported via ls_portfolio_import never had a
         // write-path FireAndForgetEnrich fire — without this, the cache stays
         // empty forever for read-only users. Dedup + cooldown in
         // FireAndForgetEnrich prevent storming when the same list call repeats.
+        // We dispatch when either domain (themes / industry) is missing — the
+        // enrich path covers both kinds atomically.
         foreach (string symbol in distinctSymbols)
         {
-            if (!themesMap.ContainsKey(symbol))
+            if (!themesMap.ContainsKey(symbol) || !industriesMap.ContainsKey(symbol))
                 FireAndForgetEnrich(symbol);
         }
 
-        // Apply theme filters at the holdings level. Per spec §4.6 multiple
-        // filters AND-combine; matched_themes echoes the unique theme names
-        // (across the filtered set) so LIKE false positives are visible.
-        // Fix B: track filterCacheMissCount separately so metadata_freshness
-        // doesn't lie about "fully_enriched=true" just because every holding
-        // was filtered out for missing the cache.
-        HashSet<string>? matchedThemes = hasFilter
+        // Apply filters at the holdings level. Per SPEC v0.7 §4.5.4 + v0.6 §4.6
+        // every filter AND-combines; matched_themes / matched_industries echo
+        // the unique labels (across the filtered set) so substring false
+        // positives are visible. Fix B (themes): track filterCacheMissCount so
+        // metadata_freshness doesn't lie about "fully_enriched=true" just
+        // because every holding was filtered out for missing the cache.
+        HashSet<string>? matchedThemes = (normalizedThemeCode is not null || normalizedThemeKeyword is not null)
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : null;
+        HashSet<string>? matchedIndustries = normalizedIndustry is not null
             ? new HashSet<string>(StringComparer.Ordinal)
             : null;
         IReadOnlyList<Holding> filteredHoldings;
@@ -328,27 +343,54 @@ internal sealed class PortfolioService : IPortfolioService
             var keep = new List<Holding>(allHoldings.Count);
             foreach (Holding h in allHoldings)
             {
-                if (!themesMap.TryGetValue(h.Symbol, out IReadOnlyList<StockTheme>? holdingThemes))
+                bool themeFilterActive = normalizedThemeCode is not null || normalizedThemeKeyword is not null;
+                bool industryFilterActive = normalizedIndustry is not null;
+
+                IReadOnlyList<StockTheme>? holdingThemes = null;
+                if (themeFilterActive)
                 {
-                    filterCacheMissCount++;
-                    continue; // un-enriched stocks can't satisfy a theme filter
+                    if (!themesMap.TryGetValue(h.Symbol, out holdingThemes))
+                    {
+                        filterCacheMissCount++;
+                        continue;
+                    }
+                }
+
+                StockIndustryRow? industryRow = null;
+                if (industryFilterActive)
+                {
+                    if (!industriesMap.TryGetValue(h.Symbol, out industryRow))
+                    {
+                        filterCacheMissCount++;
+                        continue;
+                    }
+                    if (string.IsNullOrEmpty(industryRow.Industry))
+                        continue; // fetched-but-empty (ETF/SPAC) can't satisfy an industry filter
                 }
 
                 bool codeOk = normalizedThemeCode is null
-                    || holdingThemes.Any(t => string.Equals(t.ThemeCode, normalizedThemeCode, StringComparison.Ordinal));
+                    || (holdingThemes is not null && holdingThemes.Any(t => string.Equals(t.ThemeCode, normalizedThemeCode, StringComparison.Ordinal)));
                 bool keywordOk = normalizedThemeKeyword is null
-                    || holdingThemes.Any(t => t.ThemeName.Contains(normalizedThemeKeyword, StringComparison.Ordinal));
-                if (!codeOk || !keywordOk)
+                    || (holdingThemes is not null && holdingThemes.Any(t => t.ThemeName.Contains(normalizedThemeKeyword, StringComparison.Ordinal)));
+                bool industryOk = normalizedIndustry is null
+                    || (industryRow?.Industry is not null
+                        && industryRow.Industry.Contains(normalizedIndustry, StringComparison.OrdinalIgnoreCase));
+                if (!codeOk || !keywordOk || !industryOk)
                     continue;
 
                 keep.Add(h);
-                foreach (StockTheme t in holdingThemes)
+                if (holdingThemes is not null)
                 {
-                    if (normalizedThemeCode is not null && string.Equals(t.ThemeCode, normalizedThemeCode, StringComparison.Ordinal))
-                        matchedThemes!.Add(t.ThemeName);
-                    if (normalizedThemeKeyword is not null && t.ThemeName.Contains(normalizedThemeKeyword, StringComparison.Ordinal))
-                        matchedThemes!.Add(t.ThemeName);
+                    foreach (StockTheme t in holdingThemes)
+                    {
+                        if (normalizedThemeCode is not null && string.Equals(t.ThemeCode, normalizedThemeCode, StringComparison.Ordinal))
+                            matchedThemes!.Add(t.ThemeName);
+                        if (normalizedThemeKeyword is not null && t.ThemeName.Contains(normalizedThemeKeyword, StringComparison.Ordinal))
+                            matchedThemes!.Add(t.ThemeName);
+                    }
                 }
+                if (industryRow?.Industry is not null && normalizedIndustry is not null)
+                    matchedIndustries!.Add(industryRow.Industry);
             }
             filteredHoldings = keep;
         }
@@ -362,12 +404,13 @@ internal sealed class PortfolioService : IPortfolioService
         double totalValue = 0;
         bool totalAllQuoted = true;
         int themesPending = 0;
+        int industryPending = 0;
 
         foreach (Account account in accounts)
         {
             List<Holding> accountRows = filteredHoldings.Where(h => h.AccountId == account.Id).ToList();
-            (List<HoldingWithQuote> projected, double cost, double value, bool allQuoted, int accountThemesPending) =
-                ProjectHoldings(accountRows, quoteResult, themesMap);
+            (List<HoldingWithQuote> projected, double cost, double value, bool allQuoted, int accountThemesPending, int accountIndustryPending) =
+                ProjectHoldings(accountRows, quoteResult, themesMap, industriesMap);
             var summary = BuildSummary(cost, value, allQuoted);
             totalCost += cost;
             if (allQuoted)
@@ -375,6 +418,7 @@ internal sealed class PortfolioService : IPortfolioService
             else
                 totalAllQuoted = false;
             themesPending += accountThemesPending;
+            industryPending += accountIndustryPending;
 
             perAccount.Add(new AccountHoldings(
                 account.AccountNo,
@@ -386,19 +430,20 @@ internal sealed class PortfolioService : IPortfolioService
         }
 
         // Fix B: freshness reflects the *full* picture of pending enrichment,
-        // not just what survived the filter. Without filterCacheMissCount,
-        // a list call that drops every holding due to empty cache would
-        // report fully_enriched=true (themesPending=0 over the empty filtered
-        // set) — which contradicts the empty matched_themes that the model
-        // sees right next to it.
+        // not just what survived the filter. The filterCacheMissCount adds to
+        // themes pending because that's the historical contract (and either
+        // domain miss disqualifies the row from a filtered list call); a
+        // future revision could split this per-kind if the model wants to
+        // distinguish "industry-pending" misses from "theme-pending" misses.
         return new HoldingListResult(
             perAccount,
             BuildSummary(totalCost, totalValue, totalAllQuoted),
             quoteResult.TopLevelError)
         {
-            MetadataFreshness = BuildFreshness(themesPending + filterCacheMissCount),
+            MetadataFreshness = BuildFreshness(themesPending + filterCacheMissCount, industryPending),
             Filter = filterEcho,
             MatchedThemes = matchedThemes is null ? null : matchedThemes.OrderBy(s => s, StringComparer.Ordinal).ToList(),
+            MatchedIndustries = matchedIndustries is null ? null : matchedIndustries.OrderBy(s => s, StringComparer.Ordinal).ToList(),
         };
     }
 
@@ -743,6 +788,12 @@ internal sealed class PortfolioService : IPortfolioService
             return;
         string normalized = symbol.Trim().ToUpperInvariant();
 
+        await EnrichThemesAsync(normalized, cancellationToken).ConfigureAwait(false);
+        await EnrichIndustryAsync(normalized, cancellationToken).ConfigureAwait(false);
+    }
+
+    async Task EnrichThemesAsync(string normalized, CancellationToken cancellationToken)
+    {
         StockThemesFetchResult fetched;
         try
         {
@@ -777,6 +828,44 @@ internal sealed class PortfolioService : IPortfolioService
             _logger.LogWarning(ex,
                 "Theme enrichment cache write failed for {Symbol} ({Count} themes).",
                 normalized, fetched.Themes.Count);
+        }
+    }
+
+    async Task EnrichIndustryAsync(string normalized, CancellationToken cancellationToken)
+    {
+        StockIndustryFetchResult fetched;
+        try
+        {
+            fetched = await _quoteService.GetStockIndustryAsync(normalized, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Industry enrichment fetch threw for {Symbol}; leaving industry cache as-is (next refresh retries).",
+                normalized);
+            return;
+        }
+
+        if (fetched.Error is not null)
+        {
+            _logger.LogDebug(
+                "Industry enrichment for {Symbol} skipped: {Error}",
+                normalized, fetched.Error);
+            return;
+        }
+
+        // Even when both Raw / Normalized are null (ETF/SPAC empty profile), persist
+        // the upsert so industry_fetched_at gets stamped — this is the "fetched-
+        // but-empty" state that stops perpetual re-dispatch (SPEC §4.5.3).
+        try
+        {
+            await _repository.UpsertStockIndustryAsync(normalized, fetched.Raw, fetched.Normalized, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Industry enrichment cache write failed for {Symbol}.",
+                normalized);
         }
     }
 
@@ -865,7 +954,7 @@ internal sealed class PortfolioService : IPortfolioService
         QuoteBatchResult<StockQuote> result = await _quoteService.GetStockQuotesAsync(new[] { symbol }, cancellationToken).ConfigureAwait(false);
         if (result.Quotes.TryGetValue(symbol, out StockQuote? quote) && !string.IsNullOrWhiteSpace(quote?.Name))
         {
-            await _repository.UpsertStockAsync(symbol, quote.Name, "unknown", null, cancellationToken).ConfigureAwait(false);
+            await _repository.UpsertStockAsync(symbol, quote.Name, "unknown", cancellationToken).ConfigureAwait(false);
             return quote;
         }
         return null;
@@ -878,21 +967,23 @@ internal sealed class PortfolioService : IPortfolioService
         foreach ((string symbol, StockQuote? quote) in result.Quotes)
         {
             if (!string.IsNullOrWhiteSpace(quote?.Name))
-                await _repository.UpsertStockAsync(symbol, quote.Name, "unknown", null, cancellationToken).ConfigureAwait(false);
+                await _repository.UpsertStockAsync(symbol, quote.Name, "unknown", cancellationToken).ConfigureAwait(false);
         }
         return result;
     }
 
-    static (List<HoldingWithQuote> Projected, double CostBasis, double MarketValue, bool AllQuoted, int ThemesPending) ProjectHoldings(
+    static (List<HoldingWithQuote> Projected, double CostBasis, double MarketValue, bool AllQuoted, int ThemesPending, int IndustryPending) ProjectHoldings(
         IReadOnlyList<Holding> accountRows,
         QuoteBatchResult<StockQuote> quoteResult,
-        IReadOnlyDictionary<string, IReadOnlyList<StockTheme>> themesMap)
+        IReadOnlyDictionary<string, IReadOnlyList<StockTheme>> themesMap,
+        IReadOnlyDictionary<string, StockIndustryRow> industriesMap)
     {
         var projected = new List<HoldingWithQuote>(accountRows.Count);
         double cost = 0;
         double value = 0;
         bool allQuoted = true;
         int themesPending = 0;
+        int industryPending = 0;
 
         foreach (Holding holding in accountRows)
         {
@@ -942,6 +1033,28 @@ internal sealed class PortfolioService : IPortfolioService
                 themesPending++;
             }
 
+            // Industry cache projection (v0.7 A1, mirrors B2):
+            //   - row present + non-empty Industry → emit industry / industry_raw.
+            //   - row present + null Industry (ETF/SPAC fetched-but-empty) → omit
+            //     both fields, no pending count — enrichment is done.
+            //   - row absent (industry_fetched_at IS NULL) → "pending".
+            string? industryNorm = null;
+            string? industryRaw = null;
+            string? industryStatus = null;
+            if (industriesMap.TryGetValue(holding.Symbol, out StockIndustryRow? industryRow))
+            {
+                if (!string.IsNullOrEmpty(industryRow.Industry))
+                {
+                    industryNorm = industryRow.Industry;
+                    industryRaw = industryRow.IndustryRaw;
+                }
+            }
+            else
+            {
+                industryStatus = "pending";
+                industryPending++;
+            }
+
             projected.Add(new HoldingWithQuote(
                 holding.Symbol,
                 ResolveDisplayName(quote, holding.Name, holding.Symbol),
@@ -957,21 +1070,26 @@ internal sealed class PortfolioService : IPortfolioService
             {
                 Themes = themes,
                 ThemesStatus = themesStatus,
+                Industry = industryNorm,
+                IndustryRaw = industryRaw,
+                IndustryStatus = industryStatus,
             });
         }
 
-        return (projected, cost, value, allQuoted, themesPending);
+        return (projected, cost, value, allQuoted, themesPending, industryPending);
     }
 
-    static MetadataFreshness? BuildFreshness(int themesPending)
+    static MetadataFreshness? BuildFreshness(int themesPending, int industryPending)
     {
-        if (themesPending == 0)
+        int total = themesPending + industryPending;
+        if (total == 0)
             return new MetadataFreshness(FullyEnriched: true, Pending: new Dictionary<string, int>(0));
-        return new MetadataFreshness(
-            FullyEnriched: false,
-            Pending: new Dictionary<string, int> { ["themes"] = themesPending })
+        var pending = new Dictionary<string, int>();
+        if (themesPending > 0) pending["themes"] = themesPending;
+        if (industryPending > 0) pending["industry"] = industryPending;
+        return new MetadataFreshness(FullyEnriched: false, Pending: pending)
         {
-            Hint = "방금 등록한 종목의 테마 정보는 다음 호출에서 채워집니다.",
+            Hint = "방금 등록한 종목의 메타데이터(테마/업종)는 다음 호출에서 채워집니다.",
         };
     }
 

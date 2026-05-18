@@ -39,6 +39,7 @@ internal interface IPortfolioService
         string? accountIdentifier,
         string? themeCode = null,
         string? themeKeyword = null,
+        string? industry = null,
         CancellationToken cancellationToken = default);
 
     // -------- Corporate actions --------

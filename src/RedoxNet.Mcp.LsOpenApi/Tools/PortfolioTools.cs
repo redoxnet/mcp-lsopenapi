@@ -269,7 +269,8 @@ internal static class PortfolioTools
         - "내 보유 중 2차전지 테마" → theme_keyword="2차전지"
         - "내 한투 계좌의 AI 테마" → account="한투", theme_keyword="AI"
         - "테마 코드 0064 보유" → theme_code="0064"
-        Both filters AND-combine. Industry (KRX 산업분류) filtering is deferred to v0.7 — for now use ls_get_industry_stocks for market-wide industry views.
+        - "내 보유 중 반도체 업종" / "내 금융주" → industry="반도체" / industry="금융"
+        All filters AND-combine. The `industry` filter is a case-insensitive substring match against the FICS industry label sourced from t3320 (the "FICS " prefix is stripped before matching, so "반도체" matches "반도체 및 관련장비"). ETF / SPAC symbols have no industry record and are excluded from any industry-filtered list.
         """)]
     public static async Task<string> HoldingList(
         IPortfolioService portfolio,
@@ -279,8 +280,10 @@ internal static class PortfolioTools
         string? theme_code = null,
         [Description("Optional theme name keyword. Case-sensitive LIKE match against cached theme names. '2차전지' matches '2차전지 셀', '2차전지 소재', etc.")]
         string? theme_keyword = null,
+        [Description("Optional FICS industry substring (case-insensitive). '반도체' matches FICS 반도체 및 관련장비. ETF/SPAC symbols are excluded automatically since they have no industry record.")]
+        string? industry = null,
         CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.ListHoldingsAsync(account, theme_code, theme_keyword, cancellationToken)).ConfigureAwait(false);
+        await SerializeAsync(() => portfolio.ListHoldingsAsync(account, theme_code, theme_keyword, industry, cancellationToken)).ConfigureAwait(false);
 
     // ---------------------- Corporate actions ----------------------
 

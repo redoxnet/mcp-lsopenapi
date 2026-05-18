@@ -145,6 +145,19 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
             ALTER TABLE holdings_new RENAME TO holdings;
             CREATE INDEX IF NOT EXISTS idx_holdings_symbol ON holdings(symbol);
             """),
+        (5, """
+            -- v0.7 A1: replace stocks.krx_sector (placeholder, never populated)
+            -- with the FICS industry triple sourced from t3320.upgubunnm.
+            --   industry_raw         — original "FICS …" label for audit
+            --   industry             — normalised label with "FICS " stripped, used by filters
+            --   industry_fetched_at  — freshness; populated even when the response
+            --                          carries an empty upgubunnm (ETF/SPAC) so the
+            --                          enrichment path never retries forever.
+            ALTER TABLE stocks ADD COLUMN industry_raw         TEXT;
+            ALTER TABLE stocks ADD COLUMN industry             TEXT;
+            ALTER TABLE stocks ADD COLUMN industry_fetched_at  TEXT;
+            ALTER TABLE stocks DROP COLUMN krx_sector;
+            """),
     ];
 
     readonly string _databasePath;
@@ -369,7 +382,7 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
         await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         const string sql = """
             SELECT i.id AS Id, i.group_id AS GroupId, g.name AS GroupName,
-                   i.symbol AS Symbol, s.name AS Name, s.market AS Market, s.krx_sector AS KrxSector,
+                   i.symbol AS Symbol, s.name AS Name, s.market AS Market,
                    i.notes AS Notes, i.added_at AS AddedAt
             FROM watchlist_items i
             JOIN watchlist_groups g ON g.id = i.group_id
@@ -854,11 +867,75 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
     }
 
     /// <inheritdoc />
-    public async Task UpsertStockAsync(string symbol, string name, string market, string? krxSector, CancellationToken cancellationToken = default)
+    public async Task UpsertStockAsync(string symbol, string name, string market, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
         await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await UpsertStockAsync(connection, NormalizeSymbol(symbol), NormalizeName(name, nameof(name)), NormalizeName(market, nameof(market)), NullIfWhiteSpace(krxSector), cancellationToken).ConfigureAwait(false);
+        await UpsertStockAsync(connection, NormalizeSymbol(symbol), NormalizeName(name, nameof(name)), NormalizeName(market, nameof(market)), cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task UpsertStockIndustryAsync(string symbol, string? industryRaw, string? industry, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        string normalizedSymbol = NormalizeSymbol(symbol);
+        await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        // Make sure the FK target row exists so we can write industry columns even
+        // for symbols never touched by holdings / watchlist writes.
+        await UpsertStockAsync(connection, normalizedSymbol, normalizedSymbol, "unknown", cancellationToken, updateExisting: false).ConfigureAwait(false);
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE stocks
+            SET industry_raw        = @IndustryRaw,
+                industry            = @Industry,
+                industry_fetched_at = datetime('now'),
+                updated_at          = datetime('now')
+            WHERE symbol = @Symbol;
+            """,
+            new
+            {
+                Symbol = normalizedSymbol,
+                IndustryRaw = NullIfWhiteSpace(industryRaw),
+                Industry = NullIfWhiteSpace(industry),
+            },
+            cancellationToken: cancellationToken)).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyDictionary<string, StockIndustryRow>> GetStockIndustriesBatchAsync(
+        IReadOnlyCollection<string> symbols,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(symbols);
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        if (symbols.Count == 0)
+            return new Dictionary<string, StockIndustryRow>(0, StringComparer.Ordinal);
+
+        string[] normalized = symbols
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Select(s => s.Trim().ToUpperInvariant())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (normalized.Length == 0)
+            return new Dictionary<string, StockIndustryRow>(0, StringComparer.Ordinal);
+
+        await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        IEnumerable<StockIndustryRow> rows = await connection.QueryAsync<StockIndustryRow>(new CommandDefinition(
+            """
+            SELECT symbol AS Symbol,
+                   industry_raw AS IndustryRaw,
+                   industry AS Industry,
+                   industry_fetched_at AS IndustryFetchedAt
+            FROM stocks
+            WHERE symbol IN @Symbols
+              AND industry_fetched_at IS NOT NULL;
+            """,
+            new { Symbols = normalized }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        var result = new Dictionary<string, StockIndustryRow>(StringComparer.Ordinal);
+        foreach (StockIndustryRow row in rows)
+            result[row.Symbol] = row;
+        return result;
     }
 
     /// <inheritdoc />
@@ -872,7 +949,7 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         // Ensure the FK target row exists before inserting stock_themes rows.
-        await UpsertStockAsync(connection, normalizedSymbol, normalizedSymbol, "unknown", null, cancellationToken, updateExisting: false).ConfigureAwait(false);
+        await UpsertStockAsync(connection, normalizedSymbol, normalizedSymbol, "unknown", cancellationToken, updateExisting: false).ConfigureAwait(false);
 
         // Wipe prior rows (real memberships + any prior sentinel) so the cache
         // stays in sync with the latest fetch.
@@ -1138,7 +1215,7 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
                     continue;
                 }
                 string normalizedSymbol = h.Shcode.Trim().ToUpperInvariant();
-                await UpsertStockAsync(connection, normalizedSymbol, normalizedSymbol, "unknown", null, cancellationToken, updateExisting: false).ConfigureAwait(false);
+                await UpsertStockAsync(connection, normalizedSymbol, normalizedSymbol, "unknown", cancellationToken, updateExisting: false).ConfigureAwait(false);
                 string updatedAt = string.IsNullOrWhiteSpace(h.UpdatedAt) ? CurrentSqliteTimestamp() : h.UpdatedAt;
                 await connection.ExecuteAsync(new CommandDefinition(
                     """
@@ -1225,7 +1302,7 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
                     itemSkips.Add(new WatchlistItemSkip(g.Name, normalizedSymbol, "duplicate_group_symbol"));
                     continue;
                 }
-                await UpsertStockAsync(connection, normalizedSymbol, normalizedSymbol, "unknown", null, cancellationToken, updateExisting: false).ConfigureAwait(false);
+                await UpsertStockAsync(connection, normalizedSymbol, normalizedSymbol, "unknown", cancellationToken, updateExisting: false).ConfigureAwait(false);
                 string addedAt = string.IsNullOrWhiteSpace(item.AddedAt) ? CurrentSqliteTimestamp() : item.AddedAt;
                 await connection.ExecuteAsync(new CommandDefinition(
                     """
@@ -1419,7 +1496,7 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
         connection.QuerySingleOrDefaultAsync<WatchlistItem>(new CommandDefinition(
             """
             SELECT i.id AS Id, i.group_id AS GroupId, g.name AS GroupName,
-                   i.symbol AS Symbol, s.name AS Name, s.market AS Market, s.krx_sector AS KrxSector,
+                   i.symbol AS Symbol, s.name AS Name, s.market AS Market,
                    i.notes AS Notes, i.added_at AS AddedAt
             FROM watchlist_items i
             JOIN watchlist_groups g ON g.id = i.group_id
@@ -1486,23 +1563,25 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
     /// Ensures placeholder stock metadata exists for a referenced symbol.
     /// </summary>
     static Task EnsureStockAsync(SqliteConnection connection, string symbol, CancellationToken cancellationToken) =>
-        UpsertStockAsync(connection, symbol, symbol, "unknown", null, cancellationToken, updateExisting: false);
+        UpsertStockAsync(connection, symbol, symbol, "unknown", cancellationToken, updateExisting: false);
 
     /// <summary>
-    /// Inserts or updates stock metadata.
+    /// Inserts or updates the row-identity columns of <c>stocks</c> (symbol / name / market).
+    /// Industry columns are written separately via <see cref="UpsertStockIndustryAsync"/> so an
+    /// identity refresh doesn't accidentally wipe a previously-recorded industry.
     /// </summary>
-    static Task UpsertStockAsync(SqliteConnection connection, string symbol, string name, string market, string? krxSector, CancellationToken cancellationToken, bool updateExisting = true)
+    static Task UpsertStockAsync(SqliteConnection connection, string symbol, string name, string market, CancellationToken cancellationToken, bool updateExisting = true)
     {
         string conflictClause = updateExisting
-            ? "DO UPDATE SET name = excluded.name, market = excluded.market, krx_sector = excluded.krx_sector, updated_at = datetime('now')"
+            ? "DO UPDATE SET name = excluded.name, market = excluded.market, updated_at = datetime('now')"
             : "DO NOTHING";
         return connection.ExecuteAsync(new CommandDefinition(
             $$"""
-            INSERT INTO stocks(symbol, name, market, krx_sector)
-            VALUES (@Symbol, @Name, @Market, @KrxSector)
+            INSERT INTO stocks(symbol, name, market)
+            VALUES (@Symbol, @Name, @Market)
             ON CONFLICT(symbol) {{conflictClause}};
             """,
-            new { Symbol = symbol, Name = name, Market = market, KrxSector = krxSector },
+            new { Symbol = symbol, Name = name, Market = market },
             cancellationToken: cancellationToken));
     }
 

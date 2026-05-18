@@ -358,6 +358,65 @@ public sealed class SqlitePortfolioRepositoryTests
     }
 
     [Fact]
+    public async Task UpsertStockIndustryAsync_PersistsLabelsAndFetchedAt()
+    {
+        // v0.7 A1: writing the industry triple should produce a cache row that
+        // batch reads can find. The normalised label is the one filters match
+        // against; the raw label survives for audit.
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+
+        await repository.UpsertStockIndustryAsync("005930", "FICS 반도체 및 관련장비", "반도체 및 관련장비");
+
+        IReadOnlyDictionary<string, StockIndustryRow> batch =
+            await repository.GetStockIndustriesBatchAsync(new[] { "005930" });
+        batch.Should().ContainKey("005930");
+        batch["005930"].IndustryRaw.Should().Be("FICS 반도체 및 관련장비");
+        batch["005930"].Industry.Should().Be("반도체 및 관련장비");
+        batch["005930"].IndustryFetchedAt.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task UpsertStockIndustryAsync_EmptyResult_StillSetsFetchedAtSoRetriesStop()
+    {
+        // ETF / SPAC: t3320 reports rsp_cd=00000 with an empty OutBlock. We
+        // persist a fetched-but-empty row so the read path counts this as
+        // cache hit (no industry, no pending) instead of dispatching forever.
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+
+        await repository.UpsertStockIndustryAsync("069500", null, null);
+
+        IReadOnlyDictionary<string, StockIndustryRow> batch =
+            await repository.GetStockIndustriesBatchAsync(new[] { "069500" });
+        batch.Should().ContainKey("069500", "fetched-but-empty rows must remain visible to the batch reader so callers stop re-dispatching");
+        batch["069500"].Industry.Should().BeNull();
+        batch["069500"].IndustryRaw.Should().BeNull();
+        batch["069500"].IndustryFetchedAt.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task GetStockIndustriesBatchAsync_OmitsSymbolsWithNeverFetchedRecords()
+    {
+        // Default placeholder rows (created by EnsureStockAsync on holdings
+        // write) have industry_fetched_at NULL until enrichment lands. They
+        // should NOT appear in the batch result — callers treat absent as
+        // "pending".
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        Account account = await repository.UpsertAccountAsync("AAA", "main", null, setDefault: false);
+        await repository.SetHoldingAsync(account.Id, "005930", 10, 70000, null);
+
+        IReadOnlyDictionary<string, StockIndustryRow> batch =
+            await repository.GetStockIndustriesBatchAsync(new[] { "005930" });
+
+        batch.Should().BeEmpty("symbols whose industry has never been fetched are absent from the dictionary");
+    }
+
+    [Fact]
     public async Task ReplaceStockThemesAsync_EmptyAfterReal_SwitchesSymbolToSentinel()
     {
         // Defensive: a real-themes fetch followed by an empty refetch (rare —

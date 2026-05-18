@@ -298,6 +298,7 @@ public sealed class PortfolioServiceTests
         Account account = await repository.UpsertAccountAsync("AAA", "main", null, setDefault: false);
         await repository.SetHoldingAsync(account.Id, "005930", 10, 70000, null);
         await repository.ReplaceStockThemesAsync("005930", new[] { new ThemeCatalogRow("0011", "반도체") });
+        await repository.UpsertStockIndustryAsync("005930", "FICS 반도체 및 관련장비", "반도체 및 관련장비");
         var service = new PortfolioService(repository, new FakeQuoteService());
 
         HoldingListResult result = await service.ListHoldingsAsync(accountIdentifier: null);
@@ -310,27 +311,32 @@ public sealed class PortfolioServiceTests
     [Fact]
     public async Task ListHoldingsAsync_EtfAfterEmptyEnrichment_OmitsThemesAndStaysFullyEnriched()
     {
-        // v0.7 B2: ETFs return [] from t1532. ReplaceStockThemesAsync writes a
-        // sentinel row so themesMap.ContainsKey is true and ListHoldingsAsync
-        // treats it as cache hit with no memberships — themes / themes_status
-        // are both omitted and MetadataFreshness does not count the ETF as
-        // pending. Before the fix this row stayed perpetually "pending" and
-        // re-fired enrichment on every list call past the 60s cooldown.
+        // v0.7 B2 + A1: ETFs return [] from t1532 (themes) and an empty
+        // upgubunnm from t3320 (industry). Both write paths record a
+        // "fetched-but-empty" marker so themesMap.ContainsKey and
+        // industriesMap.ContainsKey are true, ListHoldingsAsync treats the
+        // ETF as cache hit with no memberships, and neither freshness key
+        // appears in Pending. Before the fix this row stayed perpetually
+        // "pending" on the themes side, re-firing enrichment past the cooldown.
         await using TestDatabase db = new();
         var repository = new SqlitePortfolioRepository(db.Path);
         await repository.InitializeAsync();
         Account account = await repository.UpsertAccountAsync("AAA", "main", null, setDefault: false);
         await repository.SetHoldingAsync(account.Id, "069500", 50, 32000, null); // KODEX 200 ETF
         await repository.ReplaceStockThemesAsync("069500", Array.Empty<ThemeCatalogRow>());
+        await repository.UpsertStockIndustryAsync("069500", null, null);
         var service = new PortfolioService(repository, new FakeQuoteService());
 
         HoldingListResult result = await service.ListHoldingsAsync(accountIdentifier: null);
 
-        result.MetadataFreshness!.FullyEnriched.Should().BeTrue("sentinel row marks enrichment as completed even with zero themes");
+        result.MetadataFreshness!.FullyEnriched.Should().BeTrue("both sentinel rows mark enrichment as completed");
         result.MetadataFreshness.Pending.Should().NotContainKey("themes");
+        result.MetadataFreshness.Pending.Should().NotContainKey("industry");
         HoldingWithQuote etf = result.Accounts[0].Holdings.Single(h => h.Shcode == "069500");
         etf.Themes.Should().BeNull("theme-less symbols omit the themes array");
         etf.ThemesStatus.Should().BeNull("theme-less symbols do not report pending after enrichment");
+        etf.Industry.Should().BeNull("industry-less symbols omit the industry label");
+        etf.IndustryStatus.Should().BeNull("industry-less symbols do not report pending after enrichment");
     }
 
     [Fact]
@@ -417,6 +423,88 @@ public sealed class PortfolioServiceTests
 
         result.Accounts[0].Holdings.Should().ContainSingle()
             .Which.Shcode.Should().Be("005930", "AND-combine requires both 반도체 code AND AI keyword");
+    }
+
+    [Fact]
+    public async Task ListHoldingsAsync_IndustryFilter_CaseInsensitiveSubstringMatch_AndEchoesMatchedIndustries()
+    {
+        // v0.7 A1: industry filter matches case-insensitive substring against
+        // the normalised label (FICS prefix stripped). 005930 + 000660 both
+        // sit in "반도체 및 관련장비"; 035420 is "인터넷" — only the first two
+        // survive industry="반도체".
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        Account account = await repository.UpsertAccountAsync("AAA", "main", null, setDefault: false);
+        await repository.SetHoldingAsync(account.Id, "005930", 10, 70000, null);
+        await repository.SetHoldingAsync(account.Id, "000660", 5, 100000, null);
+        await repository.SetHoldingAsync(account.Id, "035420", 5, 220000, null);
+        await repository.UpsertStockIndustryAsync("005930", "FICS 반도체 및 관련장비", "반도체 및 관련장비");
+        await repository.UpsertStockIndustryAsync("000660", "FICS 반도체 및 관련장비", "반도체 및 관련장비");
+        await repository.UpsertStockIndustryAsync("035420", "FICS 인터넷", "인터넷");
+        var service = new PortfolioService(repository, new FakeQuoteService());
+
+        HoldingListResult result = await service.ListHoldingsAsync(accountIdentifier: null, industry: "반도체");
+
+        result.Accounts[0].Holdings.Should().HaveCount(2);
+        result.Accounts[0].Holdings.Select(h => h.Shcode).Should().BeEquivalentTo(["005930", "000660"]);
+        result.Filter.Should().NotBeNull();
+        result.Filter!.Industry.Should().Be("반도체");
+        result.MatchedIndustries.Should().BeEquivalentTo(["반도체 및 관련장비"]);
+        // 005930 row exposes the normalised + raw labels so the model can quote either.
+        HoldingWithQuote samsung = result.Accounts[0].Holdings.Single(h => h.Shcode == "005930");
+        samsung.Industry.Should().Be("반도체 및 관련장비");
+        samsung.IndustryRaw.Should().Be("FICS 반도체 및 관련장비");
+        samsung.IndustryStatus.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ListHoldingsAsync_IndustryFilter_ExcludesEtfWithEmptyIndustryRecord()
+    {
+        // ETF / SPAC enrichment writes a fetched-but-empty row (industry NULL,
+        // industry_fetched_at populated). The industry filter must drop these
+        // rows — they have no label to match — without re-firing enrichment.
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        Account account = await repository.UpsertAccountAsync("AAA", "main", null, setDefault: false);
+        await repository.SetHoldingAsync(account.Id, "005930", 10, 70000, null);
+        await repository.SetHoldingAsync(account.Id, "069500", 50, 32000, null);
+        await repository.UpsertStockIndustryAsync("005930", "FICS 반도체 및 관련장비", "반도체 및 관련장비");
+        await repository.UpsertStockIndustryAsync("069500", null, null);
+        var service = new PortfolioService(repository, new FakeQuoteService());
+
+        HoldingListResult result = await service.ListHoldingsAsync(accountIdentifier: null, industry: "반도체");
+
+        result.Accounts[0].Holdings.Should().ContainSingle()
+            .Which.Shcode.Should().Be("005930");
+        result.MetadataFreshness!.Pending.Should().NotContainKey("industry",
+            "ETF with a fetched-but-empty row is treated as enriched, not pending");
+    }
+
+    [Fact]
+    public async Task ListHoldingsAsync_IndustryFilter_PendingHoldingExcludedAndCounted()
+    {
+        // A holding whose industry has never been fetched can't satisfy the
+        // filter — it's excluded from the result *and* contributes to
+        // MetadataFreshness so the model can explain the gap.
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        Account account = await repository.UpsertAccountAsync("AAA", "main", null, setDefault: false);
+        await repository.SetHoldingAsync(account.Id, "005930", 10, 70000, null);
+        await repository.SetHoldingAsync(account.Id, "000660", 5, 100000, null);
+        await repository.UpsertStockIndustryAsync("005930", "FICS 반도체 및 관련장비", "반도체 및 관련장비");
+        // 000660 deliberately left without an industry row.
+        var service = new PortfolioService(repository, new FakeQuoteService());
+
+        HoldingListResult result = await service.ListHoldingsAsync(accountIdentifier: null, industry: "반도체");
+
+        result.Accounts[0].Holdings.Should().ContainSingle()
+            .Which.Shcode.Should().Be("005930");
+        result.MetadataFreshness!.FullyEnriched.Should().BeFalse();
+        result.MetadataFreshness.Pending.Should().ContainKey("themes",
+            "themes is still pending for both rows since FakeQuoteService didn't seed any");
     }
 
     [Fact]
@@ -620,8 +708,10 @@ public sealed class PortfolioServiceTests
         readonly IReadOnlyDictionary<string, StockQuote?> _quotes;
         readonly IReadOnlyDictionary<string, IReadOnlyList<ThemeCatalogRow>> _themesPerSymbol;
         readonly string? _stockThemesError;
+        readonly IReadOnlyDictionary<string, string?> _industryPerSymbol;
 
         readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _getStockThemesCalls = new(StringComparer.Ordinal);
+        readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _getStockIndustryCalls = new(StringComparer.Ordinal);
         /// <summary>Optional gate — when set, GetStockThemesAsync blocks until completed. Used by dedup tests.</summary>
         public TaskCompletionSource? StockThemesGate { get; set; }
 
@@ -629,17 +719,21 @@ public sealed class PortfolioServiceTests
             string? stockError = null,
             IReadOnlyDictionary<string, StockQuote?>? quotes = null,
             IReadOnlyDictionary<string, IReadOnlyList<ThemeCatalogRow>>? themesPerSymbol = null,
-            string? stockThemesError = null)
+            string? stockThemesError = null,
+            IReadOnlyDictionary<string, string?>? industryPerSymbol = null)
         {
             _stockError = stockError;
             _quotes = quotes ?? new Dictionary<string, StockQuote?>();
             _themesPerSymbol = themesPerSymbol ?? new Dictionary<string, IReadOnlyList<ThemeCatalogRow>>();
             _stockThemesError = stockThemesError;
+            _industryPerSymbol = industryPerSymbol ?? new Dictionary<string, string?>();
         }
 
         public int GetStockThemesCallCount(string symbol) =>
             _getStockThemesCalls.TryGetValue(symbol, out int n) ? n : 0;
         public int TotalGetStockThemesCalls => _getStockThemesCalls.Values.Sum();
+        public int GetStockIndustryCallCount(string symbol) =>
+            _getStockIndustryCalls.TryGetValue(symbol, out int n) ? n : 0;
 
         public Task<QuoteBatchResult<StockQuote>> GetStockQuotesAsync(IReadOnlyCollection<string> symbols, CancellationToken cancellationToken = default)
         {
@@ -673,6 +767,18 @@ public sealed class PortfolioServiceTests
                 ? rows
                 : Array.Empty<ThemeCatalogRow>();
             return new StockThemesFetchResult(themes, null);
+        }
+
+        public Task<StockIndustryFetchResult> GetStockIndustryAsync(string symbol, CancellationToken cancellationToken = default)
+        {
+            _getStockIndustryCalls.AddOrUpdate(symbol, 1, (_, v) => v + 1);
+            // The dictionary maps shcode → t3320 upgubunnm raw value. Null entry
+            // models an ETF/SPAC response (rsp_cd=00000 but empty profile); a
+            // missing key behaves identically — both yield (null, null, null).
+            if (!_industryPerSymbol.TryGetValue(symbol, out string? raw) || string.IsNullOrEmpty(raw))
+                return Task.FromResult(new StockIndustryFetchResult(null, null, null));
+            string normalized = LsQuoteService.NormalizeFicsIndustry(raw);
+            return Task.FromResult(new StockIndustryFetchResult(raw, normalized, null));
         }
     }
 

@@ -182,6 +182,71 @@ internal sealed class LsQuoteService : IQuoteService
     }
 
     /// <summary>
+    /// Fetches the FICS industry label for a single stock via t3320 (FNG_요약).
+    /// </summary>
+    /// <remarks>
+    /// Live verification (2026-05-18, scripts/verify-t3320.ps1):
+    /// <list type="bullet">
+    ///   <item><description>Input is the 6-char shcode. LS guide lists 7-char gicode but "A005930" returns rsp_cd=00000 with an empty OutBlock — false success.</description></item>
+    ///   <item><description><c>upgubunnm</c> carries a "FICS " prefix; we strip it for <see cref="StockIndustryFetchResult.Normalized"/>.</description></item>
+    ///   <item><description>ETF / SPAC respond rsp_cd=00000 with every OutBlock field empty — both Raw and Normalized return null. The caller still records <c>industry_fetched_at</c> so this "fetched-but-empty" state stops perpetual re-dispatch.</description></item>
+    /// </list>
+    /// </remarks>
+    public async Task<StockIndustryFetchResult> GetStockIndustryAsync(string symbol, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+            return new StockIndustryFetchResult(null, null, "symbol must not be empty.");
+
+        string normalized = symbol.Trim().ToUpperInvariant();
+        try
+        {
+            LsTrResponse response = await _apiClient.CallTrAsync(
+                "t3320",
+                new JsonObject { ["gicode"] = normalized },
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            if (!response.IsSuccess)
+                return new StockIndustryFetchResult(null, null,
+                    $"LS reported a business-level error ({response.RspCode}: {response.RspMessage}).");
+
+            JsonElement? block = response.GetBlock("t3320OutBlock");
+            if (block is null)
+                return new StockIndustryFetchResult(null, null, null);
+
+            string? raw = block.Value.ReadString("upgubunnm")?.Trim();
+            if (string.IsNullOrEmpty(raw))
+                return new StockIndustryFetchResult(null, null, null);
+
+            string normalizedLabel = NormalizeFicsIndustry(raw);
+            return new StockIndustryFetchResult(raw, normalizedLabel, null);
+        }
+        catch (LsAuthException ex)
+        {
+            return new StockIndustryFetchResult(null, null, $"Authentication failed: {ex.Message}");
+        }
+        catch (LsTrException ex)
+        {
+            return new StockIndustryFetchResult(null, null, $"TR call failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Strips the leading "FICS " prefix when present so filter UX matches the
+    /// industry name humans expect ("반도체 및 관련장비") rather than the LS
+    /// internal taxonomy label ("FICS 반도체 및 관련장비").
+    /// </summary>
+    internal static string NormalizeFicsIndustry(string raw)
+    {
+        string trimmed = raw.Trim();
+        if (trimmed.Length == 0)
+            return trimmed;
+        const string prefix = "FICS ";
+        if (trimmed.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            return trimmed.Substring(prefix.Length).Trim();
+        return trimmed;
+    }
+
+    /// <summary>
     /// Gets and short-term caches the full t1531 theme quote table.
     /// </summary>
     async Task<ThemeCacheEntry> GetAllThemeQuotesAsync(CancellationToken cancellationToken)

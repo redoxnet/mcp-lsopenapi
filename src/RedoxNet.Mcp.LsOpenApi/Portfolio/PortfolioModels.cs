@@ -35,7 +35,6 @@ internal sealed class WatchlistItem
     public string Symbol { get; init; } = "";
     public string Name { get; init; } = "";
     public string Market { get; init; } = "";
-    public string? KrxSector { get; init; }
     public string? Notes { get; init; }
     public string AddedAt { get; init; } = "";
 }
@@ -156,6 +155,28 @@ internal sealed class StockTheme
 internal sealed record StockThemesFetchResult(IReadOnlyList<ThemeCatalogRow> Themes, string? Error);
 
 /// <summary>
+/// Result wrapper for the per-stock industry fetch (t3320 FNG_요약).
+/// Both <see cref="Raw"/> and <see cref="Normalized"/> are null when LS returns
+/// an empty <c>upgubunnm</c> (ETF / SPAC / delisted-soon symbols); callers still
+/// record the fetch via <c>industry_fetched_at</c> so the empty case is cached.
+/// </summary>
+internal sealed record StockIndustryFetchResult(string? Raw, string? Normalized, string? Error);
+
+/// <summary>
+/// Per-stock industry cache row used inside PortfolioService projections.
+/// Mirrors the <c>stocks.industry_*</c> columns. A row with both <see cref="IndustryRaw"/>
+/// and <see cref="Industry"/> null but <see cref="IndustryFetchedAt"/> populated is the
+/// "fetched-but-empty" state for theme-less symbols (ETF / SPAC).
+/// </summary>
+internal sealed class StockIndustryRow
+{
+    public string Symbol { get; init; } = "";
+    public string? IndustryRaw { get; init; }
+    public string? Industry { get; init; }
+    public string IndustryFetchedAt { get; init; } = "";
+}
+
+/// <summary>
 /// Result envelope for batch quote calls with per-key quote values and an optional top-level failure message.
 /// </summary>
 internal sealed record QuoteBatchResult<T>(IReadOnlyDictionary<string, T?> Quotes, string? TopLevelError);
@@ -250,6 +271,22 @@ internal sealed record HoldingWithQuote(
     public IReadOnlyList<ThemeCatalogRow>? Themes { get; init; }
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? ThemesStatus { get; init; }
+
+    /// <summary>
+    /// FICS industry label with the "FICS " prefix stripped — e.g. "반도체 및 관련장비".
+    /// Omitted from the JSON envelope when the symbol has no industry record (cache miss
+    /// or fetched-but-empty for ETF/SPAC).
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? Industry { get; init; }
+
+    /// <summary>Original t3320 <c>upgubunnm</c> ("FICS …"). Omitted when the cache row is empty.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? IndustryRaw { get; init; }
+
+    /// <summary>"pending" when industry enrichment has never completed for this symbol. Omitted otherwise.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? IndustryStatus { get; init; }
 }
 
 /// <summary>
@@ -329,6 +366,10 @@ internal sealed record HoldingListResult(
     /// <summary>Unique theme names matched by the active filter, for false-positive visibility on LIKE matches.</summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<string>? MatchedThemes { get; init; }
+
+    /// <summary>Unique normalized industry labels matched by the active <c>industry</c> filter (substring match).</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? MatchedIndustries { get; init; }
 }
 
 /// <summary>Echo of the active <c>ls_holdings_list</c> filter parameters.</summary>
@@ -339,6 +380,10 @@ internal sealed record HoldingsFilterEcho
 
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? ThemeKeyword { get; init; }
+
+    /// <summary>FICS industry substring filter (case-insensitive) — see SPEC-v0.7 §4.5.4.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? Industry { get; init; }
 }
 
 /// <summary>
