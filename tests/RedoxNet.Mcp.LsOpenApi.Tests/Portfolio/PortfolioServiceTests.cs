@@ -556,6 +556,56 @@ public sealed class PortfolioServiceTests
         await act.Should().ThrowAsync<PortfolioValidationException>();
     }
 
+    // ---------- v0.7 Tier 2-1: ls_watchlist_group_create with rename_from ----------
+
+    [Fact]
+    public async Task CreateGroupAsync_NoRenameFrom_BehavesAsBeforeUpsert()
+    {
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        var service = new PortfolioService(repository, new FakeQuoteService());
+
+        WatchlistGroup created = await service.CreateGroupAsync("semis", "반도체");
+
+        created.Name.Should().Be("semis");
+        created.Description.Should().Be("반도체");
+        (await repository.ListGroupsAsync()).Should().Contain(g => g.Name == "semis");
+    }
+
+    [Fact]
+    public async Task CreateGroupAsync_RenameFromExistingGroup_RenamesAndOverridesDescription()
+    {
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        await repository.CreateGroupAsync("semis", "반도체");
+        var service = new PortfolioService(repository, new FakeQuoteService());
+
+        WatchlistGroup renamed = await service.CreateGroupAsync("semiconductors", "Semiconductor stocks", renameFrom: "semis");
+
+        renamed.Name.Should().Be("semiconductors");
+        renamed.Description.Should().Be("Semiconductor stocks");
+        (await repository.ListGroupsAsync()).Should().NotContain(g => g.Name == "semis");
+    }
+
+    [Fact]
+    public async Task CreateGroupAsync_RenameFromCollidesWithExistingTarget_ThrowsValidationError()
+    {
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        await repository.CreateGroupAsync("semis", null);
+        await repository.CreateGroupAsync("bio", null);
+        var service = new PortfolioService(repository, new FakeQuoteService());
+
+        Func<Task> act = () => service.CreateGroupAsync("bio", null, renameFrom: "semis");
+
+        await act.Should().ThrowAsync<PortfolioValidationException>()
+            .WithMessage("*bio*");
+        (await repository.ListGroupsAsync()).Select(g => g.Name).Should().Contain(new[] { "semis", "bio" });
+    }
+
     // ---------- v0.7 A3: ls_stocks_refresh_metadata ----------
 
     [Fact]

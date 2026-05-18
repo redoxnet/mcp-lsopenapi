@@ -24,15 +24,28 @@ internal static class PortfolioTools
         await SerializeAsync(() => portfolio.ListGroupsAsync(cancellationToken)).ConfigureAwait(false);
 
     [McpServerTool(Name = "ls_watchlist_group_create")]
-    [Description("Creates or updates a watchlist group for saved personal stock lists. Does not require LS credentials.")]
+    [Description("""
+        Creates a watchlist group, updates its description, or renames an existing group — all through the same tool. Does not require LS credentials.
+
+        USE WHEN: the user asks to "그룹 만들어 / create a list", "그룹 설명 바꿔 / update the description", or "이름 바꿔 / rename group X to Y".
+
+        Three modes:
+        - rename_from omitted, group `name` does not exist → INSERT the group.
+        - rename_from omitted, group `name` exists → UPDATE its description (upsert).
+        - rename_from set → RENAME the group currently called `rename_from` to `name` and (optionally) override its description. Fails with ValidationError when the target `name` already belongs to a different group.
+
+        v0.7 Tier 2 BREAKING: the previous `ls_watchlist_group_rename` tool was folded here as the `rename_from` parameter.
+        """)]
     public static async Task<string> WatchlistGroupCreate(
         IPortfolioService portfolio,
-        [Description("Group name, e.g. 'semiconductors'. Must be unique.")]
+        [Description("Target group name (the post-rename name when rename_from is set).")]
         string name,
-        [Description("Optional group description.")]
+        [Description("Optional group description. Applied to the row whose name ends up being `name`.")]
         string? description = null,
+        [Description("Optional. Existing group name to rename to `name`. Set this for the rename path; leave null/empty for insert / description upsert.")]
+        string? rename_from = null,
         CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.CreateGroupAsync(name, description, cancellationToken)).ConfigureAwait(false);
+        await SerializeAsync(() => portfolio.CreateGroupAsync(name, description, rename_from, cancellationToken)).ConfigureAwait(false);
 
     [McpServerTool(Name = "ls_watchlist_group_delete")]
     [Description("Deletes a watchlist group and cascades its saved stock items. Does not require LS credentials.")]
@@ -42,17 +55,6 @@ internal static class PortfolioTools
         string name,
         CancellationToken cancellationToken = default) =>
         await SerializeAsync(() => portfolio.DeleteGroupAsync(name, cancellationToken)).ConfigureAwait(false);
-
-    [McpServerTool(Name = "ls_watchlist_group_rename")]
-    [Description("Renames a watchlist group. Fails if the new name already exists.")]
-    public static async Task<string> WatchlistGroupRename(
-        IPortfolioService portfolio,
-        [Description("Existing group name.")]
-        string old_name,
-        [Description("New group name. Must be unique.")]
-        string new_name,
-        CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.RenameGroupAsync(old_name, new_name, cancellationToken)).ConfigureAwait(false);
 
     // ---------------------- Watchlist items ----------------------
 

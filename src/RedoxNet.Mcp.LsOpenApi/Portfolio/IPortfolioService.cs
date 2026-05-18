@@ -8,9 +8,16 @@ internal interface IPortfolioService
 {
     // -------- Watchlist groups --------
     Task<IReadOnlyList<WatchlistGroupSummary>> ListGroupsAsync(CancellationToken cancellationToken = default);
-    Task<WatchlistGroup> CreateGroupAsync(string name, string? description, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Creates, updates description on, or renames a watchlist group. When
+    /// <paramref name="renameFrom"/> is set the existing group with that name is
+    /// renamed to <paramref name="name"/> (and its description optionally
+    /// overridden); otherwise this upserts a group keyed by <paramref name="name"/>.
+    /// Throws when the rename target name collides with an unrelated group.
+    /// </summary>
+    Task<WatchlistGroup> CreateGroupAsync(string name, string? description, string? renameFrom = null, CancellationToken cancellationToken = default);
     Task<DeleteGroupResult> DeleteGroupAsync(string name, CancellationToken cancellationToken = default);
-    Task<RenameGroupResult> RenameGroupAsync(string oldName, string newName, CancellationToken cancellationToken = default);
+    // v0.7 Tier 2 BREAKING — RenameGroupAsync folded into CreateGroupAsync(renameFrom?).
 
     // -------- Watchlist items --------
     Task<WatchlistItemAdded> AddWatchlistAsync(string symbol, string group, string? notes, CancellationToken cancellationToken = default);

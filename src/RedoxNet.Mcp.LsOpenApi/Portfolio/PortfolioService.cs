@@ -55,14 +55,27 @@ internal sealed class PortfolioService : IPortfolioService
     public Task<IReadOnlyList<WatchlistGroupSummary>> ListGroupsAsync(CancellationToken cancellationToken = default) =>
         _repository.ListGroupsAsync(cancellationToken);
 
-    public Task<WatchlistGroup> CreateGroupAsync(string name, string? description, CancellationToken cancellationToken = default) =>
-        _repository.CreateGroupAsync(name, description, cancellationToken);
+    public async Task<WatchlistGroup> CreateGroupAsync(string name, string? description, string? renameFrom = null, CancellationToken cancellationToken = default)
+    {
+        if (!string.IsNullOrWhiteSpace(renameFrom))
+        {
+            // v0.7 Tier 2: rename mode folded in. We rename through the
+            // repository and then upsert again with the same name so the
+            // description override (if any) lands on the renamed row.
+            try
+            {
+                await _repository.RenameGroupAsync(renameFrom!, name, cancellationToken).ConfigureAwait(false);
+            }
+            catch (InvalidOperationException ex)
+            {
+                throw new PortfolioValidationException(ex.Message);
+            }
+        }
+        return await _repository.CreateGroupAsync(name, description, cancellationToken).ConfigureAwait(false);
+    }
 
     public Task<DeleteGroupResult> DeleteGroupAsync(string name, CancellationToken cancellationToken = default) =>
         _repository.DeleteGroupAsync(name, cancellationToken);
-
-    public Task<RenameGroupResult> RenameGroupAsync(string oldName, string newName, CancellationToken cancellationToken = default) =>
-        _repository.RenameGroupAsync(oldName, newName, cancellationToken);
 
     // -------- Watchlist items --------
 
