@@ -137,7 +137,7 @@ public static class GetIndexQuoteTool
     /// Returns null when the input is empty or obviously malformed; an unknown 3-char
     /// upcode is passed through to LS so the testbed can capture friendly errors.
     /// </summary>
-    static string NormalizeIndexCode(string? raw)
+    internal static string NormalizeIndexCode(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw))
             return "001";
