@@ -17,16 +17,27 @@ namespace RedoxNet.Mcp.LsOpenApi.Tools;
 public static class GetMarketWarningsTool
 {
     /// <summary>Defensive cap so one call cannot fan out to dozens of TR requests.</summary>
-    const int MaxPagesPerKind = 6;
+    /// <remarks>
+    /// v0.7 E2E showed real KRX screens fit in 1 page; the 6-page cap from the
+    /// pre-dedup era was load-bearing only because LS was looping the same
+    /// screen. With the per-kind <c>seen</c> dedup in <see cref="FetchKindAsync"/>
+    /// the loop already breaks early, so 3 is enough for the legitimate "screen
+    /// genuinely spans multiple pages" case while keeping fan-out tight.
+    /// </remarks>
+    const int MaxPagesPerKind = 3;
 
-    /// <summary>Default warning set when the caller does not specify `kinds`.</summary>
+    /// <summary>Default warning set when the caller does not specify <c>kinds</c>.</summary>
+    /// <remarks>
+    /// Just <c>관리</c> (t1404 jongchk=1). v0.7 E2E showed the model commonly
+    /// calls this tool with no kinds for natural questions like "오늘 관리종목" —
+    /// the previous 5-kind default fanned out to 5 TR calls and ~500 rows when
+    /// the user wanted exactly one screen. Models that want comprehensive
+    /// surveillance coverage pass an explicit list (the description points at
+    /// the multi-kind pattern), so default-narrow is the safer floor.
+    /// </remarks>
     static readonly string[] DefaultKindCodes = new[]
     {
         "t1404:1", // 관리
-        "t1405:2", // 매매정지
-        "t1405:3", // 정리매매
-        "t1405:7", // 단기과열지정
-        "t1405:5", // 투자위험
     };
 
     sealed record KindSpec(string Tr, string Jongchk, string Kind, string KoreanLabel);
@@ -40,7 +51,11 @@ public static class GetMarketWarningsTool
         new("t1404", "4", "investment_warning_call",  "투자환기"),
         new("t1405", "1", "investment_alert",         "투자경고"),
         new("t1405", "2", "trading_halt",             "매매정지"),
-        new("t1405", "3", "delisting_trade",          "정리매매"),
+        // 정리매매 = the 7-day liquidation window before delisting. "Liquidation
+        // trading" is the standard English finance term; v0.7 E2E showed models
+        // reaching for it first. The legacy "delisting_trade" name is kept as an
+        // input alias in ResolveKind() for back-compat.
+        new("t1405", "3", "liquidation_trading",      "정리매매"),
         new("t1405", "4", "investment_attention",     "투자주의"),
         new("t1405", "5", "investment_risk",          "투자위험"),
         new("t1405", "6", "risk_forecast",            "위험예고"),
@@ -59,7 +74,7 @@ public static class GetMarketWarningsTool
 
         USE WHEN: the user is screening for KRX-side risk flags, or asking "are any of my holdings on a watchlist". AVOID WHEN: the user wants disclosure feed (공시) or news — those belong to other TRs.
 
-        kinds: list of English snake_case ('designated_admin', 'trading_halt', 'short_term_overheating', …), Korean labels ('관리종목', '매매정지', '단기과열', …), or LS jongchk codes prefixed with the source TR ('t1404:1', 't1405:7'). When omitted, the wrapper queries the five most operationally critical sets: 관리 / 매매정지 / 정리매매 / 단기과열 / 투자위험.
+        kinds: list of English snake_case ('designated_admin', 'trading_halt', 'short_term_overheating', 'liquidation_trading', …), Korean labels ('관리종목', '매매정지', '단기과열', '정리매매', …), or LS jongchk codes prefixed with the source TR ('t1404:1', 't1405:7'). When omitted, only 관리 (designated_admin) is queried — pass an explicit list (e.g. ['관리', '매매정지', '단기과열']) for a wider surveillance sweep.
 
         shcodes: optional whitelist (typically the user's holdings). When supplied, only matching rows pass through; otherwise the full market scope is returned.
 
@@ -69,7 +84,7 @@ public static class GetMarketWarningsTool
         """)]
     public static async Task<string> GetMarketWarnings(
         LsApiClient apiClient,
-        [Description("Optional list of warning kinds. English snake_case, Korean label, or 'trCode:jongchk' (e.g. 't1405:7') accepted. When omitted, the five default kinds are queried.")]
+        [Description("Optional list of warning kinds. English snake_case, Korean label, or 'trCode:jongchk' (e.g. 't1405:7') accepted. When omitted, only 관리 (designated_admin) is queried — pass an explicit list for wider sweep.")]
         string[]? kinds = null,
         [Description("Optional subset of 6-digit shcodes to keep. Useful for filtering against a user's holdings list.")]
         string[]? shcodes = null,
@@ -164,6 +179,12 @@ public static class GetMarketWarningsTool
         CancellationToken cancellationToken)
     {
         string ctsShcode = " ";
+        // Per-kind seen-shcode set so we can detect "LS echoes cursor without
+        // advancing" — observed live in v0.7 E2E: when the entire kind's data
+        // fits in one page, LS keeps echoing the last shcode as cts_shcode and
+        // returning the same rows. Without dedup the loop fanned out 6× and
+        // shipped ~600 duplicate rows for a 100-row screen.
+        var seen = new HashSet<string>(StringComparer.Ordinal);
         for (int page = 0; page < MaxPagesPerKind; page++)
         {
             LsTrResponse response = await apiClient.CallTrAsync(
@@ -179,6 +200,7 @@ public static class GetMarketWarningsTool
             if (!response.IsSuccess)
                 throw new LsBusinessErrorException(kind.Tr, kind.Kind, response.RspCode, response.RspMessage);
 
+            int newRowsThisPage = 0;
             JsonElement? array = response.GetBlock($"{kind.Tr}OutBlock1");
             if (array is not null && array.Value.ValueKind == JsonValueKind.Array)
             {
@@ -187,6 +209,9 @@ public static class GetMarketWarningsTool
                     string shcode = row.ReadString("shcode")?.Trim() ?? "";
                     if (string.IsNullOrEmpty(shcode))
                         continue;
+                    if (!seen.Add(shcode))
+                        continue; // Already returned on a prior page — LS is echoing the same screen.
+                    newRowsThisPage++;
                     if (shcodeFilter is not null && !shcodeFilter.Contains(shcode))
                         continue;
                     sink.Add(BuildRow(kind, shcode, row));
@@ -195,6 +220,10 @@ public static class GetMarketWarningsTool
 
             string? nextCts = response.GetBlock($"{kind.Tr}OutBlock")?.ReadString("cts_shcode")?.Trim();
             if (string.IsNullOrEmpty(nextCts))
+                break;
+            // Cursor must advance OR new rows must arrive. If neither, LS is
+            // serving the same screen — abort to avoid the 6× duplication.
+            if (string.Equals(nextCts, ctsShcode, StringComparison.Ordinal) || newRowsThisPage == 0)
                 break;
             ctsShcode = nextCts;
         }
@@ -239,7 +268,12 @@ public static class GetMarketWarningsTool
             if (string.Equals(spec.KoreanLabel, trimmed, StringComparison.Ordinal))
                 return spec;
         }
-        // Korean aliases without the "지정" suffix LS sometimes appends.
+        // Korean aliases without the "지정" suffix LS sometimes appends, plus
+        // legacy English names from earlier v0.7-prep builds.
+        switch (lower)
+        {
+            case "delisting_trade": case "delisting": return AllKinds.First(k => k.Kind == "liquidation_trading");
+        }
         switch (trimmed)
         {
             case "관리": return AllKinds.First(k => k.Kind == "designated_admin");
