@@ -190,10 +190,10 @@ ETF/ETN 전용 정보(NAV, 추적오차율, 괴리율, AUM, LP), 구성종목(PD
 
 > **v0.6 명명 정정.** v0.5에서 `ls_watched_sectors_*`로 부르던 도구는 사실 LS 테마(tmcode)였습니다. v0.6에서 `ls_watched_themes_*`로 정정 — 기존 등록 데이터는 schema v3 마이그레이션으로 자동 보존됩니다.
 
-### 시장 컨텍스트 (v0.6)
+### 시장 컨텍스트 (v0.6+)
 > *"오늘 코스피"* / *"강한 업종"* / *"2차전지 테마 종목"* / *"삼성전자가 속한 테마들"*
 
-지수 단건 조회(`ls_get_index_quote`), 업종 등락률 랭킹(`ls_get_industry_indices`), 업종/테마 내 종목 비교(`ls_get_industry_stocks`, `ls_get_theme_stocks`), 종목별 테마 역조회(`ls_get_stock_themes`). 키워드가 모호하면 후보를 보여주고 되묻습니다.
+지수 단건 조회(`ls_get_index_quote`), 해외 지수·환율·선물 단건 조회(`ls_get_global_market_quote`), 업종 등락률 랭킹(`ls_get_industry_indices`), 업종/테마 내 종목 비교(`ls_get_industry_stocks`, `ls_get_theme_stocks`), 종목별 테마 역조회(`ls_get_stock_themes`). 키워드가 모호하면 후보를 보여주고 되묻습니다.
 
 ### 스크리너 (v0.7)
 > *"PER 낮은 종목 30개"* / *"코스닥 ROE 상위"* / *"오늘 외인 매수 상위"* / *"삼성전자 외인·기관 최근 한 달 흐름"* / *"카카오 다음 주주총회 언제"* / *"내 보유 중 관리종목 있어?"*

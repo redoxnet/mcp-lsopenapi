@@ -125,13 +125,13 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 
 | TR | 이름 | Status | Tool / Notes |
 | --- | --- | --- | --- |
-| `t3102` | 뉴스 본문 | ⚪ 💎 | News integration |
+| `t3102` | 뉴스 본문 | 🔵 💎 | In catalog (`ls_call_tr` only). Needs upstream news-number discovery before a first-class wrapper is useful. |
 | `t3202` | 종목별 증시일정 | ⚪ | Earnings/event calendar |
 | `t3320` | FNG 요약 | ⚪ | F&G index? |
 | `t3341` | 재무순위 종합 | ⚪ 💎 | Fundamentals: PER/PBR/ROE — anchors fundamental analysis tooling |
 | `t3401` | 투자의견 | ⚪ | Sell-side coverage |
-| `t3518` | 해외 실시간 지수 | ⚪ | Realtime — defer to v1.1 |
-| `t3521` | 해외지수 조회 (API용) | ⚪ 💡 | |
+| `t3518` | 해외 실시간 지수 | 🔵 | In catalog (`ls_call_tr` only). Overseas index / FX / futures series (day/week/month/min/tick) with body continuation (`cts_date`, `cts_time`). |
+| `t3521` | 해외지수 조회 (API용) | 🟢 💡 | `ls_get_global_market_quote` — one-shot overseas index / FX / futures snapshot. Covers major US indices (`nasdaq`, `sp500`, `dow`, `soxx`) and FX (`usdkrw`) aliases. |
 | `t8428` | 증시주변자금 추이 | ⚪ | Macro liquidity |
 
 ## [주식] 섹터 — LS curated themes (path `/stock/sector`)

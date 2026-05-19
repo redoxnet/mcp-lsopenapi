@@ -104,9 +104,9 @@ Credentials are accepted **only** through the process environment — never thro
 
 Local data lives at `%LOCALAPPDATA%\RedoxNet\LsOpenApi\` on Windows and `~/.local/share/redoxnet/lsopenapi/` on Linux/macOS: `token.db` (auth cache, SHA-256 keyed) and `portfolio.db` (user-supplied holdings/watchlists; never read or written by tools outside the portfolio family).
 
-## Tools (v0.7.0 — 43 total)
+## Tools (main — 44 total)
 
-v0.7 net delta: +6 new (screeners + index history + metadata refresh) − 3 Tier 2 compression. Headline pivot: natural screener questions answerable in one call — *"PER 낮은 종목"*, *"오늘 외인 매수 누구"*, *"다음 주총 언제"*, *"내 보유 중 관리종목"*. Storage hygiene: `avg_price` no longer drifts under split/reverse-split round-trips (schema v4 integer fractional won), ETFs stop reporting perpetual `themes_pending` (sentinel-row), and FICS industry classification populates `stocks.industry` for the new `industry?` filter on `ls_holdings_list`.
+v0.7 net delta: +6 new (screeners + index history + metadata refresh) − 3 Tier 2 compression. Current main also adds `ls_get_global_market_quote` for overseas index / FX / futures snapshots. Headline pivot: natural screener questions answerable in one call — *"PER 낮은 종목"*, *"오늘 외인 매수 누구"*, *"다음 주총 언제"*, *"내 보유 중 관리종목"*. Storage hygiene: `avg_price` no longer drifts under split/reverse-split round-trips (schema v4 integer fractional won), ETFs stop reporting perpetual `themes_pending` (sentinel-row), and FICS industry classification populates `stocks.industry` for the new `industry?` filter on `ls_holdings_list`.
 
 ### Market data (LS-backed, credentials required)
 
@@ -125,6 +125,7 @@ v0.7 net delta: +6 new (screeners + index history + metadata refresh) − 3 Tier
 | `ls_search_stock` | `t8436` | Name → code search with `instrument` filter (`all` / `stock` / `etf`). |
 | `ls_get_etf_info` | `t1901` | ETF/ETN snapshot — NAV, 괴리율, 추적오차율, reference index, AUM, LP list. |
 | `ls_get_etf_holdings` | `t1904` | ETF PDF (구성종목) with optional `top_n` cap. |
+| `ls_get_global_market_quote` | `t3521` | Overseas index / FX / futures snapshot. Aliases include `nasdaq`, `sp500`, `dow`, `soxx`, `usdkrw`, `wti`, `gold`; raw LS symbols like `NAS@IXIC` are accepted. |
 
 ### Index + industry (LS-backed)
 

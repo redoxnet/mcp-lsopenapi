@@ -56,4 +56,52 @@ public class NewApiTrCatalogTests
         TrCatalog.Default.Find("t8436").Should().NotBeNull();
         TrCatalog.Default.Find("t9945").Should().NotBeNull();
     }
+
+    [Fact]
+    public void T3521_GlobalMarketQuote_HasExpectedShape()
+    {
+        TrMeta meta = TrCatalog.Default.Get("t3521");
+        meta.Path.Should().Be("/stock/investinfo");
+        meta.Category.Should().Be("투자정보");
+
+        meta.InBlocks.Should().ContainSingle()
+            .Which.Fields.Select(f => f.Name).Should().Equal("kind", "symbol");
+
+        TrBlock outBlock = meta.OutBlocks.Should().ContainSingle().Subject;
+        outBlock.Name.Should().Be("t3521OutBlock");
+        outBlock.IsArray.Should().BeFalse();
+        outBlock.Fields.Select(f => f.Name).Should().Equal(
+            "date", "symbol", "change", "sign", "diff", "close", "hname");
+    }
+
+    [Fact]
+    public void T3518_GlobalMarketSeries_ExposesBodyContinuationKeys()
+    {
+        TrMeta meta = TrCatalog.Default.Get("t3518");
+        meta.Path.Should().Be("/stock/investinfo");
+        meta.Continuation.Supported.Should().BeTrue();
+        meta.Continuation.KeyFields.Should().Equal("cts_date", "cts_time");
+
+        meta.InBlocks.Should().ContainSingle()
+            .Which.Fields.Select(f => f.Name).Should().Equal(
+                "kind", "symbol", "cnt", "jgbn", "nmin", "cts_date", "cts_time");
+
+        meta.OutBlocks.Select(b => b.Name).Should().Equal("t3518OutBlock", "t3518OutBlock1");
+        meta.OutBlocks[1].IsArray.Should().BeTrue();
+    }
+
+    [Fact]
+    public void T3102_NewsBody_ModelsBodyFragmentsAndTitle()
+    {
+        TrMeta meta = TrCatalog.Default.Get("t3102");
+        meta.Path.Should().Be("/stock/investinfo");
+
+        meta.InBlocks.Should().ContainSingle()
+            .Which.Fields.Select(f => f.Name).Should().Equal("sNewsno");
+
+        meta.OutBlocks.Select(b => b.Name).Should().Equal("t3102OutBlock", "t3102OutBlock1", "t3102OutBlock2");
+        meta.OutBlocks[0].IsArray.Should().BeTrue();
+        meta.OutBlocks[1].IsArray.Should().BeTrue();
+        meta.OutBlocks[2].Fields.Select(f => f.Name).Should().Contain("sTitle");
+    }
 }

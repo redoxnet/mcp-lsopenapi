@@ -887,6 +887,140 @@
       "rate_limit_per_sec": 1
     },
     {
+      "tr_code": "t3102",
+      "name": "뉴스본문",
+      "category": "투자정보",
+      "path": "/stock/investinfo",
+      "description": "뉴스번호(sNewsno)로 LS 뉴스 본문 조각과 관련 종목코드, 제목을 조회합니다. 본문은 t3102OutBlock1.sBody 배열 조각을 순서대로 이어 붙여 사용합니다.",
+      "in_blocks": [
+        {
+          "name": "t3102InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "sNewsno", "type": "char", "description": "뉴스번호", "required": true, "length": 24, "example": "2023051510383935PL7HQ87D" }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t3102OutBlock",
+          "is_array": true,
+          "fields": [
+            { "name": "sJongcode", "type": "char", "description": "뉴스 관련 종목코드", "length": 6 }
+          ]
+        },
+        {
+          "name": "t3102OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "sBody", "type": "char", "description": "뉴스본문 조각. 배열 순서대로 결합해야 전체 본문이 됩니다.", "length": 100 }
+          ]
+        },
+        {
+          "name": "t3102OutBlock2",
+          "is_array": false,
+          "fields": [
+            { "name": "sTitle", "type": "char", "description": "뉴스타이틀", "length": 300 }
+          ]
+        }
+      ],
+      "continuation": { "supported": false },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t3518",
+      "name": "해외실시간지수",
+      "category": "투자정보",
+      "path": "/stock/investinfo",
+      "description": "해외지수(S), 해외선물(F), 환율/금리(R)의 일/주/월/분/틱 시계열을 조회합니다. t3521 단건 스냅샷의 시계열 대응 TR입니다.",
+      "in_blocks": [
+        {
+          "name": "t3518InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "kind", "type": "char", "description": "종목종류. S=해외지수, F=해외선물, R=환율/금리", "required": true, "length": 1, "example": "S" },
+            { "name": "symbol", "type": "char", "description": "해외지수/환율/선물 SYMBOL. 예: NAS@IXIC, DJI@DJI, USDKRWSMBS", "required": true, "length": 16, "example": "NAS@IXIC" },
+            { "name": "cnt", "type": "int", "description": "입력건수", "required": true, "length": 4, "example": "20" },
+            { "name": "jgbn", "type": "char", "description": "조회구분. 0=일, 1=주, 2=월, 3=분, 4=틱", "required": true, "length": 1, "example": "4" },
+            { "name": "nmin", "type": "int", "description": "N분. jgbn=3(분)인 경우 사용", "required": true, "length": 3, "example": "0" },
+            { "name": "cts_date", "type": "char", "description": "연속조회 CTS_DATE. 최초 조회시 스페이스", "required": true, "length": 8 },
+            { "name": "cts_time", "type": "char", "description": "연속조회 CTS_TIME. 최초 조회시 스페이스", "required": true, "length": 6 }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t3518OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "cts_date", "type": "char", "description": "다음 조회용 CTS_DATE", "length": 8 },
+            { "name": "cts_time", "type": "char", "description": "다음 조회용 CTS_TIME", "length": 6 }
+          ]
+        },
+        {
+          "name": "t3518OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "date", "type": "char", "description": "일자", "length": 8 },
+            { "name": "time", "type": "char", "description": "시간", "length": 8 },
+            { "name": "open", "type": "double", "description": "시가. S/F는 소수 2자리, R은 소수 4자리" },
+            { "name": "high", "type": "double", "description": "고가. S/F는 소수 2자리, R은 소수 4자리" },
+            { "name": "low", "type": "double", "description": "저가. S/F는 소수 2자리, R은 소수 4자리" },
+            { "name": "price", "type": "double", "description": "현재가" },
+            { "name": "sign", "type": "char", "description": "전일대비구분", "length": 1 },
+            { "name": "change", "type": "double", "description": "전일대비" },
+            { "name": "uprate", "type": "double", "description": "등락율" },
+            { "name": "volume", "type": "long", "description": "누적거래량" },
+            { "name": "bidho", "type": "double", "description": "매수호가" },
+            { "name": "offerho", "type": "double", "description": "매도호가" },
+            { "name": "bidrem", "type": "long", "description": "매수잔량" },
+            { "name": "offerrem", "type": "long", "description": "매도잔량" },
+            { "name": "kind", "type": "char", "description": "종목종류", "length": 1 },
+            { "name": "symbol", "type": "char", "description": "SYMBOL", "length": 16 },
+            { "name": "exid", "type": "char", "description": "EXID", "length": 4 },
+            { "name": "kodate", "type": "char", "description": "한국일자", "length": 8 },
+            { "name": "kotime", "type": "char", "description": "한국시간", "length": 8 }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "key_fields": [ "cts_date", "cts_time" ] },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t3521",
+      "name": "해외지수조회 API용",
+      "category": "투자정보",
+      "path": "/stock/investinfo",
+      "description": "해외지수(S), 해외환율(R), 해외선물(F)의 단건 스냅샷을 조회합니다. 주요 예: DJI@DJI(다우), NAS@IXIC(나스닥), SPI@SPX(S&P 500), USI@SOXX(필라델피아 반도체), USDKRWSMBS(원/달러), NYM@CL(WTI), COM@GC(금).",
+      "in_blocks": [
+        {
+          "name": "t3521InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "kind", "type": "char", "description": "종목종류. S=해외지수, R=해외환율, F=해외선물", "required": true, "length": 1, "example": "S" },
+            { "name": "symbol", "type": "char", "description": "해외지수/환율/선물 SYMBOL", "required": true, "length": 16, "example": "DJI@DJI" }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t3521OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "date", "type": "char", "description": "일자", "length": 8 },
+            { "name": "symbol", "type": "char", "description": "SYMBOL", "length": 16 },
+            { "name": "change", "type": "double", "description": "전일대비" },
+            { "name": "sign", "type": "char", "description": "전일대비구분", "length": 1 },
+            { "name": "diff", "type": "double", "description": "등락율" },
+            { "name": "close", "type": "double", "description": "종가/현재값" },
+            { "name": "hname", "type": "char", "description": "한글명" }
+          ]
+        }
+      ],
+      "continuation": { "supported": false },
+      "rate_limit_per_sec": 1
+    },
+    {
       "tr_code": "t3320",
       "name": "FNG_요약 (투자정보 요약)",
       "category": "투자정보",
@@ -1990,4 +2124,3 @@
     }
   ]
 }
-

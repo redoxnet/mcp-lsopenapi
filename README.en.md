@@ -408,6 +408,7 @@ These tools persist user-supplied data to a SQLite store at `%LOCALAPPDATA%\Redo
 | Tool | Purpose |
 | --- | --- |
 | `ls_get_index_quote(index_code)` | Single Korean index snapshot via `t1511`. Aliases `kospi`/`kosdaq`/`kospi200`/`krx100`. Envelope includes value, change %, OHLC with timestamps, 52-week + YTD range, market breadth, 4 related auxiliary indices. |
+| `ls_get_global_market_quote(kind?, symbol?)` | Overseas index / FX / futures snapshot via `t3521`. Aliases include `nasdaq`, `sp500`, `dow`, `soxx`, `usdkrw`, `wti`, `gold`; raw LS symbols like `NAS@IXIC` are accepted. |
 | `ls_get_index_history(index_code, period_type?, count?, cts_date?)` | **v0.7**: daily/weekly/monthly time series for an index via `t1514`. Per-bar OHLC, volume, transaction value, market breadth (advance/decline/limit-up/limit-down), and foreign/institutional net flow. `cts_date` pagination surfaced when more pages exist. |
 | `ls_get_industry_indices(market, top_n)` | Top-N industry indices sorted by change %. `t8424` + `t1511` fanout, 60s in-process cache (cold-cost ≈2.5s for KOSPI's ~25 codes; `top_n=5` and `top_n=30` reuse one fanout). |
 | `ls_get_industry_stocks(upcode \| industry_keyword, market, top_n)` | Stocks inside one industry + the industry's index summary. `t1516` body-based continuation paging. Keyword resolution against cached t8424: 0/1/N matches → `IndustryNotFound` / `resolved` echo / `AmbiguousIndustry` with candidates. |
