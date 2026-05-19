@@ -891,7 +891,7 @@
       "name": "뉴스본문",
       "category": "투자정보",
       "path": "/stock/investinfo",
-      "description": "뉴스번호(sNewsno)로 LS 뉴스 본문 조각과 관련 종목코드, 제목을 조회합니다. 본문은 t3102OutBlock1.sBody 배열 조각을 순서대로 이어 붙여 사용합니다.",
+      "description": "뉴스번호(sNewsno)로 LS 뉴스 본문 조각과 관련 종목코드, 제목을 조회합니다. sNewsno 디스커버리는 NWS WebSocket 푸시 payload의 realkey(24자) 필드와 동일 — 이 TR은 본문 조회 전용이므로, 헤더 수신은 NWS 구독이 별도로 필요합니다. 본문은 t3102OutBlock1.sBody 배열 조각을 순서대로 이어 붙여 사용합니다.",
       "in_blocks": [
         {
           "name": "t3102InBlock",

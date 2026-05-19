@@ -125,7 +125,7 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 
 | TR | 이름 | Status | Tool / Notes |
 | --- | --- | --- | --- |
-| `t3102` | 뉴스 본문 | 🔵 💎 | In catalog (`ls_call_tr` only). Needs upstream news-number discovery before a first-class wrapper is useful. |
+| `t3102` | 뉴스 본문 | 🔵 💎 | In catalog (`ls_call_tr` only). Body fetch by sNewsno. Discovery: NWS WebSocket push (`tr_cd=NWS`, `tr_key=NWS001` for all-news, or a 6/8-char shcode for per-stock filtering) — push payload's `realkey` (24 chars) is the sNewsno. WebSocket transport not yet implemented; pairs with NWS in v2.0. |
 | `t3202` | 종목별 증시일정 | ⚪ | Earnings/event calendar |
 | `t3320` | FNG 요약 | ⚪ | F&G index? |
 | `t3341` | 재무순위 종합 | ⚪ 💎 | Fundamentals: PER/PBR/ROE — anchors fundamental analysis tooling |

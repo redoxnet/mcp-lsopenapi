@@ -501,8 +501,8 @@ dotnet run --project src/RedoxNet.Mcp.LsOpenApi --framework net8.0
 - [x] **v0.5.0** — Local portfolio module (24 new tools, 13 → 37 total): multi-account holdings with `set`/`buy`/`sell` semantics, watchlists, watched sectors, corporate actions, structured error envelopes with candidate accounts. SQLite-backed; no broker sync.
 - [x] **v0.6.0** — Market context (index `t1511` + industry fanout `t8424`+`t1511` + industry stocks `t1516`) + LS themes (`t1537` + `t1532`) + portfolio JSON export/import with auto-backup + fire-and-forget theme enrichment with `metadata_freshness` hint + Tier 1 tool compression (39 tools total). `watched_sectors → watched_themes` rename + schema v3 migration preserves v0.5 data.
 - [x] **v0.7.0** — Screeners (fundamentals_rank via `t3341`, investor_flow via `t1601`+`t1702`, stock_events via `t3202`, market_warnings via `t1404`+`t1405`) + index time-series wrapper (`t1514`) + synchronous metadata refresh + FICS industry enrichment from `t3320` powering a new `industry?` filter on `ls_holdings_list`. Storage: `holdings.avg_price` migrated to integer fractional won (×10000, schema v4) so split↔reverse-split round-trips are exact; ETFs stop reporting perpetual `themes_pending` via stock_themes sentinel row. **BREAKING — Tier 2 (−3):** `ls_watchlist_group_rename` → `ls_watchlist_group_create(rename_from?)`, `ls_watchlist_groups_list` → `ls_watchlist_list(scope="groups")`, `ls_broker_rename` → `ls_account_upsert(rename_broker_from?)`. 43 tools total.
-- [ ] **v0.8+** — Earnings releases + news wrappers, dataset-handle integration for `ls_get_index_history`, FICS → KRX standard industry mapping.
-- [ ] **v2.0.0** — Realtime (WebSocket), live accounts/balances, orders.
+- [ ] **v0.8+** — Earnings releases wrapper, dataset-handle integration for `ls_get_index_history`, FICS → KRX standard industry mapping.
+- [ ] **v2.0.0** — Realtime quotes + realtime news header (NWS) paired with body fetch (`t3102`), live accounts/balances, orders (WebSocket end-to-end).
 
 Full changelog: [RELEASENOTES.Mcp.md](RELEASENOTES.Mcp.md) · [RELEASENOTES.Core.md](RELEASENOTES.Core.md).
 
