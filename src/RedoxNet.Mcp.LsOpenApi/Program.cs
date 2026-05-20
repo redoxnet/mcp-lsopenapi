@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using RedoxNet.LsOpenApi.Core;
+using RedoxNet.Mcp.LsOpenApi;
 using RedoxNet.Mcp.LsOpenApi.Apps;
 using RedoxNet.Mcp.LsOpenApi.Portfolio;
 using RedoxNet.Mcp.LsOpenApi.Server;
@@ -48,6 +49,10 @@ builder.Services
 builder.Services.AddPortfolio();
 builder.Services.AddSingleton<IndustryDataCache>();
 
+// Tool-surface profile (SPEC-v0.10 §2.4): `standard` (default) hides the
+// catalog trio from tools/list; `all` exposes them.
+var toolProfile = ToolProfile.FromEnvironment();
+
 builder.Services
     .AddMcpServer(options =>
     {
@@ -66,23 +71,41 @@ builder.Services
     // returned by ls_get_chart / ls_get_etf_holdings.
     .WithListResourcesHandler(UiResources.ListAsync)
     .WithReadResourceHandler(UiResources.ReadAsync)
-    // Tools/list response post-processing. Two passes:
+    // Tools/list response post-processing:
+    //   0. ToolProfile — drops the catalog trio under the `standard` profile.
     //   1. SchemaNormalizer — rewrites `"type": ["X","null"]` to `"X"` so
     //      strict MCP host validators (Ajv / Draft-7 style) accept the
     //      schemas the .NET SDK auto-emits for `T?` parameters.
     //   2. PatchToolMetaIfChartEmitting — attaches the SEP-1865 _meta.ui
     //      envelope for chart-emitting tools (attribute-based registration
     //      can't express the nested shape).
-    .WithRequestFilters(filters => filters.AddListToolsFilter(next => async (ctx, ct) =>
+    // Plus a tools/call filter for LS_TOOL_PROFILE_STRICT.
+    .WithRequestFilters(filters =>
     {
-        var result = await next(ctx, ct);
-        foreach (var tool in result.Tools)
+        filters.AddListToolsFilter(next => async (ctx, ct) =>
         {
-            SchemaNormalizer.NormalizeInputSchema(tool);
-            UiResources.PatchToolMetaIfChartEmitting(tool);
-        }
-        return result;
-    }));
+            var result = await next(ctx, ct);
+            if (!toolProfile.IsAll)
+                result.Tools = result.Tools.Where(t => toolProfile.IsVisible(t.Name)).ToList();
+            foreach (var tool in result.Tools)
+            {
+                SchemaNormalizer.NormalizeInputSchema(tool);
+                UiResources.PatchToolMetaIfChartEmitting(tool);
+            }
+            return result;
+        });
+        filters.AddCallToolFilter(next => async (ctx, ct) =>
+        {
+            // Strict mode rejects a tools/call for a profile-hidden tool; the
+            // default leaves hidden tools internally callable (SPEC-v0.10 §2.4).
+            string? name = ctx.Params?.Name;
+            if (toolProfile.Strict && name is not null && !toolProfile.IsVisible(name))
+                return McpJson.ErrorResult(
+                    "Tool not available in the current LS_TOOL_PROFILE.",
+                    new { tool = name, profile = "standard", hint = "set LS_TOOL_PROFILE=all to expose catalog tools" });
+            return await next(ctx, ct);
+        });
+    });
 
 var app = builder.Build();
 await app.RunAsync();
@@ -111,6 +134,8 @@ static int PrintUsage()
     Console.Error.WriteLine("  LS_MARKET          'real' or 'virtual' (default: virtual).");
     Console.Error.WriteLine("  LS_BASEURL         Override REST base URL (optional).");
     Console.Error.WriteLine("  LS_LOG_LEVEL       Minimum log level: Trace|Debug|Information|Warning|Error|Critical|None (default: Information).");
+    Console.Error.WriteLine("  LS_TOOL_PROFILE    'standard' (default — catalog tools hidden) or 'all'.");
+    Console.Error.WriteLine("  LS_TOOL_PROFILE_STRICT  'true' rejects tools/call for profile-hidden tools (default: false).");
     Console.Error.WriteLine("  LSOPENAPI_DB_PATH  Override local portfolio SQLite path (optional).");
     return 0;
 }
