@@ -1,3 +1,6 @@
+using System.Text.Json.Serialization;
+using RedoxNet.Mcp.LsOpenApi.Tools;
+
 namespace RedoxNet.Mcp.LsOpenApi.Portfolio;
 
 /// <summary>
@@ -118,7 +121,7 @@ internal sealed record StockQuote(
     /// <summary>
     /// Optional display name returned by the quote TR and used to refresh the local stock cache.
     /// </summary>
-    [System.Text.Json.Serialization.JsonIgnore]
+    [JsonIgnore]
     public string? Name { get; init; }
 }
 
@@ -283,16 +286,27 @@ internal sealed record HoldingWithQuote(
     int Quantity,
     double AvgPrice,
     string? Note,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     StockQuote? Quote,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     double? MarketValue,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     double? CostBasis,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     double? Pnl,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     double? PnlPct,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? Warning)
 {
-    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-    public IReadOnlyList<ThemeCatalogRow>? Themes { get; init; }
-    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    /// <summary>
+    /// Theme memberships as a <see cref="Slice{T}"/> (count / shown / items),
+    /// projected per the <c>themes_limit</c> argument. Null when the symbol is
+    /// theme-less or enrichment has not run (see <see cref="ThemesStatus"/>).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Slice<ThemeCatalogRow>? Themes { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ThemesStatus { get; init; }
 
     /// <summary>
@@ -300,15 +314,15 @@ internal sealed record HoldingWithQuote(
     /// Omitted from the JSON envelope when the symbol has no industry record (cache miss
     /// or fetched-but-empty for ETF/SPAC).
     /// </summary>
-    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Industry { get; init; }
 
     /// <summary>Original t3320 <c>upgubunnm</c> ("FICS …"). Omitted when the cache row is empty.</summary>
-    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? IndustryRaw { get; init; }
 
     /// <summary>"pending" when industry enrichment has never completed for this symbol. Omitted otherwise.</summary>
-    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? IndustryStatus { get; init; }
 }
 
@@ -319,7 +333,7 @@ internal sealed record MetadataFreshness(
     bool FullyEnriched,
     IReadOnlyDictionary<string, int> Pending)
 {
-    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Hint { get; init; }
 }
 
@@ -379,33 +393,33 @@ internal sealed record HoldingListResult(
     PortfolioSummary TotalSummary,
     string? QuoteError)
 {
-    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public MetadataFreshness? MetadataFreshness { get; init; }
 
     /// <summary>Echo of the active filter inputs (only present when at least one filter is applied).</summary>
-    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public HoldingsFilterEcho? Filter { get; init; }
 
     /// <summary>Unique theme names matched by the active filter, for false-positive visibility on LIKE matches.</summary>
-    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<string>? MatchedThemes { get; init; }
 
     /// <summary>Unique normalized industry labels matched by the active <c>industry</c> filter (substring match).</summary>
-    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<string>? MatchedIndustries { get; init; }
 }
 
 /// <summary>Echo of the active <c>ls_holdings_list</c> filter parameters.</summary>
 internal sealed record HoldingsFilterEcho
 {
-    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ThemeCode { get; init; }
 
-    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ThemeKeyword { get; init; }
 
     /// <summary>FICS industry substring filter (case-insensitive) — see SPEC-v0.7 §4.5.4.</summary>
-    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Industry { get; init; }
 }
 

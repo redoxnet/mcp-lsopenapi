@@ -1,5 +1,8 @@
+using System.Text.Json;
 using FluentAssertions;
 using RedoxNet.Mcp.LsOpenApi.Portfolio;
+using RedoxNet.Mcp.LsOpenApi.Tests.TestSupport;
+using RedoxNet.Mcp.LsOpenApi.Tools;
 using Xunit;
 
 namespace RedoxNet.Mcp.LsOpenApi.Tests.Portfolio;
@@ -281,7 +284,9 @@ public sealed class PortfolioServiceTests
 
         HoldingWithQuote samsung = result.Accounts[0].Holdings.Single(h => h.Shcode == "005930");
         samsung.Themes.Should().NotBeNull();
-        samsung.Themes!.Should().HaveCount(2);
+        samsung.Themes!.Count.Should().Be(2, "themes is now a Slice — count is the full membership total");
+        samsung.Themes.Shown.Should().Be(2);
+        samsung.Themes.Items.Should().HaveCount(2);
         samsung.ThemesStatus.Should().BeNull("ok status is omitted to save payload tokens");
 
         HoldingWithQuote hynix = result.Accounts[0].Holdings.Single(h => h.Shcode == "000660");
@@ -863,6 +868,181 @@ public sealed class PortfolioServiceTests
             "two holdings are missing the cache; freshness must NOT claim fully enriched");
         result.MetadataFreshness.Pending.Should().ContainKey("themes")
             .WhoseValue.Should().Be(2, "both cache misses should count toward pending");
+    }
+
+    // ---------------------- v0.9 §4.4 — pattern A (themes_limit / include_*) ----------------------
+
+    static async Task SeedSevenThemeHoldingAsync(SqlitePortfolioRepository repo, long accountId)
+    {
+        await repo.SetHoldingAsync(accountId, "005930", 10, 70000, null);
+        await repo.ReplaceStockThemesAsync("005930",
+            Enumerable.Range(1, 7).Select(i => new ThemeCatalogRow($"{i:D4}", $"테마{i}")).ToArray());
+    }
+
+    [Fact]
+    public async Task ListHoldingsAsync_ThemesLimit_DefaultCapsAtFive()
+    {
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        Account account = await repository.UpsertAccountAsync("AAA", "main", null, setDefault: false);
+        await SeedSevenThemeHoldingAsync(repository, account.Id);
+        var service = new PortfolioService(repository, new FakeQuoteService());
+
+        HoldingListResult result = await service.ListHoldingsAsync(accountIdentifier: null);
+
+        HoldingWithQuote h = result.Accounts[0].Holdings.Single();
+        h.Themes!.Count.Should().Be(7, "count is the full membership total");
+        h.Themes.Shown.Should().Be(5, "default themes_limit caps shown at 5");
+        h.Themes.Items!.Should().HaveCount(5);
+    }
+
+    [Fact]
+    public async Task ListHoldingsAsync_ThemesLimitZero_OmitsItems()
+    {
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        Account account = await repository.UpsertAccountAsync("AAA", "main", null, setDefault: false);
+        await SeedSevenThemeHoldingAsync(repository, account.Id);
+        var service = new PortfolioService(repository, new FakeQuoteService());
+
+        HoldingListResult result = await service.ListHoldingsAsync(accountIdentifier: null, themesLimit: 0);
+
+        HoldingWithQuote h = result.Accounts[0].Holdings.Single();
+        h.Themes!.Count.Should().Be(7);
+        h.Themes.Shown.Should().Be(0);
+        h.Themes.Items.Should().BeNull("themes_limit=0 drops the items, keeping count only");
+    }
+
+    [Fact]
+    public async Task ListHoldingsAsync_ThemesLimitNegative_ReturnsAll()
+    {
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        Account account = await repository.UpsertAccountAsync("AAA", "main", null, setDefault: false);
+        await SeedSevenThemeHoldingAsync(repository, account.Id);
+        var service = new PortfolioService(repository, new FakeQuoteService());
+
+        HoldingListResult result = await service.ListHoldingsAsync(accountIdentifier: null, themesLimit: -1);
+
+        HoldingWithQuote h = result.Accounts[0].Holdings.Single();
+        h.Themes!.Shown.Should().Be(7, "themes_limit=-1 restores every theme");
+        h.Themes.Items!.Should().HaveCount(7);
+    }
+
+    [Fact]
+    public async Task ListHoldingsAsync_IncludeIndustryFalse_OmitsIndustryAndFreshness()
+    {
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        Account account = await repository.UpsertAccountAsync("AAA", "main", null, setDefault: false);
+        await repository.SetHoldingAsync(account.Id, "005930", 10, 70000, null);
+        await repository.ReplaceStockThemesAsync("005930", new[] { new ThemeCatalogRow("0011", "반도체") });
+        // No industry enrichment — would normally surface as industry-pending.
+        var service = new PortfolioService(repository, new FakeQuoteService());
+
+        HoldingListResult result = await service.ListHoldingsAsync(accountIdentifier: null, includeIndustry: false);
+
+        HoldingWithQuote h = result.Accounts[0].Holdings.Single();
+        h.Industry.Should().BeNull("include_industry=false omits the industry label");
+        h.IndustryStatus.Should().BeNull("include_industry=false suppresses the pending marker too");
+        result.MetadataFreshness!.Pending.Should().NotContainKey("industry");
+    }
+
+    [Fact]
+    public async Task ListHoldingsAsync_IncludeQuoteFalse_OmitsValuationButKeepsSummary()
+    {
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        Account account = await repository.UpsertAccountAsync("AAA", "main", null, setDefault: false);
+        await repository.SetHoldingAsync(account.Id, "005930", 10, 70000, null);
+        var quotes = new Dictionary<string, StockQuote?>
+        {
+            ["005930"] = new StockQuote(75000, 1000, 1.35, 74000, 76000, 73500, 1000, "2026-05-20T09:00:00+09:00"),
+        };
+        var service = new PortfolioService(repository, new FakeQuoteService(quotes: quotes));
+
+        HoldingListResult result = await service.ListHoldingsAsync(accountIdentifier: null, includeQuote: false);
+
+        HoldingWithQuote h = result.Accounts[0].Holdings.Single();
+        h.Quote.Should().BeNull("include_quote=false drops the live quote");
+        h.MarketValue.Should().BeNull();
+        h.Pnl.Should().BeNull();
+        h.CostBasis.Should().BeNull();
+        // The account/total summary is still computed from quotes.
+        result.TotalSummary.MarketValue.Should().Be(10 * 75000);
+        result.TotalSummary.Pnl.Should().Be(10 * 75000 - 10 * 70000);
+    }
+
+    [Fact]
+    public async Task HoldingList_ThemesSerializeAsSlice()
+    {
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        Account account = await repository.UpsertAccountAsync("AAA", "main", null, setDefault: false);
+        await SeedSevenThemeHoldingAsync(repository, account.Id);
+        var service = new PortfolioService(repository, new FakeQuoteService());
+
+        string json = await PortfolioTools.HoldingList(service);
+        JsonElement themes = JsonDocument.Parse(json)
+            .RootElement.GetProperty("accounts")[0].GetProperty("holdings")[0].GetProperty("themes");
+
+        themes.GetProperty("count").GetInt32().Should().Be(7);
+        themes.GetProperty("shown").GetInt32().Should().Be(5);
+        themes.GetProperty("items").GetArrayLength().Should().Be(5);
+    }
+
+    [Fact]
+    public async Task HoldingList_ThemesLimitZero_SliceOmitsItems()
+    {
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        Account account = await repository.UpsertAccountAsync("AAA", "main", null, setDefault: false);
+        await SeedSevenThemeHoldingAsync(repository, account.Id);
+        var service = new PortfolioService(repository, new FakeQuoteService());
+
+        string json = await PortfolioTools.HoldingList(service, themes_limit: 0);
+        JsonElement themes = JsonDocument.Parse(json)
+            .RootElement.GetProperty("accounts")[0].GetProperty("holdings")[0].GetProperty("themes");
+
+        themes.GetProperty("count").GetInt32().Should().Be(7);
+        themes.GetProperty("shown").GetInt32().Should().Be(0);
+        themes.TryGetProperty("items", out _).Should().BeFalse("themes_limit=0 omits the items array");
+    }
+
+    [Fact]
+    public async Task HoldingList_TenHoldings_DefaultAndLightestFitTokenBudget()
+    {
+        await using TestDatabase db = new();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
+        Account account = await repository.UpsertAccountAsync("AAA", "main", null, setDefault: false);
+        var quotes = new Dictionary<string, StockQuote?>();
+        for (int i = 0; i < 10; i++)
+        {
+            string sym = $"{100000 + i:D6}";
+            await repository.SetHoldingAsync(account.Id, sym, 10 + i, 50000 + i * 1000, null);
+            await repository.ReplaceStockThemesAsync(sym,
+                Enumerable.Range(1, 8).Select(t => new ThemeCatalogRow($"{t:D4}", $"테마{t}")).ToArray());
+            await repository.UpsertStockIndustryAsync(sym, "FICS 반도체 및 관련장비", "반도체 및 관련장비");
+            quotes[sym] = new StockQuote(60000, 500, 0.83, 59000, 61000, 58000, 12345, "2026-05-20T09:00:00+09:00");
+        }
+        var service = new PortfolioService(repository, new FakeQuoteService(quotes: quotes));
+
+        // Default (themes_limit=5 + industry + quote) measured ~3,664 tokens.
+        string def = await PortfolioTools.HoldingList(service);
+        def.ShouldFitTokenBudget(4000);
+
+        // Lightest call measured ~804 tokens — a 78% reduction.
+        string lightest = await PortfolioTools.HoldingList(
+            service, themes_limit: 0, include_industry: false, include_quote: false);
+        lightest.ShouldFitTokenBudget(1000);
     }
 
     sealed class FakeQuoteService : IQuoteService

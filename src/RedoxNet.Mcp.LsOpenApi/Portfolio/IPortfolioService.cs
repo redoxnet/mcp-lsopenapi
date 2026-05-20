@@ -47,6 +47,9 @@ internal interface IPortfolioService
         string? themeCode = null,
         string? themeKeyword = null,
         string? industry = null,
+        int themesLimit = 5,
+        bool includeIndustry = true,
+        bool includeQuote = true,
         CancellationToken cancellationToken = default);
 
     // -------- Corporate actions --------

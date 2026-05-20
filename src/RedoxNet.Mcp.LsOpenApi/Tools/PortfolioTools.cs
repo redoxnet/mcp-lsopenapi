@@ -297,6 +297,8 @@ internal static class PortfolioTools
         - "테마 코드 0064 보유" → theme_code="0064"
         - "내 보유 중 반도체 업종" / "내 금융주" → industry="반도체" / industry="금융"
         All filters AND-combine. The `industry` filter is a case-insensitive substring match against the FICS industry label sourced from t3320 (the "FICS " prefix is stripped before matching, so "반도체" matches "반도체 및 관련장비"). ETF / SPAC symbols have no industry record and are excluded from any industry-filtered list.
+
+        Payload size: themes_limit caps themes per holding (default 5; 0 = count only; -1 = all), include_industry / include_quote drop those blocks when false. Lightest call — themes_limit=0, include_industry=false, include_quote=false — returns just the holding rows + account/total summaries.
         """)]
     public static async Task<string> HoldingList(
         IPortfolioService portfolio,
@@ -308,8 +310,16 @@ internal static class PortfolioTools
         string? theme_keyword = null,
         [Description("Optional FICS industry substring (case-insensitive). '반도체' matches FICS 반도체 및 관련장비. ETF/SPAC symbols are excluded automatically since they have no industry record.")]
         string? industry = null,
+        [Description("Max themes shown per holding. Default 5; 0 omits the theme items (themes count only); -1 returns every theme. Each holding's themes is a {count, shown, items} object.")]
+        int themes_limit = 5,
+        [Description("Include the FICS industry label per holding. Default true; pass false to omit it.")]
+        bool include_industry = true,
+        [Description("Include the live quote + market_value / PnL per holding. Default true; pass false to drop the per-holding valuation block (account and total summaries are still computed).")]
+        bool include_quote = true,
         CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.ListHoldingsAsync(account, theme_code, theme_keyword, industry, cancellationToken)).ConfigureAwait(false);
+        await SerializeAsync(() => portfolio.ListHoldingsAsync(
+            account, theme_code, theme_keyword, industry,
+            themes_limit, include_industry, include_quote, cancellationToken)).ConfigureAwait(false);
 
     // ---------------------- Metadata refresh ----------------------
 

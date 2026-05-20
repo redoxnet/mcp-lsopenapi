@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using RedoxNet.Mcp.LsOpenApi.Tools;
 
 namespace RedoxNet.Mcp.LsOpenApi.Portfolio;
 
@@ -271,6 +272,9 @@ internal sealed class PortfolioService : IPortfolioService
         string? themeCode = null,
         string? themeKeyword = null,
         string? industry = null,
+        int themesLimit = 5,
+        bool includeIndustry = true,
+        bool includeQuote = true,
         CancellationToken cancellationToken = default)
     {
         string? normalizedThemeCode = string.IsNullOrWhiteSpace(themeCode) ? null : themeCode.Trim().ToUpperInvariant();
@@ -423,7 +427,7 @@ internal sealed class PortfolioService : IPortfolioService
         {
             List<Holding> accountRows = filteredHoldings.Where(h => h.AccountId == account.Id).ToList();
             (List<HoldingWithQuote> projected, double cost, double value, bool allQuoted, int accountThemesPending, int accountIndustryPending) =
-                ProjectHoldings(accountRows, quoteResult, themesMap, industriesMap);
+                ProjectHoldings(accountRows, quoteResult, themesMap, industriesMap, themesLimit, includeIndustry, includeQuote);
             var summary = BuildSummary(cost, value, allQuoted);
             totalCost += cost;
             if (allQuoted)
@@ -1092,7 +1096,10 @@ internal sealed class PortfolioService : IPortfolioService
         IReadOnlyList<Holding> accountRows,
         QuoteBatchResult<StockQuote> quoteResult,
         IReadOnlyDictionary<string, IReadOnlyList<StockTheme>> themesMap,
-        IReadOnlyDictionary<string, StockIndustryRow> industriesMap)
+        IReadOnlyDictionary<string, StockIndustryRow> industriesMap,
+        int themesLimit,
+        bool includeIndustry,
+        bool includeQuote)
     {
         var projected = new List<HoldingWithQuote>(accountRows.Count);
         double cost = 0;
@@ -1135,12 +1142,15 @@ internal sealed class PortfolioService : IPortfolioService
             //     → fetched, theme-less symbol (ETF/SPAC) → omit both fields.
             //   - key absent → enrichment never ran → "pending" so the model
             //     can surface the freshness hint and the next list call retries.
-            IReadOnlyList<ThemeCatalogRow>? themes = null;
+            Slice<ThemeCatalogRow>? themes = null;
             string? themesStatus = null;
             if (themesMap.TryGetValue(holding.Symbol, out IReadOnlyList<StockTheme>? cached))
             {
                 if (cached.Count > 0)
-                    themes = cached.Select(t => new ThemeCatalogRow(t.ThemeCode, t.ThemeName)).ToList();
+                {
+                    var themeRows = cached.Select(t => new ThemeCatalogRow(t.ThemeCode, t.ThemeName)).ToList();
+                    themes = Slice.Of(themeRows, themesLimit, defaultLimit: 5);
+                }
                 // else: theme-less symbol, both fields stay null (omitted in JSON).
             }
             else
@@ -1157,18 +1167,21 @@ internal sealed class PortfolioService : IPortfolioService
             string? industryNorm = null;
             string? industryRaw = null;
             string? industryStatus = null;
-            if (industriesMap.TryGetValue(holding.Symbol, out StockIndustryRow? industryRow))
+            if (includeIndustry)
             {
-                if (!string.IsNullOrEmpty(industryRow.Industry))
+                if (industriesMap.TryGetValue(holding.Symbol, out StockIndustryRow? industryRow))
                 {
-                    industryNorm = industryRow.Industry;
-                    industryRaw = industryRow.IndustryRaw;
+                    if (!string.IsNullOrEmpty(industryRow.Industry))
+                    {
+                        industryNorm = industryRow.Industry;
+                        industryRaw = industryRow.IndustryRaw;
+                    }
                 }
-            }
-            else
-            {
-                industryStatus = "pending";
-                industryPending++;
+                else
+                {
+                    industryStatus = "pending";
+                    industryPending++;
+                }
             }
 
             projected.Add(new HoldingWithQuote(
@@ -1177,11 +1190,11 @@ internal sealed class PortfolioService : IPortfolioService
                 holding.Quantity,
                 holding.AvgPrice,
                 holding.Notes,
-                quote,
-                marketValue,
-                rowCost,
-                pnl,
-                pnlPct,
+                includeQuote ? quote : null,
+                includeQuote ? marketValue : null,
+                includeQuote ? rowCost : null,
+                includeQuote ? pnl : null,
+                includeQuote ? pnlPct : null,
                 warning)
             {
                 Themes = themes,

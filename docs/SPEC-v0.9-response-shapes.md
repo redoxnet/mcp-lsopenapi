@@ -120,8 +120,8 @@ public async Task GetIndexHistory_Summary60Bars_FitsTokenBudget()
 | `ls_get_index_history` full (60d) | 11,000 | 측정 8,979. 전체 봉, v0.8 호환 복원. |
 | `ls_get_stock_info` default | 800 | 측정 551. snapshot + fundamentals. |
 | `ls_get_stock_info` full sections | 2,500 | 측정 1,605. 6개 섹션 전체. |
-| `ls_holdings_list` default (10 holdings) | 2,000 | Phase 1 `holdings_list`에서 측정·pin. |
-| `ls_holdings_list` full (10 holdings) | 6,000 | Phase 1 `holdings_list`에서 측정·pin. |
+| `ls_holdings_list` default (10 holdings) | 4,000 | 측정 3,664. themes_limit=5 + industry + quote. |
+| `ls_holdings_list` lightest (10 holdings) | 1,000 | 측정 804. themes_limit=0, include_*=false. |
 
 각 도구의 budget은 그 도구 작업 시 60봉/10종목 등 대표 fixture로 실측해 테이블·테스트를 동시에 갱신한다.
 
@@ -136,7 +136,7 @@ v0.8 surface 48 tools 전부를 한꺼번에 refactor하는 건 risk 큼. **3-5�
 1. ✓ **공통 인프라**: `TokenEstimator`(cl100k_base) 테스트 헬퍼 + `ResponseShape` 공통 헬퍼 + budget 테이블. (→ §4.1)
 2. ✓ **`ls_get_index_history`** (패턴 B) — 60일 dense 시계열. `summary` 블록 + `verbosity`. (→ §4.2)
 3. ✓ **`ls_get_stock_info`** (패턴 A) — 단일 종목 ~50 fields. `sections` 카테고리 필터. A의 가장 순수한 케이스. (→ §4.3)
-4. **`ls_holdings_list`** (패턴 A 누락) — 보유 종목당 themes 평균 15개로 폭발. `themes_limit` + `include_*`. A + 리스트 + 테마 폭발 복합 케이스. (→ §4.4)
+4. ✓ **`ls_holdings_list`** (패턴 A 누락) — 보유 종목당 themes 평균 15개로 폭발. `themes_limit` + `include_*`. A + 리스트 + 테마 폭발 복합 케이스. (→ §4.4)
 
 ### Phase 2 — 리스트성 도구 D 컨벤션 정착 (v0.9.x)
 
@@ -267,7 +267,7 @@ ls_get_stock_info(
 
 토큰 실측 (cl100k, 078020 fixture): 6개 섹션 전체 1,605 → default `["snapshot","fundamentals"]` 551 토큰 (66% 절감).
 
-### 4.4 `ls_holdings_list` — A 패턴 적용 (amendments A2 / A3 / A6)
+### 4.4 `ls_holdings_list` — A 패턴 적용 (amendments A2 / A3 / A6) — ✓ 구현 완료
 
 현재 응답에서 가장 무거운 부분은 **per-holding `themes` 배열** (대형주 평균 15+ 테마). A2에 따라 `verbosity` enum 대신 도메인 자연 축만 사용한다.
 
@@ -315,7 +315,7 @@ ls_holdings_list(
 
 **가장 가벼운 호출**(구 "brief" 등가): `themes_limit=0, include_industry=false, include_quote=false` → holdings 행 + 계좌별/전체 summary만.
 
-토큰 예상: 10 holdings default ~3k → 가장 가벼운 호출 ~800 토큰 (Phase 1 작업 시 실측 pin).
+토큰 실측 (cl100k, 10 holdings fixture): default 3,664 → 가장 가벼운 호출(`themes_limit=0, include_industry=false, include_quote=false`) 804 토큰 (78% 절감).
 
 ### 4.5 D 패턴 cursor 공통화 (Phase 2)
 
@@ -406,7 +406,7 @@ ls_get_index_history B 적용 (가장 깔끔, 학습용)  ✓
    ↓
 ls_get_stock_info sections (A pattern 순수 케이스 — 컨벤션 확정)  ✓
    ↓
-ls_holdings_list A 적용 (가장 큰 절감, 복합 케이스)
+ls_holdings_list A 적용 (가장 큰 절감, 복합 케이스)  ✓
    ↓
 v0.9.0 출시 (Phase 1) + MIGRATION 매트릭스 release notes
    ↓
