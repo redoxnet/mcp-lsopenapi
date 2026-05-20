@@ -1997,6 +1997,55 @@
       "rate_limit_per_sec": 1
     },
     {
+      "tr_code": "t1716",
+      "name": "외인기관 종목별 동향 (소진율/프로그램/공매도 포함)",
+      "category": "외인/기관",
+      "path": "/stock/frgr-itt",
+      "description": "단일 종목의 일별 외인/기관 순매수 + 금감원 외인 보유주식수(fsc_listing)·소진율(fsc_sjrate) + 프로그램매매·공매도. t1702와 같은 path지만 t1702가 12 투자주체 일별 flow를 주는 반면 t1716은 외국인 보유 잔량(level)을 준다. v0.10 `ls_get_stock_info` foreign 섹션 백엔드. fsc_sjrate는 ×100 스케일('5251.00'=52.51%). gubun=0:일간 / 1:기간누적. prapp/prgubun/orggubun/frggubun은 프로그램매매 감산 적용 옵션.",
+      "in_blocks": [
+        {
+          "name": "t1716InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "shcode", "type": "char", "description": "종목코드", "required": true, "length": 6 },
+            { "name": "gubun", "type": "char", "description": "구분 (0:일간순매수 1:기간내누적순매수)", "required": true, "length": 1, "example": "0" },
+            { "name": "fromdt", "type": "char", "description": "시작일자 YYYYMMDD", "required": true, "length": 8 },
+            { "name": "todt", "type": "char", "description": "종료일자 YYYYMMDD", "required": true, "length": 8 },
+            { "name": "prapp", "type": "double", "description": "PR감산적용율 (%)", "required": true, "length": 3, "example": "0" },
+            { "name": "prgubun", "type": "char", "description": "PR적용구분 (0:미적용 1:적용)", "required": true, "length": 1, "example": "0" },
+            { "name": "orggubun", "type": "char", "description": "기관적용 (0:미적용 1:적용)", "required": true, "length": 1, "example": "0" },
+            { "name": "frggubun", "type": "char", "description": "외인적용 (0:미적용 1:적용)", "required": true, "length": 1, "example": "0" },
+            { "name": "exchgubun", "type": "char", "description": "거래소구분 (K:KRX N:NXT U:통합)", "required": true, "length": 1, "example": "U" }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t1716OutBlock",
+          "is_array": true,
+          "fields": [
+            { "name": "date", "type": "char", "description": "일자 YYYYMMDD", "length": 8 },
+            { "name": "close", "type": "int", "description": "종가" },
+            { "name": "sign", "type": "char", "description": "전일대비구분", "length": 1 },
+            { "name": "change", "type": "int", "description": "전일대비 변화" },
+            { "name": "diff", "type": "double", "description": "등락률 (%)" },
+            { "name": "volume", "type": "int", "description": "누적 거래량" },
+            { "name": "krx_0008", "type": "int", "description": "거래소 개인 순매수" },
+            { "name": "krx_0018", "type": "int", "description": "거래소 기관 순매수" },
+            { "name": "krx_0009", "type": "int", "description": "거래소 외국인 순매수" },
+            { "name": "pgmvol", "type": "int", "description": "프로그램 매매" },
+            { "name": "fsc_listing", "type": "long", "description": "금감원 외인 보유주식수 (주). int32 초과 가능 — long." },
+            { "name": "fsc_sjrate", "type": "double", "description": "금감원 외국인 소진율 (×100 스케일 — '5251.00' = 52.51%)" },
+            { "name": "fsc_0009", "type": "int", "description": "금감원 외국인 순매수" },
+            { "name": "gm_volume", "type": "int", "description": "공매도 수량" },
+            { "name": "gm_value", "type": "int", "description": "공매도 대금" }
+          ]
+        }
+      ],
+      "continuation": { "supported": false },
+      "rate_limit_per_sec": 1
+    },
+    {
       "tr_code": "t3202",
       "name": "종목별 증시일정",
       "category": "투자정보",

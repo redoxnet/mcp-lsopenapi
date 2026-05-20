@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using ModelContextProtocol.Server;
@@ -14,18 +15,19 @@ namespace RedoxNet.Mcp.LsOpenApi.Tools;
 /// </summary>
 /// <remarks>
 /// v0.9 response-shape SPEC §4.3 (pattern A): the ~160-field t1102 dump is
-/// split into five sections; the default returns only <c>snapshot</c> +
+/// split into sections; the default returns only <c>snapshot</c> +
 /// <c>fundamentals</c>. Field mapping is pinned to the official t1102 spec —
 /// note LS's counter-intuitive broker suffix convention (<c>d*</c> = 매도 /
-/// sell, <c>s*</c> = 매수 / buy). Foreign-investor data is intentionally NOT
-/// sourced here: t1102 has none — use <c>ls_get_investor_flow</c> (t1702).
+/// sell, <c>s*</c> = 매수 / buy). t1102 itself carries no foreign-investor
+/// data; the opt-in <c>foreign</c> section (v0.10, SPEC-v0.10 §3) is sourced
+/// from a secondary <c>t1716</c> call — foreign holding <em>level</em>, not flow.
 /// </remarks>
 [McpServerToolType]
 public static class GetStockInfoTool
 {
     /// <summary>All section names, in canonical emit order.</summary>
     static readonly string[] AllowedSections =
-        { "snapshot", "fundamentals", "periods", "brokers", "flags" };
+        { "snapshot", "fundamentals", "periods", "brokers", "flags", "foreign" };
 
     /// <summary>Narrow default — the sections the common question needs.</summary>
     static readonly string[] DefaultSections = { "snapshot", "fundamentals" };
@@ -38,7 +40,7 @@ public static class GetStockInfoTool
         Returns a company profile + fundamentals snapshot for a Korean stock, split into selectable sections.
 
         USE WHEN: the user wants company/financial context ("삼성전자 어떤 회사야?", "PER 얼마야?", "52주 신고가 근처야?"). Pairs well with ls_get_quote for the level-2 book.
-        AVOID WHEN: only the latest price + 10-level order book are needed — use ls_get_quote. For foreign / institutional flow ("외국인 매수세 어때?") use ls_get_investor_flow — t1102 carries no foreign-investor data.
+        AVOID WHEN: only the latest price + 10-level order book are needed — use ls_get_quote. For foreign / institutional *flow* (일별 순매수, "외국인 매수세 어때?") use ls_get_investor_flow — the "foreign" section here is the holding *level* (지분율 / 소진율), not the daily flow.
 
         sections (default ["snapshot","fundamentals"]) — request only what the question needs:
         - "snapshot": 현재가 / 등락 / 거래량 / OHLC / 상하한가 / 회전율.
@@ -46,6 +48,7 @@ public static class GetStockInfoTool
         - "periods": 52주 / 연중(YTD) 고저 범위.
         - "brokers": 매수 / 매도 상위 5 거래원.
         - "flags": SPAC / 단기과열 / 저유동성 / 배분 구분 플래그 + 공시 텍스트.
+        - "foreign": 외국인 보유주식수 / 지분율 / 소진율 — 보유 잔량(level)이지 일별 흐름이 아님. t1716 별도 호출이라 이 섹션을 고를 때만 추가 API 호출 1회 발생.
 
         Identity fields (shcode, name, market, currency, listing_date, par_value, trade_unit) are always returned. Unselected sections are omitted; sections_shown echoes what was returned.
         """)]
@@ -53,7 +56,7 @@ public static class GetStockInfoTool
         LsApiClient apiClient,
         [Description("6-digit Korean short code, e.g. '005930'.")]
         string shcode,
-        [Description("""Sections to return — any of "snapshot", "fundamentals", "periods", "brokers", "flags". Omit for the default ["snapshot","fundamentals"].""")]
+        [Description("""Sections to return — any of "snapshot", "fundamentals", "periods", "brokers", "flags", "foreign". Omit for the default ["snapshot","fundamentals"].""")]
         string[]? sections = null,
         CancellationToken cancellationToken = default)
     {
@@ -234,6 +237,12 @@ public static class GetStockInfoTool
                     },
                 };
 
+            // Opt-in foreign section: a secondary t1716 call (SPEC-v0.10 §3).
+            // Only fires when explicitly selected, so the default path stays 1 TR.
+            if (want.Contains("foreign"))
+                result["foreign"] = await BuildForeignSectionAsync(
+                    apiClient, shcode, b.ReadLong("listing"), cancellationToken).ConfigureAwait(false);
+
             return JsonSerializer.Serialize(result, McpJson.Tool);
         }
         catch (LsAuthException ex)
@@ -243,6 +252,78 @@ public static class GetStockInfoTool
         catch (LsTrException ex)
         {
             return McpJson.Error("TR call failed.", new { reason = ex.Message, status = ex.StatusCode });
+        }
+    }
+
+    /// <summary>
+    /// Builds the <c>foreign</c> section from a secondary <c>t1716</c> call —
+    /// foreign holding <em>level</em> (보유주식수 / 지분율 / 소진율), not daily
+    /// flow. Sourced separately because t1102 carries no foreign-investor data.
+    /// </summary>
+    /// <remarks>
+    /// Resilient by design: a t1716 business error, empty result, or auth /
+    /// transport failure degrades to a section carrying a <c>note</c> rather
+    /// than failing the whole stock_info call — the t1102 sections already
+    /// succeeded by the time this runs.
+    /// </remarks>
+    static async Task<object> BuildForeignSectionAsync(
+        LsApiClient apiClient,
+        string shcode,
+        long listingThousands,
+        CancellationToken cancellationToken)
+    {
+        // A ~3-week window clears long holidays so the latest trading day's
+        // holding level is in range; t1716 returns newest-first, row [0] = latest.
+        string todt = DateTime.Now.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
+        string fromdt = DateTime.Now.AddDays(-20).ToString("yyyyMMdd", CultureInfo.InvariantCulture);
+
+        try
+        {
+            LsTrResponse response = await apiClient.CallTrAsync(
+                "t1716",
+                new JsonObject
+                {
+                    ["shcode"] = shcode,
+                    ["gubun"] = "0",       // per-day; we only need the latest row
+                    ["fromdt"] = fromdt,
+                    ["todt"] = todt,
+                    ["prapp"] = 0,
+                    ["prgubun"] = "0",     // no program-trading adjustment
+                    ["orggubun"] = "0",
+                    ["frggubun"] = "0",
+                    ["exchgubun"] = "U",   // unified KRX + NXT
+                },
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            if (!response.IsSuccess)
+                return new { note = $"t1716 foreign data unavailable (rsp_cd={response.RspCode}: {response.RspMessage})." };
+
+            JsonElement? array = response.GetBlock("t1716OutBlock");
+            if (array is null || array.Value.ValueKind != JsonValueKind.Array || array.Value.GetArrayLength() == 0)
+                return new { note = "No t1716 foreign-holdings data for this stock (신규 상장 / 거래정지 / ETF 등 가능)." };
+
+            JsonElement latest = array.Value[0];
+            long heldShares = latest.ReadLong("fsc_listing");
+
+            // fsc_sjrate ships ×100-scaled ("5251.00" = 52.51%). listing is in
+            // thousands of shares, so total shares = listingThousands × 1000.
+            return new
+            {
+                as_of = latest.ReadString("date"),
+                held_shares = heldShares,
+                ownership_percent = listingThousands > 0
+                    ? Math.Round(heldShares / (listingThousands * 1000.0) * 100.0, 2)
+                    : (double?)null,
+                exhaustion_rate_percent = Math.Round(latest.ReadDouble("fsc_sjrate") / 100.0, 2),
+            };
+        }
+        catch (LsAuthException ex)
+        {
+            return new { note = $"t1716 foreign data unavailable: authentication failed ({ex.Message})." };
+        }
+        catch (LsTrException ex)
+        {
+            return new { note = $"t1716 foreign data unavailable: {ex.Message}" };
         }
     }
 }

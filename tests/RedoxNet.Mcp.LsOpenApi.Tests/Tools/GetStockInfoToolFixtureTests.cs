@@ -75,6 +75,50 @@ public class GetStockInfoToolFixtureTests
     }
     """;
 
+    // t1716 (외인기관 종목별 동향) — shape pinned to the LS doc sample, values
+    // chosen so the derived ownership math lands on a clean number: with the
+    // t1102 fixture's listing = 55,481 (thousand shares), fsc_listing 5,548,100
+    // → 5,548,100 / 55,481,000 × 100 = exactly 10.0 %.
+    const string TestbedT1716Response = """
+    {
+      "rsp_cd": "00000",
+      "rsp_msg": "정상적으로 조회가 완료되었습니다.",
+      "t1716OutBlock": [
+        {
+          "date": "20260519", "close": 4535, "sign": "2", "change": 10, "diff": "0.22",
+          "volume": 6929, "krx_0008": 1200, "krx_0018": -800, "krx_0009": -400,
+          "pgmvol": 50, "fsc_listing": 5548100, "fsc_sjrate": "1234.00",
+          "fsc_0009": -390, "gm_volume": 100, "gm_value": 1
+        },
+        {
+          "date": "20260516", "close": 4525, "sign": "3", "change": 0, "diff": "0.00",
+          "volume": 5000, "krx_0008": 0, "krx_0018": 0, "krx_0009": 0,
+          "pgmvol": 0, "fsc_listing": 5548000, "fsc_sjrate": "1233.80",
+          "fsc_0009": 0, "gm_volume": 0, "gm_value": 0
+        }
+      ]
+    }
+    """;
+
+    const string EmptyT1716Response = """
+    {
+      "rsp_cd": "00000",
+      "rsp_msg": "정상적으로 조회가 완료되었습니다.",
+      "t1716OutBlock": []
+    }
+    """;
+
+    /// <summary>
+    /// Responder that serves t1102 for the primary call and a caller-supplied
+    /// body for the secondary t1716 call (dispatched on the <c>tr_cd</c> header).
+    /// </summary>
+    static Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> Router(string t1716Body) =>
+        (req, _) =>
+        {
+            string tr = req.Headers.TryGetValues("tr_cd", out var values) ? values.First() : "";
+            return Ok(tr == "t1716" ? t1716Body : TestbedT1102Response);
+        };
+
     static Task<HttpResponseMessage> Ok(string body) =>
         Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
         {
@@ -279,8 +323,81 @@ public class GetStockInfoToolFixtureTests
             client, "078020",
             new[] { "snapshot", "fundamentals", "periods", "brokers", "flags" });
 
-        // All 5 sections (foreign dropped — see SPEC-v0.9 §4.3). Measured ~1,484.
+        // The 5 t1102-sourced sections; the foreign section (t1716) is covered
+        // separately by the §3 tests below. Measured ~1,484 (cl100k_base).
         result.ShouldFitTokenBudget(2000);
+    }
+
+    // ---------------------- v0.10 §3 — foreign section (t1716) ----------------------
+
+    [Fact]
+    public async Task GetStockInfo_ForeignSection_DispatchesT1716AfterT1102()
+    {
+        var (client, handler) = TestClientFactory.Create(Router(TestbedT1716Response));
+
+        await GetStockInfoTool.GetStockInfo(client, "078020", new[] { "foreign" });
+
+        handler.Requests.Should().HaveCount(2, "the foreign section needs a secondary t1716 call");
+        handler.Requests[0].Headers.GetValues("tr_cd").Should().ContainSingle().Which.Should().Be("t1102");
+        handler.Requests[1].Headers.GetValues("tr_cd").Should().ContainSingle().Which.Should().Be("t1716");
+        handler.Requests[1].RequestUri!.AbsolutePath.Should().Be("/stock/frgr-itt");
+    }
+
+    [Fact]
+    public async Task GetStockInfo_ForeignSection_ParsesLevelAndDerivesOwnership()
+    {
+        var (client, _) = TestClientFactory.Create(Router(TestbedT1716Response));
+
+        string result = await GetStockInfoTool.GetStockInfo(client, "078020", new[] { "foreign" });
+        JsonElement foreign = JsonDocument.Parse(result).RootElement.GetProperty("foreign");
+
+        // t1716 ships newest-first; the wrapper takes row [0].
+        foreign.GetProperty("as_of").GetString().Should().Be("20260519");
+        foreign.GetProperty("held_shares").GetInt64().Should().Be(5548100);
+        // fsc_sjrate "1234.00" ships ×100-scaled → ÷100 → 12.34 %.
+        foreign.GetProperty("exhaustion_rate_percent").GetDouble().Should().BeApproximately(12.34, 0.001);
+        // Derived: 5,548,100 / (55,481 thousand × 1000) × 100 = 10.0 %.
+        foreign.GetProperty("ownership_percent").GetDouble().Should().BeApproximately(10.0, 0.001);
+    }
+
+    [Fact]
+    public async Task GetStockInfo_ForeignNotRequested_SkipsT1716()
+    {
+        var (client, handler) = TestClientFactory.Create(Router(TestbedT1716Response));
+
+        await GetStockInfoTool.GetStockInfo(client, "078020");
+
+        handler.Requests.Should().ContainSingle("the default sections need only t1102");
+        handler.Requests[0].Headers.GetValues("tr_cd").Should().ContainSingle().Which.Should().Be("t1102");
+    }
+
+    [Fact]
+    public async Task GetStockInfo_ForeignSection_EmptyT1716_DegradesToNote()
+    {
+        var (client, _) = TestClientFactory.Create(Router(EmptyT1716Response));
+
+        string result = await GetStockInfoTool.GetStockInfo(client, "078020", new[] { "foreign" });
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        // The section is still echoed; it just carries a note instead of values.
+        root.GetProperty("sections_shown").EnumerateArray().Select(e => e.GetString())
+            .Should().Contain("foreign");
+        root.GetProperty("foreign").GetProperty("note").GetString().Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public void Catalog_T1716_HasForeignHoldingFields()
+    {
+        TrMeta meta = TrCatalog.Default.Get("t1716");
+        meta.Path.Should().Be("/stock/frgr-itt");
+
+        TrBlock outBlock = meta.OutBlocks.Should().ContainSingle().Subject;
+        outBlock.Name.Should().Be("t1716OutBlock");
+        outBlock.IsArray.Should().BeTrue();
+        outBlock.Fields.Select(f => f.Name).Should().Contain(new[]
+        {
+            "date", "fsc_listing", "fsc_sjrate", "krx_0009", "pgmvol",
+        });
     }
 
     [Fact]
