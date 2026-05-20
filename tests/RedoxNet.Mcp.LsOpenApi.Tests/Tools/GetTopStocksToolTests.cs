@@ -71,15 +71,15 @@ public class GetTopStocksToolTests
     [Theory]
     [InlineData(0)]
     [InlineData(101)]
-    public async Task GetTopStocks_TopNOutOfRange_ReturnsErrorWithoutCallingLs(int topN)
+    public async Task GetTopStocks_LimitOutOfRange_ReturnsErrorWithoutCallingLs(int topN)
     {
         var (client, handler) = CreateNoCallClient();
 
-        string result = await GetTopStocksTool.GetTopStocks(client, kind: "volume", top_n: topN);
+        string result = await GetTopStocksTool.GetTopStocks(client, kind: "volume", limit: topN);
 
         handler.Requests.Should().BeEmpty();
         JsonDocument.Parse(result).RootElement.GetProperty("error").GetString()
-            .Should().Contain("top_n");
+            .Should().Contain("limit");
     }
 
     [Fact]
@@ -210,7 +210,7 @@ public class GetTopStocksToolTests
             return Ok(body);
         });
 
-        string result = await GetTopStocksTool.GetTopStocks(client, kind: "volume", top_n: 2);
+        string result = await GetTopStocksTool.GetTopStocks(client, kind: "volume", limit: 2);
 
         handler.Requests.Should().HaveCount(2);
         string first = await handler.Requests[0].Content!.ReadAsStringAsync();

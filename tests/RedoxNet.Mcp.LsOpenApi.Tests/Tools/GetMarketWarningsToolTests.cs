@@ -285,4 +285,32 @@ public sealed class GetMarketWarningsToolTests
         root.GetProperty("queried_kinds")[0].GetString().Should().Be("liquidation_trading");
         root.GetProperty("rows")[0].GetProperty("kind").GetString().Should().Be("liquidation_trading");
     }
+
+    [Fact]
+    public async Task GetMarketWarnings_Limit_CapsRowsAndEchoesTotalAvailable()
+    {
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(T1404AdminSample));
+
+        // T1404AdminSample carries 2 rows; limit=1 clips to one, total_available keeps the full count.
+        string result = await GetMarketWarningsTool.GetMarketWarnings(
+            client, kinds: new[] { "designated_admin" }, limit: 1);
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        root.GetProperty("count").GetInt32().Should().Be(1, "rows are clipped to limit");
+        root.GetProperty("total_available").GetInt32().Should().Be(2, "total_available is the pre-cap row count");
+        root.GetProperty("rows").GetArrayLength().Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetMarketWarnings_LimitOutOfRange_ReturnsValidationError()
+    {
+        var (client, handler) = TestClientFactory.Create((_, _) => Ok(T1404AdminSample));
+
+        string result = await GetMarketWarningsTool.GetMarketWarnings(
+            client, kinds: new[] { "관리" }, limit: 0);
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        handler.Requests.Should().BeEmpty("validation short-circuits before any TR call");
+        root.GetProperty("error").GetString().Should().Contain("limit");
+    }
 }

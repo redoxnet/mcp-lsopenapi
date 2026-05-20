@@ -35,7 +35,7 @@ public static class GetFundamentalsRankTool
         AVOID WHEN: the user already has a single symbol in mind (use ls_get_stock_info for that symbol's fundamentals instead).
 
         market: 'both' (default) / 'kospi' / 'kosdaq'.
-        count: number of rows to return (1 - 200, default 30). The wrapper pages through t3341 as needed.
+        limit: number of rows to return (1 - 200, default 30). The wrapper pages through t3341 as needed; total_available echoes the full ranking size.
 
         Each row echoes the full fundamental snapshot LS attaches (rank, shcode, name, per/pbr/peg/eps/bps/roe/growth metrics) so the model doesn't need a follow-up call to compare two metrics on the same stock.
         """)]
@@ -46,23 +46,23 @@ public static class GetFundamentalsRankTool
         [Description("Market scope: 'both' (default), 'kospi', or 'kosdaq'.")]
         string market = "both",
         [Description("Number of rows to return (1-200, default 30).")]
-        int count = 30)
+        int limit = 30)
     {
         if (!TryResolveField(field, out string gubun1, out string normalizedField))
             return McpJson.Error($"field '{field}' is not recognized. See the tool description for the supported set.");
         if (!TryResolveMarket(market, out string gubun, out string normalizedMarket))
             return McpJson.Error($"market '{market}' is not recognized. Use 'both', 'kospi', or 'kosdaq'.");
-        if (count < 1 || count > MaxCount)
-            return McpJson.Error($"count must be between 1 and {MaxCount}.", new { received = count });
+        if (limit < 1 || limit > MaxCount)
+            return McpJson.Error($"limit must be between 1 and {MaxCount}.", new { received = limit });
 
-        var rows = new List<FundamentalsRankRow>(count);
+        var rows = new List<FundamentalsRankRow>(limit);
         int? totalAvailable = null;
         // t3341 declares idx as Number (length 4); sending it as a JSON string
         // ("0") triggers HTTP 500 from LS. Keep it as int across the loop.
         int idx = 0;
         try
         {
-            for (int page = 0; page < MaxPages && rows.Count < count; page++)
+            for (int page = 0; page < MaxPages && rows.Count < limit; page++)
             {
                 LsTrResponse response = await apiClient.CallTrAsync(
                     "t3341",
@@ -94,7 +94,7 @@ public static class GetFundamentalsRankTool
                 int beforeCount = rows.Count;
                 foreach (JsonElement row in array.Value.EnumerateArray())
                 {
-                    if (rows.Count >= count)
+                    if (rows.Count >= limit)
                         break;
                     string? shcode = row.ReadString("shcode")?.Trim();
                     if (string.IsNullOrEmpty(shcode))

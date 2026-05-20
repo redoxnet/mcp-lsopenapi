@@ -78,7 +78,7 @@ public sealed class GetThemeStocksToolTests
         var quoteService = new FakeQuoteService();
 
         string result = await GetThemeStocksTool.GetThemeStocks(
-            client, quoteService, theme_code: "0064", theme_keyword: null, top_n: 2);
+            client, quoteService, theme_code: "0064", theme_keyword: null, limit: 2);
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         handler.Requests.Should().ContainSingle();
@@ -112,7 +112,7 @@ public sealed class GetThemeStocksToolTests
         });
 
         string result = await GetThemeStocksTool.GetThemeStocks(
-            client, quoteService, theme_code: null, theme_keyword: "2차전지", top_n: 2);
+            client, quoteService, theme_code: null, theme_keyword: "2차전지", limit: 2);
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         JsonElement resolved = root.GetProperty("resolved");
@@ -132,7 +132,7 @@ public sealed class GetThemeStocksToolTests
         });
 
         string result = await GetThemeStocksTool.GetThemeStocks(
-            client, quoteService, theme_code: null, theme_keyword: "메타버스", top_n: 5);
+            client, quoteService, theme_code: null, theme_keyword: "메타버스", limit: 5);
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         root.GetProperty("error").GetString().Should().Contain("No theme");
@@ -151,7 +151,7 @@ public sealed class GetThemeStocksToolTests
         });
 
         string result = await GetThemeStocksTool.GetThemeStocks(
-            client, quoteService, theme_code: null, theme_keyword: "2차전지", top_n: 5);
+            client, quoteService, theme_code: null, theme_keyword: "2차전지", limit: 5);
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         root.GetProperty("details").GetProperty("error_code").GetString().Should().Be("AmbiguousTheme");
@@ -195,7 +195,7 @@ public sealed class GetThemeStocksToolTests
         var quoteService = new FakeQuoteService();
 
         string result = await GetThemeStocksTool.GetThemeStocks(
-            client, quoteService, theme_code: "0064", theme_keyword: null, top_n: 3);
+            client, quoteService, theme_code: "0064", theme_keyword: null, limit: 3);
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         root.GetProperty("count").GetInt32().Should().Be(3);
@@ -216,7 +216,7 @@ public sealed class GetThemeStocksToolTests
         var (client, handler) = TestClientFactory.Create((_, _) => Ok(T1537Page));
 
         await GetThemeStocksTool.GetThemeStocks(
-            client, quoteService, theme_code: "0064", theme_keyword: "anything", top_n: 5);
+            client, quoteService, theme_code: "0064", theme_keyword: "anything", limit: 5);
 
         // Only the t1537 outbound request — no catalog lookup since code wins.
         handler.Requests.Should().ContainSingle();
@@ -230,7 +230,7 @@ public sealed class GetThemeStocksToolTests
         var (client, _) = TestClientFactory.Create((_, _) => Ok(T1537Page));
 
         string result = await GetThemeStocksTool.GetThemeStocks(
-            client, quoteService, theme_code: "00", theme_keyword: null, top_n: 5);
+            client, quoteService, theme_code: "00", theme_keyword: null, limit: 5);
 
         JsonElement root = JsonDocument.Parse(result).RootElement;
         root.GetProperty("error").GetString().Should().Contain("4-character");

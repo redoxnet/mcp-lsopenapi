@@ -43,7 +43,7 @@ public sealed class GetFundamentalsRankToolTests
     {
         var (client, handler) = TestClientFactory.Create((_, _) => Ok(TwoRowSample));
 
-        string result = await GetFundamentalsRankTool.GetFundamentalsRank(client, field: "per", count: 2);
+        string result = await GetFundamentalsRankTool.GetFundamentalsRank(client, field: "per", limit: 2);
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         handler.Requests.Should().ContainSingle();
@@ -82,7 +82,7 @@ public sealed class GetFundamentalsRankToolTests
     {
         var (client, handler) = TestClientFactory.Create((_, _) => Ok(TwoRowSample));
 
-        await GetFundamentalsRankTool.GetFundamentalsRank(client, field: input, count: 1);
+        await GetFundamentalsRankTool.GetFundamentalsRank(client, field: input, limit: 1);
 
         string body = await handler.Requests[0].Content!.ReadAsStringAsync();
         body.Should().Contain($"\"gubun1\":\"{expectedGubun1}\"");
@@ -96,7 +96,7 @@ public sealed class GetFundamentalsRankToolTests
     {
         var (client, handler) = TestClientFactory.Create((_, _) => Ok(TwoRowSample));
 
-        await GetFundamentalsRankTool.GetFundamentalsRank(client, field: "per", market: input, count: 1);
+        await GetFundamentalsRankTool.GetFundamentalsRank(client, field: "per", market: input, limit: 1);
 
         string body = await handler.Requests[0].Content!.ReadAsStringAsync();
         body.Should().Contain($"\"gubun\":\"{expectedGubun}\"");
@@ -114,14 +114,14 @@ public sealed class GetFundamentalsRankToolTests
     }
 
     [Fact]
-    public async Task GetFundamentalsRank_CountOutOfRange_ReturnsValidationError()
+    public async Task GetFundamentalsRank_LimitOutOfRange_ReturnsValidationError()
     {
         var (client, _) = TestClientFactory.Create((_, _) => Ok(TwoRowSample));
 
-        string result = await GetFundamentalsRankTool.GetFundamentalsRank(client, field: "per", count: 0);
+        string result = await GetFundamentalsRankTool.GetFundamentalsRank(client, field: "per", limit: 0);
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
-        root.GetProperty("error").GetString().Should().Contain("count");
+        root.GetProperty("error").GetString().Should().Contain("limit");
     }
 
     [Fact]

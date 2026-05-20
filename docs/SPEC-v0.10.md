@@ -6,7 +6,7 @@
 - **작성자**: Jong Hyun + Claude
 - **선행**: [SPEC-v0.9-response-shapes.md](./SPEC-v0.9-response-shapes.md)
 - **범위**: post-v0.9.0 SPEC 백로그 4개 묶음을 **한 번의 breaking minor로 통합 청산** —
-  ① tool-surface compression ② t1716 외국인 보유 데이터 ③ Phase 2 cursor pagination
+  ① tool-surface compression ② t1716 외국인 보유 데이터 ③ Phase 2 리스트 도구 정규화
   ④ Phase 3 dataset 핸들 캐시 일반화. v0.10.0을 마지막 0.x로 닫고 v1.0.0(안정화)로 간다.
 
 ## 1. 컨텍스트 & 범위
@@ -21,7 +21,7 @@ v0.9.0(2026-05-20 출시, tag `v0.9.0`)이 끝낸 것: 응답-shape Phase 1(`ind
 |---|---|---|
 | **A. Tool-surface compression** | (구) `SPEC-v0.10-tool-surface-compression.md` | **breaking** |
 | **B. t1716 외국인 보유 데이터** | SPEC-v0.9 §4.3 "2단계 후속" | additive |
-| **C. Phase 2 — cursor pagination** | SPEC-v0.9 §7 Phase 2 | additive |
+| **C. Phase 2 — 리스트 도구 정규화** | SPEC-v0.9 §7 Phase 2 | minor breaking (param rename) |
 | **D. Phase 3 — dataset 핸들 캐시 일반화** | SPEC-v0.9 §7 Phase 3 | additive(외부) + 내부 리팩터 |
 
 ### 1.3 왜 한 릴리스로 묶는가
@@ -196,24 +196,46 @@ prapp=0, prgubun="0", orggubun="0", frggubun="0", exchgubun="U"
 
 ---
 
-## 4. 작업 묶음 C — Phase 2 cursor pagination
+## 4. 작업 묶음 C — Phase 2 리스트 도구 정규화
 
-SPEC-v0.9 §4.5 / §7 Phase 2 이관. 리스트성(D 패턴) 도구에 `limit` + `cursor`를 공통화한다. **순수 additive** — optional 파라미터 추가 + `next_cursor` 응답 필드 추가.
+SPEC-v0.9 §4.5 / §7 Phase 2 이관. **2026-05-20 구현 재평가**: 7개 대상 도구를 전부
+정독한 결과 forward `cursor`는 도구마다 5가지 다른 연속 메커니즘(in-process offset /
+LS `idx` / `cts_shcode` / `shcode`-echo / 헤더 `tr_cont_key`)을 가지며,
+`ls_get_market_warnings`는 멀티-kind fan-out이라 단일 cursor가 의미적으로 깨진다.
+모든 대상 도구가 이미 내부 multi-page로 cap(100~200)을 채우므로 forward cursor의
+실가치는 낮다 — §5.4(fundamentals_rank dataset_id 제외)와 동일한 판단.
 
-### 4.1 대상 도구
+→ Phase 2는 pagination의 **싸고 가치 있는 절반만** 한다: **`limit` 파라미터 통일 +
+`total_available` emit**. forward `cursor` / `next_cursor`는 도입하지 않는다.
 
-`ls_search_stock`, `ls_get_industry_stocks`, `ls_get_theme_stocks`, `ls_get_market_warnings`, `ls_get_fundamentals_rank`, `ls_get_high_low_stocks` — `limit` + `cursor` 추가. `ls_get_top_stocks` — `cursor` 노출(현재 내부 페이징만).
+### 4.1 `limit` 파라미터 통일
 
-### 4.2 컨벤션
+리스트성 도구의 행수 제한 파라미터를 전부 `limit`으로 통일한다.
 
-```
-ls_<list_tool>(..., limit?: int, cursor?: string)
-  → { rows: [...], next_cursor?: string, total_available?: int }
-```
+| 도구 | 현재 | v0.10.0 |
+|---|---|---|
+| `ls_search_stock` | `limit` | `limit` (변경 없음) |
+| `ls_get_high_low_stocks` | `top_n` | `limit` |
+| `ls_get_top_stocks` | `top_n` | `limit` |
+| `ls_get_fundamentals_rank` | `count` | `limit` |
+| `ls_get_industry_stocks` | `top_n` | `limit` |
+| `ls_get_theme_stocks` | `top_n` | `limit` |
+| `ls_get_market_warnings` | (없음 — 무제한) | `limit` 신설 (기본 50, 1~200) |
 
-- `limit` 기본값은 도메인별(예: 10~30). `next_cursor`는 더 있을 때만 emit, `total_available`은 LS가 알려줄 때만.
-- 기존 도구별 limit 이름(`top_n` 등)은 deprecate하지 않고 `limit`로 점진 alias.
-- cursor는 LS의 continuation key(`tr_cont_key`)나 in-process offset을 opaque string으로 래핑 — 도구별 자연스러운 방식. 모델은 직전 응답의 `next_cursor`를 그대로 echo만 하면 됨.
+MCP 도구 소비자는 LLM이 매 호출마다 live schema를 읽으므로 파라미터 rename의 실질
+breaking은 약하다 — 그래도 §9 migration matrix에 명시한다.
+
+### 4.2 `total_available` emit
+
+응답이 "전체 중 일부"임을 caller에게 알리도록, 도구가 싸게 알 수 있을 때 전체 건수를
+`total_available: int`로 emit한다(모르면 omit).
+
+- `ls_search_stock` — 필터된 전체 매치 수(전체 유니버스를 어차피 fetch하므로 무비용).
+- `ls_get_fundamentals_rank` — t3341 `cnt` (이미 emit 중).
+- `ls_get_market_warnings` — `limit` 적용 전 전체 행 수.
+- `ls_get_theme_stocks` — 이미 `theme.stock_count`로 전체 수 노출 → 중복 emit 안 함.
+- `ls_get_high_low_stocks` / `_top_stocks` / `_industry_stocks` — TR이 전체 수를 주지
+  않음 → `total_available` 생략. `count` + `limit` echo로 충분.
 
 ---
 
@@ -264,7 +286,7 @@ SPEC-v0.9 §7 Phase 3 item 8은 fundamentals_rank를 dataset_id 후보로 들었
 | 5개 domain dispatcher 병합 (account/watchlist/watched_themes/portfolio_io/holding) | A |
 | `ls_get_stock_info` — `foreign` 섹션 추가 (6섹션) | B |
 | t1716 catalog 등록 | B |
-| 7개 리스트 도구 — `limit`+`cursor` | C |
+| 7개 리스트 도구 — `limit` 통일 + `total_available` | C |
 | `DatasetHandleCache` 일반화 + `ls_get_index_history` `output_mode` | D |
 
 도구 *수*: `standard` 48 → ~32, `all` → ~35. 신규 semantic 도구는 0개(t1716은 stock_info 섹션으로 흡수) — compression 릴리스 일관성 유지.
@@ -276,7 +298,7 @@ SPEC-v0.9 §7 Phase 3 item 8은 fundamentals_rank를 dataset_id 후보로 들었
 위험도·의존성 기준. 각 단계 독립 commit + 테스트 통과.
 
 1. **t1716 catalog + `foreign` 섹션** (B) — additive·자체완결, t1102 후속 종결. E2E로 `fsc_sjrate` 스케일 1회 확인.
-2. **Phase 2 cursor** (C) — additive·기계적, 7개 도구 순차.
+2. **Phase 2 리스트 정규화** (C) — `limit` 통일 + `total_available`, 7개 도구.
 3. **Profile filter** (A §2.4–2.5) — request-filter 추가, baseline `tools/list` token 측정 + 두 profile budget pin.
 4. **Domain dispatchers** (A §2.6) — account → watched_themes → portfolio_io → watchlist → holdings. 각 단계 token delta 게이트.
 5. **Dataset cache 일반화 + index_history export** (D) — 가장 위험(chart 도구 영향). 마지막에 배치해 chart 테스트 green을 최종 게이트로.
@@ -289,7 +311,7 @@ SPEC-v0.9 §7 Phase 3 item 8은 fundamentals_rank를 dataset_id 후보로 들었
 - **Tool-list token budget**: `tools/list` 필터를 in-process 구동 → tool-list JSON 직렬화 → cl100k_base 측정. 첫 compression commit이 48-tool baseline 기록 + 두 profile budget pin. `standard` ≤ baseline × 0.70.
 - **Routing smoke tests**: profile별 기대 노출, catalog 3종 standard 부재/all 노출, 병합된 옛 이름 부재, dispatcher의 action별 누락 인자 구조화 validation error. 기존 `scripts/portfolio-smoke.py` 확장.
 - **t1716/foreign**: stock_info `foreign` 섹션 fixture 테스트 + `ownership_percent` derived 계산 + `fsc_sjrate` 정규화 단위 테스트.
-- **Phase 2**: 각 도구 cursor round-trip(첫 페이지 → `next_cursor` → 다음 페이지) 테스트.
+- **Phase 2**: 각 도구 `limit` 클램프 + `total_available` 정확도 테스트.
 - **Phase 3**: kind-tagged 캐시 단위 테스트, index_history export→drill round-trip, **기존 chart 데이터셋 테스트 전부 green**.
 - 모든 토큰 budget은 cl100k_base 실측으로 pin (SPEC-v0.9 §2.4 관례).
 
@@ -307,7 +329,9 @@ v0.10.0는 의도적 BREAKING minor. breaking은 **묶음 A뿐** — B/C/D는 ad
 | `ls_holdings_{set,buy,sell,remove,corporate_action}` | `ls_holding(action=...)` | |
 | `ls_holdings_list`, `ls_stocks_refresh_metadata` | 이름 동일 | 변경 없음 |
 | `ls_get_stock_info` | 이름 동일 | `foreign` 섹션 추가(opt-in) — 기존 호출 영향 없음 |
-| 7개 리스트 도구 | 이름 동일 | `limit`/`cursor` 추가(optional) — 기존 호출 영향 없음 |
+| `ls_get_{high_low_stocks,top_stocks,industry_stocks,theme_stocks}` | 이름 동일 | 행수 파라미터 `top_n` → `limit` rename |
+| `ls_get_fundamentals_rank` | 이름 동일 | 행수 파라미터 `count` → `limit` rename |
+| `ls_get_market_warnings` | 이름 동일 | `limit` 파라미터 신설(기본 50) — 무제한 → 캡 |
 | `ls_get_index_history` | 이름 동일 | `output_mode` 추가(기본 `summary`) — 기존 호출 영향 없음 |
 
 접힌 옛 이름 직접 호출: 미등록이면 일반 MCP unknown-tool error, `LS_TOOL_PROFILE_STRICT=true`면 `ToolNotAvailableInProfile`. release notes에 친절한 마이그레이션 안내 필수.

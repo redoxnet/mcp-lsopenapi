@@ -38,11 +38,11 @@ internal static class GetThemeStocksTool
         [Description("Theme name keyword (e.g. '2차전지', 'AI'). Resolved via t1531 catalog LIKE match. 0 matches → ThemeNotFound; 2+ → AmbiguousTheme envelope with candidates.")]
         string? theme_keyword = null,
         [Description("Max stock rows returned (1-200). Default 30.")]
-        int top_n = 30,
+        int limit = 30,
         CancellationToken cancellationToken = default)
     {
-        if (top_n < 1 || top_n > MaxTopN)
-            return McpJson.Error($"top_n must be between 1 and {MaxTopN}.");
+        if (limit < 1 || limit > MaxTopN)
+            return McpJson.Error($"limit must be between 1 and {MaxTopN}.");
 
         // Resolve theme code via explicit input or keyword catalog lookup.
         string? resolvedCode = null;
@@ -91,11 +91,11 @@ internal static class GetThemeStocksTool
 
         try
         {
-            var stocks = new List<ThemeStockRow>(top_n);
+            var stocks = new List<ThemeStockRow>(limit);
             ThemeSummary? themeSummary = null;
             string? continuationKey = null;
 
-            for (int page = 0; page < MaxPages && stocks.Count < top_n; page++)
+            for (int page = 0; page < MaxPages && stocks.Count < limit; page++)
             {
                 LsTrResponse response = await apiClient.CallTrAsync(
                     "t1537",
@@ -151,7 +151,7 @@ internal static class GetThemeStocksTool
                         High: row.ReadLong("high"),
                         Low: row.ReadLong("low"),
                         MarketCap: row.ReadLong("marketcap")));
-                    if (stocks.Count >= top_n)
+                    if (stocks.Count >= limit)
                         break;
                 }
 

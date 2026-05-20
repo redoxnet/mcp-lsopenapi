@@ -48,7 +48,7 @@ public static class GetHighLowStocksTool
         [Description("Market filter: all (default), kospi, kosdaq.")]
         string market = "all",
         [Description("Maximum rows to return (1-100). Default 20.")]
-        int top_n = 20,
+        int limit = 20,
         [Description("Drop ETF / ETN from the result (default true).")]
         bool exclude_etf = true,
         CancellationToken cancellationToken = default)
@@ -59,17 +59,17 @@ public static class GetHighLowStocksTool
             return McpJson.Error($"period '{period}' is not recognized. Use prev_day, 5d, 10d, 20d, 60d, 90d, 52w, or ytd.");
         if (!TryResolveMarket(market, out string gubun, out string normalizedMarket))
             return McpJson.Error($"market '{market}' is not recognized. Use all, kospi, or kosdaq.");
-        if (top_n < 1 || top_n > MaxRows)
-            return McpJson.Error($"top_n must be between 1 and {MaxRows}.", new { received = top_n });
+        if (limit < 1 || limit > MaxRows)
+            return McpJson.Error($"limit must be between 1 and {MaxRows}.", new { received = limit });
 
         string type3 = maintained ? "1" : "0";
         int jcNum2 = exclude_etf ? ExcludeEtfEtnMask : 0;
 
         try
         {
-            var stocks = new List<HighLowStock>(top_n);
+            var stocks = new List<HighLowStock>(limit);
             int idx = 0;
-            for (int page = 0; page < MaxPages && stocks.Count < top_n; page++)
+            for (int page = 0; page < MaxPages && stocks.Count < limit; page++)
             {
                 LsTrResponse response = await apiClient.CallTrAsync(
                     "t1442",
@@ -114,7 +114,7 @@ public static class GetHighLowStocksTool
                         Volume: row.ReadLong("volume"),
                         PastPrice: row.ReadLong("pastprice"),
                         PastChangePct: IndustryDataCache.ApplySign(row.ReadDouble("pastdiff"), pastSign)));
-                    if (stocks.Count >= top_n)
+                    if (stocks.Count >= limit)
                         break;
                 }
 

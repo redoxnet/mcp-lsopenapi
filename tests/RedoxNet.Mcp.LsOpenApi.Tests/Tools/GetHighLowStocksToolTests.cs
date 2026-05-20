@@ -123,7 +123,7 @@ public sealed class GetHighLowStocksToolTests
             return Ok(body);
         });
 
-        string result = await GetHighLowStocksTool.GetHighLowStocks(client, top_n: 2);
+        string result = await GetHighLowStocksTool.GetHighLowStocks(client, limit: 2);
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         handler.Requests.Should().HaveCount(2);

@@ -80,6 +80,8 @@ public static class GetMarketWarningsTool
 
         market: 'all' (default) / 'kospi' / 'kosdaq'.
 
+        limit: max rows to return (1-200, default 50). total_available echoes the full pre-cap row count so the model can tell the user how many were elided.
+
         Each row carries the source TR and the LS jongchk code so the model can cite the exact designation type.
         """)]
     public static async Task<string> GetMarketWarnings(
@@ -90,10 +92,14 @@ public static class GetMarketWarningsTool
         string[]? shcodes = null,
         [Description("Market scope: 'all' (default), 'kospi', or 'kosdaq'.")]
         string market = "all",
+        [Description("Max rows to return (1-200). Default 50.")]
+        int limit = 50,
         CancellationToken cancellationToken = default)
     {
         if (!TryResolveMarket(market, out string gubun, out string normalizedMarket))
             return McpJson.Error($"market '{market}' is not recognized. Use 'all', 'kospi', or 'kosdaq'.");
+        if (limit < 1 || limit > 200)
+            return McpJson.Error("limit must be between 1 and 200.", new { received = limit });
 
         List<KindSpec> selectedKinds;
         if (kinds is null || kinds.Length == 0)
@@ -160,12 +166,17 @@ public static class GetMarketWarningsTool
             return string.Compare(a.Shcode, b.Shcode, StringComparison.Ordinal);
         });
 
+        // total_available is the full pre-cap count; rows are then clipped to limit.
+        int totalAvailable = rows.Count;
+        IReadOnlyList<WarningRow> shown = rows.Count > limit ? rows.Take(limit).ToList() : rows;
+
         var payload = new WarningsPayload
         {
             Market = normalizedMarket,
             QueriedKinds = selectedKinds.Select(k => k.Kind).ToArray(),
-            Count = rows.Count,
-            Rows = rows,
+            Count = shown.Count,
+            TotalAvailable = totalAvailable,
+            Rows = shown,
         };
         return JsonSerializer.Serialize(payload, McpJson.Tool);
     }
@@ -322,6 +333,7 @@ public static class GetMarketWarningsTool
         public string Market { get; init; } = "";
         public IReadOnlyList<string> QueriedKinds { get; init; } = Array.Empty<string>();
         public int Count { get; init; }
+        public int TotalAvailable { get; init; }
         public IReadOnlyList<WarningRow> Rows { get; init; } = Array.Empty<WarningRow>();
     }
 

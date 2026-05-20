@@ -68,7 +68,7 @@ public sealed class GetIndustryStocksToolTests
         // before issuing a second body-paging request — keeps this test focused
         // on response shape (paging has a dedicated test below).
         string result = await GetIndustryStocksTool.GetIndustryStocks(
-            client, cache, upcode: "013", industry_keyword: null, market: "1", top_n: 2);
+            client, cache, upcode: "013", industry_keyword: null, market: "1", limit: 2);
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         handler.Requests.Should().ContainSingle();
@@ -109,7 +109,7 @@ public sealed class GetIndustryStocksToolTests
         var cache = new IndustryDataCache(client);
 
         string result = await GetIndustryStocksTool.GetIndustryStocks(
-            client, cache, upcode: null, industry_keyword: "전기", market: "1", top_n: 5);
+            client, cache, upcode: null, industry_keyword: "전기", market: "1", limit: 5);
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         JsonElement resolved = root.GetProperty("resolved");
@@ -125,7 +125,7 @@ public sealed class GetIndustryStocksToolTests
         var cache = new IndustryDataCache(client);
 
         string result = await GetIndustryStocksTool.GetIndustryStocks(
-            client, cache, upcode: null, industry_keyword: "메타버스", market: "1", top_n: 5);
+            client, cache, upcode: null, industry_keyword: "메타버스", market: "1", limit: 5);
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         root.GetProperty("error").GetString().Should().Contain("No industry");
@@ -139,7 +139,7 @@ public sealed class GetIndustryStocksToolTests
         var cache = new IndustryDataCache(client);
 
         string result = await GetIndustryStocksTool.GetIndustryStocks(
-            client, cache, upcode: null, industry_keyword: "반도체", market: "1", top_n: 5);
+            client, cache, upcode: null, industry_keyword: "반도체", market: "1", limit: 5);
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         root.GetProperty("details").GetProperty("error_code").GetString().Should().Be("AmbiguousIndustry");
@@ -184,7 +184,7 @@ public sealed class GetIndustryStocksToolTests
         var cache = new IndustryDataCache(client);
 
         string result = await GetIndustryStocksTool.GetIndustryStocks(
-            client, cache, upcode: "013", industry_keyword: null, market: "1", top_n: 3);
+            client, cache, upcode: "013", industry_keyword: null, market: "1", limit: 3);
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         root.GetProperty("count").GetInt32().Should().Be(3);
@@ -212,7 +212,7 @@ public sealed class GetIndustryStocksToolTests
         var cache = new IndustryDataCache(client);
 
         await GetIndustryStocksTool.GetIndustryStocks(
-            client, cache, upcode: "013", industry_keyword: "anything", market: "1", top_n: 5);
+            client, cache, upcode: "013", industry_keyword: "anything", market: "1", limit: 5);
 
         handler.Requests.Should().ContainSingle();
         handler.Requests[0].Headers.GetValues("tr_cd").Should().ContainSingle().Which.Should().Be("t1516");

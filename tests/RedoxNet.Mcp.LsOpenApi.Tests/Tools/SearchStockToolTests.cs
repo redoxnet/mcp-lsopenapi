@@ -136,4 +136,18 @@ public class SearchStockToolTests
         JsonDocument.Parse(result).RootElement.GetProperty("error").GetString()
             .Should().Contain("instrument");
     }
+
+    [Fact]
+    public async Task SearchStock_TotalAvailable_CountsAllMatchesBeyondLimit()
+    {
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(SampleBody));
+
+        // "삼성" matches 삼성전자 + 삼성SDI; limit=1 keeps one, total_available counts both.
+        string result = await SearchStockTool.SearchStock(client, "삼성", limit: 1);
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        root.GetProperty("count").GetInt32().Should().Be(1, "results are capped at limit");
+        root.GetProperty("total_available").GetInt32().Should().Be(2, "total_available reflects every match before the cap");
+        root.GetProperty("results").GetArrayLength().Should().Be(1);
+    }
 }

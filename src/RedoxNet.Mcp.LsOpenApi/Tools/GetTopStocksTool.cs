@@ -32,7 +32,7 @@ public static class GetTopStocksTool
     /// <param name="apiClient">Injected LS API client.</param>
     /// <param name="kind">Ranking kind: gainers, losers, unchanged, market_cap, volume, amount, volume_surge.</param>
     /// <param name="market">Market filter: all, kospi, kosdaq.</param>
-    /// <param name="top_n">Maximum rows to return, default 20, max 100.</param>
+    /// <param name="limit">Maximum rows to return, default 20, max 100.</param>
     /// <param name="basis">today or previous_day where the underlying TR supports it.</param>
     /// <param name="exchange">KRX, NXT, or unified. Applies to TRs that support exchange selection.</param>
     /// <param name="min_price">Optional minimum current price.</param>
@@ -60,7 +60,7 @@ public static class GetTopStocksTool
         [Description("Market filter: all, kospi, or kosdaq. Default all.")]
         string market = "all",
         [Description("Maximum rows to return (1-100). Default 20.")]
-        int top_n = 20,
+        int limit = 20,
         [Description("today or previous_day. Applies to gainers/losers/unchanged, volume, and amount. Default today.")]
         string basis = "today",
         [Description("unified, krx, or nxt. Applies where LS supports exchange selection. Default unified.")]
@@ -81,8 +81,8 @@ public static class GetTopStocksTool
             return McpJson.Error(basisError!);
         if (!TryNormalizeExchange(exchange, out string exchangeCode, out string normalizedExchange, out string? exchangeError))
             return McpJson.Error(exchangeError!);
-        if (top_n < 1 || top_n > MaxRows)
-            return McpJson.Error($"top_n must be between 1 and {MaxRows}.");
+        if (limit < 1 || limit > MaxRows)
+            return McpJson.Error($"limit must be between 1 and {MaxRows}.");
         if (min_price < 0 || max_price < 0 || min_volume < 0)
             return McpJson.Error("min_price, max_price, and min_volume must be zero or positive.");
         if (max_price > 0 && max_price < min_price)
@@ -94,11 +94,11 @@ public static class GetTopStocksTool
                 normalizedKind, normalizedMarket, normalizedBasis, exchangeCode, min_price, max_price, min_volume);
 
             List<RankRow> rows = normalizedKind == "market_cap" && normalizedMarket == "all"
-                ? await FetchMergedMarketCapAsync(apiClient, top_n, cancellationToken)
-                : await FetchRowsAsync(apiClient, spec, top_n, cancellationToken);
+                ? await FetchMergedMarketCapAsync(apiClient, limit, cancellationToken)
+                : await FetchRowsAsync(apiClient, spec, limit, cancellationToken);
 
             rows = rows
-                .Take(top_n)
+                .Take(limit)
                 .Select((row, index) => row with { Rank = index + 1 })
                 .ToList();
 

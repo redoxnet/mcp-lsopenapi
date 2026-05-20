@@ -89,6 +89,7 @@ public static class SearchStockTool
                 return McpJson.Error("t8436OutBlock array was missing from the response.");
 
             var matches = new List<object>();
+            int totalMatches = 0;
             foreach (JsonElement row in block.Value.EnumerateArray())
             {
                 string? name = row.ReadString("hname");
@@ -104,6 +105,12 @@ public static class SearchStockTool
                 if (instrumentFilter == "stock" && isEtf) continue;
                 if (instrumentFilter == "etf" && !isEtf) continue;
 
+                // Count every match so total_available reflects the full result
+                // set; only materialize rows up to the limit.
+                totalMatches++;
+                if (matches.Count >= cappedLimit)
+                    continue;
+
                 string? spacRaw = row.ReadString("spac_gubun");
                 matches.Add(new
                 {
@@ -115,8 +122,6 @@ public static class SearchStockTool
                     is_spac = string.Equals(spacRaw, "Y", StringComparison.OrdinalIgnoreCase),
                     status_code = row.ReadString("bu12gubun"),
                 });
-                if (matches.Count >= cappedLimit)
-                    break;
             }
 
             var payload = new
@@ -126,6 +131,7 @@ public static class SearchStockTool
                 instrument_filter = instrumentFilter,
                 limit = cappedLimit,
                 count = matches.Count,
+                total_available = totalMatches,
                 results = matches,
             };
             return JsonSerializer.Serialize(payload, McpJson.Tool);

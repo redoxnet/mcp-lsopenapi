@@ -46,11 +46,11 @@ internal static class GetIndustryStocksTool
         [Description("t1516 gubun. '1'=코스피업종 (default), '2'=코스닥업종, '3'=섹터지수.")]
         string market = "1",
         [Description("Max stock rows returned (1-200). Default 30.")]
-        int top_n = 30,
+        int limit = 30,
         CancellationToken cancellationToken = default)
     {
-        if (top_n < 1 || top_n > MaxTopN)
-            return McpJson.Error($"top_n must be between 1 and {MaxTopN}.");
+        if (limit < 1 || limit > MaxTopN)
+            return McpJson.Error($"limit must be between 1 and {MaxTopN}.");
 
         string gubun = (market ?? "").Trim() switch
         {
@@ -111,12 +111,12 @@ internal static class GetIndustryStocksTool
 
         try
         {
-            var stocks = new List<IndustryStockRow>(top_n);
+            var stocks = new List<IndustryStockRow>(limit);
             string shcodeCursor = "";
             IndexSummary? industrySummary = null;
             string? lastShcode = null;
 
-            for (int page = 0; page < MaxPages && stocks.Count < top_n; page++)
+            for (int page = 0; page < MaxPages && stocks.Count < limit; page++)
             {
                 LsTrResponse response = await apiClient.CallTrAsync(
                     "t1516",
@@ -181,7 +181,7 @@ internal static class GetIndustryStocksTool
                         ForeignNetBuy: row.ReadLong("frgsvolume"),
                         InstitutionNetBuy: row.ReadLong("orgsvolume")));
                     lastShcode = shcode;
-                    if (stocks.Count >= top_n)
+                    if (stocks.Count >= limit)
                         break;
                 }
 

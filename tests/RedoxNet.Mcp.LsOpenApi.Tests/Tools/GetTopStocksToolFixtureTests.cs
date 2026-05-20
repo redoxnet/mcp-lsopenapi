@@ -76,7 +76,7 @@ public class GetTopStocksToolFixtureTests
             client,
             kind: "gainers",
             market: "kospi",
-            top_n: 10,
+            limit: 10,
             basis: "previous_day");
 
         handler.Requests.Should().HaveCount(1);
@@ -147,7 +147,7 @@ public class GetTopStocksToolFixtureTests
             client,
             kind: "amount",
             market: "all",
-            top_n: 5,
+            limit: 5,
             basis: "today",
             exchange: "krx",
             min_price: 1000,
@@ -225,7 +225,7 @@ public class GetTopStocksToolFixtureTests
 
         var (client, handler) = TestClientFactory.Create(Responder);
 
-        string result = await GetTopStocksTool.GetTopStocks(client, kind: "market_cap", market: "all", top_n: 2);
+        string result = await GetTopStocksTool.GetTopStocks(client, kind: "market_cap", market: "all", limit: 2);
 
         handler.Requests.Should().HaveCount(2);
         handler.Requests[0].Headers.GetValues("tr_cd").Should().ContainSingle().Which.Should().Be("t1444");
