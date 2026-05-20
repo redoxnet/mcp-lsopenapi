@@ -74,7 +74,8 @@ public sealed class GetIndexHistoryToolTests
     {
         var (client, handler) = TestClientFactory.Create((_, _) => Ok(KospiTwoDaySample));
 
-        string result = await GetIndexHistoryTool.GetIndexHistory(client, "kospi");
+        // verbosity=full so this field-mapping test sees every point in API order.
+        string result = await GetIndexHistoryTool.GetIndexHistory(client, "kospi", verbosity: "full");
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         handler.Requests.Should().ContainSingle();
@@ -225,5 +226,167 @@ public sealed class GetIndexHistoryToolTests
         root.GetProperty("error").GetString().Should().Contain("business-level");
         root.GetProperty("details").GetProperty("rsp_cd").GetString().Should().Be("99999");
         root.GetProperty("details").GetProperty("requested_code").GetString().Should().Be("999");
+    }
+
+    // ---------------------- v0.9 §4.2 — pattern B (summary + verbosity) ----------------------
+
+    [Fact]
+    public async Task GetIndexHistory_Default_IsSummaryAndOmitsPoints()
+    {
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(KospiTwoDaySample));
+
+        string result = await GetIndexHistoryTool.GetIndexHistory(client, "kospi");
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        root.GetProperty("verbosity").GetString().Should().Be("summary", "the default is the token-saving path");
+        root.TryGetProperty("summary", out _).Should().BeTrue();
+        root.TryGetProperty("points", out _).Should().BeFalse("the default drops the per-bar points");
+        root.GetProperty("count").GetInt32().Should().Be(2, "count still reports the bars summarized");
+    }
+
+    [Fact]
+    public async Task GetIndexHistory_VerbosityCompact_HasSummaryAndPoints()
+    {
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(KospiTwoDaySample));
+
+        string result = await GetIndexHistoryTool.GetIndexHistory(client, "kospi", verbosity: "compact");
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        root.GetProperty("verbosity").GetString().Should().Be("compact");
+        root.TryGetProperty("summary", out _).Should().BeTrue("compact emits the aggregate block");
+        root.GetProperty("points").GetArrayLength().Should().Be(2, "fewer bars than the tail window — all are kept");
+    }
+
+    [Fact]
+    public async Task GetIndexHistory_Compact_KeepsOnlyRecentTail()
+    {
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(BuildSample(60)));
+
+        string result = await GetIndexHistoryTool.GetIndexHistory(client, "kospi", count: 60, verbosity: "compact");
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        root.GetProperty("count").GetInt32().Should().Be(60, "count reports every fetched bar");
+        JsonElement points = root.GetProperty("points");
+        points.GetArrayLength().Should().Be(5, "compact caps points at the 5-bar recent tail");
+        points[4].GetProperty("date").GetString().Should().Be("20260518", "the tail ends at the newest bar, chronologically ascending");
+    }
+
+    [Fact]
+    public async Task GetIndexHistory_VerbosityFull_OmitsSummary()
+    {
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(KospiTwoDaySample));
+
+        string result = await GetIndexHistoryTool.GetIndexHistory(client, "kospi", verbosity: "full");
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        root.GetProperty("verbosity").GetString().Should().Be("full");
+        root.TryGetProperty("summary", out _).Should().BeFalse("full is the pre-v0.9 points-only shape");
+        root.GetProperty("points").GetArrayLength().Should().Be(2);
+    }
+
+    [Fact]
+    public async Task GetIndexHistory_InvalidVerbosity_ReturnsValidationError()
+    {
+        var (client, handler) = TestClientFactory.Create((_, _) => Ok(KospiTwoDaySample));
+
+        string result = await GetIndexHistoryTool.GetIndexHistory(client, "kospi", verbosity: "verbose");
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        handler.Requests.Should().BeEmpty("validation error short-circuits before any TR call");
+        root.GetProperty("error").GetString().Should().Contain("verbosity");
+    }
+
+    [Fact]
+    public async Task GetIndexHistory_Summary_AggregatesPeriodExtremesAndFlows()
+    {
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(KospiTwoDaySample));
+
+        string result = await GetIndexHistoryTool.GetIndexHistory(client, "kospi", verbosity: "summary");
+        JsonElement summary = JsonDocument.Parse(result).RootElement.GetProperty("summary");
+
+        JsonElement period = summary.GetProperty("period");
+        period.GetProperty("from").GetString().Should().Be("20230602", "from is the oldest bar");
+        period.GetProperty("to").GetString().Should().Be("20230605", "to is the newest bar");
+        period.GetProperty("trading_days").GetInt32().Should().Be(2);
+
+        summary.GetProperty("open").GetDouble().Should().BeApproximately(2614.00, 1e-2, "open is the oldest bar's open");
+        summary.GetProperty("close").GetDouble().Should().BeApproximately(2610.62, 1e-2, "close is the newest bar's close");
+        summary.GetProperty("change_total").GetDouble().Should().BeApproximately(-3.38, 1e-2);
+        summary.GetProperty("change_pct_total").GetDouble().Should().BeApproximately(-0.13, 1e-2);
+
+        summary.GetProperty("high").GetProperty("value").GetDouble().Should().BeApproximately(2620.10, 1e-2);
+        summary.GetProperty("high").GetProperty("date").GetString().Should().Be("20230602");
+        summary.GetProperty("low").GetProperty("value").GetDouble().Should().BeApproximately(2598.20, 1e-2);
+
+        summary.GetProperty("biggest_up").GetProperty("change_pct").GetDouble().Should().BeApproximately(0.36, 1e-2);
+        summary.GetProperty("biggest_up").GetProperty("date").GetString().Should().Be("20230605");
+        summary.GetProperty("biggest_down").GetProperty("change_pct").GetDouble().Should().BeApproximately(-0.48, 1e-2);
+
+        JsonElement breadth = summary.GetProperty("breadth_avg");
+        breadth.GetProperty("advance").GetInt64().Should().Be(503, "(606 + 400) / 2");
+        breadth.GetProperty("decline").GetInt64().Should().Be(362, "(253 + 470) / 2, rounded");
+
+        JsonElement flows = summary.GetProperty("flows_total");
+        flows.GetProperty("foreign_net").GetInt64().Should().Be(231, "351 + (-120)");
+        flows.GetProperty("institution_net").GetInt64().Should().Be(2100, "1210 + 890");
+
+        JsonElement meta = summary.GetProperty("_meta");
+        meta.GetProperty("breadth_unit").GetString().Should().Be("stocks_per_day");
+        meta.GetProperty("flows_unit").GetString().Should().Be("thousand_shares");
+    }
+
+    [Fact]
+    public async Task GetIndexHistory_Compact60Bars_FitsTokenBudget()
+    {
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(BuildSample(60)));
+
+        string result = await GetIndexHistoryTool.GetIndexHistory(client, "kospi", count: 60, verbosity: "compact");
+
+        // compact = summary digest + the 5-bar recent tail. Measured ~1051 tokens (cl100k_base).
+        result.ShouldFitTokenBudget(1500);
+    }
+
+    [Fact]
+    public async Task GetIndexHistory_Full60Bars_FitsTokenBudget()
+    {
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(BuildSample(60)));
+
+        string result = await GetIndexHistoryTool.GetIndexHistory(client, "kospi", count: 60, verbosity: "full");
+
+        // full ships every bar — the v0.8-compatible heavy mode. Measured ~8979 tokens (cl100k_base).
+        result.ShouldFitTokenBudget(11000);
+    }
+
+    [Fact]
+    public async Task GetIndexHistory_Summary60Bars_FitsTokenBudget()
+    {
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(BuildSample(60)));
+
+        string result = await GetIndexHistoryTool.GetIndexHistory(client, "kospi", count: 60, verbosity: "summary");
+
+        // Default mode. Measured ~299 tokens (cl100k_base).
+        result.ShouldFitTokenBudget(500);
+    }
+
+    /// <summary>Builds a synthetic t1514 response with <paramref name="bars"/> uniform rows.</summary>
+    static string BuildSample(int bars)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append("""{"rsp_cd":"00000","rsp_msg":"OK","t1514OutBlock":{"cts_date":"        "},"t1514OutBlock1":[""");
+        for (int i = 0; i < bars; i++)
+        {
+            if (i > 0) sb.Append(',');
+            string date = new DateTime(2026, 5, 18).AddDays(-i).ToString("yyyyMMdd");
+            int jisu = 2600 + i;
+            sb.Append('{');
+            sb.Append($"\"date\":\"{date}\",\"jisu\":\"{jisu}.00\",\"sign\":\"2\",\"change\":\"5.00\",\"diff\":\"0.20\",");
+            sb.Append("\"volume\":123456,\"diff_vol\":\"10\",\"value1\":7890123,\"value2\":7890123,");
+            sb.Append("\"high\":500,\"unchg\":80,\"low\":420,\"up\":1,\"down\":0,\"totjo\":1000,\"uprate\":\"50\",");
+            sb.Append($"\"openjisu\":\"{jisu - 1}.00\",\"highjisu\":\"{jisu + 3}.00\",\"lowjisu\":\"{jisu - 4}.00\",");
+            sb.Append("\"frgsvolume\":100,\"orgsvolume\":-50,\"upcode\":\"001\",\"rate\":\"0\",\"divrate\":\"0\"");
+            sb.Append('}');
+        }
+        sb.Append("]}");
+        return sb.ToString();
     }
 }
