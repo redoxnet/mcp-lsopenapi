@@ -140,7 +140,7 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 
 | TR | 이름 | Status | Tool / Notes |
 | --- | --- | --- | --- |
-| `t1531` | 테마별 종목 | 🔵 | In catalog. Consumed by the portfolio module's theme quote enrichment (`ls_watched_themes_list` returns each watched theme's `avgdiff` as `change_pct`) and by `ls_get_theme_stocks` keyword resolution; empty `tmname`/`tmcode` returns the full theme list. 60s in-process catalog cache shared between the quote enrichment and keyword-resolution paths. |
+| `t1531` | 테마별 종목 | 🔵 | In catalog. Consumed by the portfolio module's theme quote enrichment (`ls_watched_themes(action="list")` returns each watched theme's `avgdiff` as `change_pct`) and by `ls_get_theme_stocks` keyword resolution; empty `tmname`/`tmcode` returns the full theme list. 60s in-process catalog cache shared between the quote enrichment and keyword-resolution paths. |
 | `t1532` | 종목별 테마 | 🟢 | `ls_get_stock_themes` — every theme a stock belongs to. Also feeds the v0.6 fire-and-forget enrichment that populates the `stock_themes` cache on portfolio writes. |
 | `t1533` | 특이 테마 | ⚪ | |
 | `t1537` | 테마종목별 시세조회 | 🟢 | `ls_get_theme_stocks` — stocks inside one theme + summary (tmcnt/upcnt/uprate). Header-based `tr_cont` / `tr_cont_key` paging. |
@@ -245,11 +245,11 @@ WebSocket-based stream identifiers, not REST TRs. ~50 channels including:
 
 ---
 
-## Implementation status summary (v0.8.0)
+## Implementation status summary (v0.10.0)
 
-- **45 TRs in catalog** — `t1101`, `t1102`, `t1105`, `t1301`, `t1305`, `t1403`, `t1404`, `t1405`, `t1441`, `t1442`, `t1444`, `t1452`, `t1463`, `t1466`, `t1475`, `t1485`, `t1511`, `t1514`, `t1516`, `t1531`, `t1532`, `t1537`, `t1601`, `t1702`, `t1901`, `t1902`, `t1903`, `t1904`, `t1927`, `t3102`, `t3202`, `t3320`, `t3341`, `t3401`, `t3518`, `t3521`, `t8407`, `t8410`, `t8412`, `t8424`, `t8425`, `t8428`, `t8430`, `t8436`, `t9945`.
-- **48 MCP tools**:
-  - Meta (3) — `ls_search_tr`, `ls_describe_tr`, `ls_call_tr`.
+- **46 TRs in catalog** — `t1101`, `t1102`, `t1105`, `t1301`, `t1305`, `t1403`, `t1404`, `t1405`, `t1441`, `t1442`, `t1444`, `t1452`, `t1463`, `t1466`, `t1475`, `t1485`, `t1511`, `t1514`, `t1516`, `t1531`, `t1532`, `t1537`, `t1601`, `t1702`, `t1716`, `t1901`, `t1902`, `t1903`, `t1904`, `t1927`, `t3102`, `t3202`, `t3320`, `t3341`, `t3401`, `t3518`, `t3521`, `t8407`, `t8410`, `t8412`, `t8424`, `t8425`, `t8428`, `t8430`, `t8436`, `t9945`.
+- **35 MCP tools** (32 exposed in the default `standard` profile — the 3 Meta / catalog tools are `all`-profile only):
+  - Meta / catalog (3, `all` profile only) — `ls_search_tr`, `ls_describe_tr`, `ls_call_tr`.
   - Quotes / rankings (5) — `ls_get_quote`, `ls_get_multi_quote`, `ls_get_stock_info`, `ls_get_top_stocks`, `ls_get_high_low_stocks`.
   - Charts (3) — `ls_get_chart`, `ls_add_indicator`, `ls_reframe_chart`.
   - Stock search (1) — `ls_search_stock`.
@@ -259,13 +259,13 @@ WebSocket-based stream identifiers, not REST TRs. ~50 channels including:
   - Investor / flow / events (5) — `ls_get_investor_flow`, `ls_get_market_warnings`, `ls_get_stock_events`, `ls_get_analyst_opinions`, `ls_get_short_selling_trend`.
   - Fundamentals (1) — `ls_get_fundamentals_rank`.
   - Global market / 자금 (2) — `ls_get_global_market_quote`, `ls_get_market_funds_trend`.
-  - Portfolio (20, local-only) — accounts: `ls_accounts_list`, `ls_account_upsert`, `ls_account_remove`; holdings: `ls_holdings_list`, `ls_holdings_set`, `ls_holdings_buy`, `ls_holdings_sell`, `ls_holdings_remove`, `ls_holdings_corporate_action`; metadata: `ls_stocks_refresh_metadata`; watchlists: `ls_watchlist_group_create`, `ls_watchlist_group_delete`, `ls_watchlist_add`, `ls_watchlist_remove`, `ls_watchlist_list`; watched themes: `ls_watched_themes_add`, `ls_watched_themes_remove`, `ls_watched_themes_list`; I/O: `ls_portfolio_export`, `ls_portfolio_import`.
+  - Portfolio (7, local-only) — 5 action-routed dispatchers: `ls_account`, `ls_holding`, `ls_watchlist`, `ls_watched_themes`, `ls_portfolio_io`; plus standalone `ls_holdings_list` (read path) and `ls_stocks_refresh_metadata`.
 
 > The portfolio module is local-only (SQLite at `%LOCALAPPDATA%\RedoxNet\LsOpenApi\portfolio.db`), with fire-and-forget `t1532` theme enrichment + `t3320` FICS-industry enrichment on write paths, and an export/import JSON round-trip.
 
 ### Tool-surface budget
 
-Total reached **48** against a soft **~45** target (kept low so the LLM has less to route across). v0.6's Tier 1 compression removed 5 tools by folding variants into open enums — e.g. `ls_holdings_corporate_action(type=...)` absorbed the former `ls_holdings_split` / `_reverse_split` / `_bonus`. Further tool-surface compression is part of the v0.10.0 plan (`LS_TOOL_PROFILE` profiles + domain dispatchers, 48 → ~32) — see [SPEC-v0.10.md](./SPEC-v0.10.md).
+Total is **35 tools**, **32** in the default `standard` profile (kept low so the LLM has less to route across). v0.10.0's tool-surface compression (SPEC-v0.10) folded the twenty portfolio tools into five action-routed dispatchers (`ls_account` / `ls_holding` / `ls_watchlist` / `ls_watched_themes` / `ls_portfolio_io`) and gated the three catalog tools behind `LS_TOOL_PROFILE=all` — down from the v0.9 peak of 48. See [SPEC-v0.10.md](./SPEC-v0.10.md).
 
 ## Recommended next batch
 

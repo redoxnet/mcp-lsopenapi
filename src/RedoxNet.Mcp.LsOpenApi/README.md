@@ -2,7 +2,7 @@
 
 # RedoxNet.Mcp.LsOpenApi
 
-MCP server for the **LS증권 OpenAPI** — exposes Korean stock market data as MCP tools so AI assistants can query quotes, charts, and ETF data in natural language. **v0.6 adds market context (index + industry indices + LS themes), portfolio export/import, and a freshness-tracked theme cache**, on top of v0.5's local-only multi-account portfolio module.
+MCP server for the **LS증권 OpenAPI** — exposes Korean stock market data as MCP tools so AI assistants can query quotes, charts, ETF data, market screeners, and index / industry / theme context in natural language, alongside a local-only portfolio module (multi-account holdings, watchlists, watched themes, JSON backup / restore).
 
 > Unofficial third-party MCP server. Not affiliated with or endorsed by LS Securities Co., Ltd. (LS증권). v0.x.x scope: read-only market data + local portfolio notes (manual entry; no broker sync, no order placement).
 
@@ -98,6 +98,8 @@ directly in the conversation.
 | `LS_APPKEY` | yes | LS OpenAPI app key. |
 | `LS_APPSECRETKEY` | yes | LS OpenAPI app secret key. |
 | `LS_MARKET` | no | `real` or `virtual` (default `virtual`). |
+| `LS_TOOL_PROFILE` | no | `standard` (default — hides the 3 catalog tools from `tools/list`) or `all` (exposes them). |
+| `LS_TOOL_PROFILE_STRICT` | no | `true` rejects a `tools/call` for a profile-hidden tool instead of honoring it (default `false`). |
 | `LS_BASEURL` | no | Override REST base URL (rarely needed). |
 | `LS_LOG_LEVEL` | no | `Trace`/`Debug`/`Information`/`Warning`/`Error`/`Critical`/`None` (default `Information`). |
 | `LSOPENAPI_DB_PATH` | no | Override the local portfolio SQLite path. Default: alongside `token.db`. |
@@ -106,11 +108,13 @@ Credentials are accepted **only** through the process environment — never thro
 
 Local data lives at `%LOCALAPPDATA%\RedoxNet\LsOpenApi\` on Windows and `~/.local/share/redoxnet/lsopenapi/` on Linux/macOS: `token.db` (auth cache, SHA-256 keyed) and `portfolio.db` (user-supplied holdings/watchlists; never read or written by tools outside the portfolio family).
 
-## Tools (main — 48 total)
+## Tools (32 in the `standard` profile)
 
-v0.7 net delta: +6 new (screeners + index history + metadata refresh) − 3 Tier 2 compression. Current main also adds five wrappers — `ls_get_global_market_quote` (overseas index / FX / futures), `ls_get_analyst_opinions` (t3401), `ls_get_short_selling_trend` (t1927), `ls_get_high_low_stocks` (t1442), and `ls_get_market_funds_trend` (t8428). Headline pivot: natural screener questions answerable in one call — *"PER 낮은 종목"*, *"오늘 외인 매수 누구"*, *"다음 주총 언제"*, *"내 보유 중 관리종목"*. Storage hygiene: `avg_price` no longer drifts under split/reverse-split round-trips (schema v4 integer fractional won), ETFs stop reporting perpetual `themes_pending` (sentinel-row), and FICS industry classification populates `stocks.industry` for the new `industry?` filter on `ls_holdings_list`.
+v0.10 (BREAKING) compresses the tool surface: the twenty v0.9 portfolio tools fold into **five action-routed dispatchers** (`ls_account`, `ls_watchlist`, `ls_watched_themes`, `ls_portfolio_io`, `ls_holding`), and the new `LS_TOOL_PROFILE` env var hides the three catalog tools in the default `standard` profile. Surface 48 → **32** (`standard`) / 35 (`all`). Additive in the same release: `ls_get_stock_info` gains an opt-in `foreign` ownership section (t1716); list / screener tools unify their row cap to `limit` and emit `total_available`; `ls_get_index_history` gains `output_mode=export` with a `dataset_id` drill.
 
 ### Market data (LS-backed, credentials required)
+
+*`ls_search_tr` / `ls_describe_tr` / `ls_call_tr` are catalog tools — hidden in the default `standard` profile; set `LS_TOOL_PROFILE=all` to expose them.*
 
 | Tool | TR | Purpose |
 |---|---|---|
@@ -120,7 +124,7 @@ v0.7 net delta: +6 new (screeners + index history + metadata refresh) − 3 Tier
 | `ls_get_quote` | `t1101` | Current price + 10-level order book. |
 | `ls_get_multi_quote` | `t8407` | Up to 50 stocks per call. Accepts 6-character codes (digits, optionally one uppercase letter for ETFs e.g. `0117V0`). |
 | `ls_get_top_stocks` | `t1441` / `t1444` / `t1452` / `t1463` / `t1466` | Top gainers/losers, market cap, volume, trading value, and volume-surge screeners. |
-| `ls_get_stock_info` | `t1102` | PER/PBR/EPS, quarterly financials, 52-week + YTD ranges, top-5 brokerages, foreign-investor activity, SPAC / 관리종목 flags. |
+| `ls_get_stock_info` | `t1102` + `t1716` | PER/PBR/EPS, quarterly financials, 52-week + YTD ranges, top-5 brokerages, SPAC / 관리종목 flags, and an opt-in `foreign` ownership-level section. Pick blocks with `sections` (default `snapshot`+`fundamentals`). |
 | `ls_get_chart` | `t8410` / `t8412` / `t1301` | OHLCV (day/week/month/year/min/tick), indicators (SMA/EMA/RSI/MACD/BB), token-efficient `summary` + `dataset_id`, multi-timeframe in one call, optional Plotly v5 chart spec. Raw bars only with `output_mode='export'`; `with_warmup` toggles the summary warm-up; `summary.coverage` explains any null indicators. |
 | `ls_add_indicator` | (handle cache + chart TR) | Adds an indicator to a `dataset_id` returned by `ls_get_chart` and returns the updated `summary` + chart spec. Example: *"add MA200 too"*. |
 | `ls_reframe_chart` | (handle cache + chart TR) | Reframes a `dataset_id` to a new period/count using the cached symbol. Example: *"이걸 일봉으로 바꿔서 최근 6개월만 보여줘"*. |
@@ -134,7 +138,7 @@ v0.7 net delta: +6 new (screeners + index history + metadata refresh) − 3 Tier
 | Tool | TR | Purpose |
 |---|---|---|
 | `ls_get_index_quote` | `t1511` | Single Korean index snapshot. Aliases: `kospi`/`kosdaq`/`kospi200`/`krx100`. Returns value, change %, OHLC with timestamps, 52-week + YTD range, market breadth, and 4 related auxiliary indices. |
-| `ls_get_index_history` | `t1514` | Daily/weekly/monthly time series for an index. Per-bar OHLC, volume, transaction value, market breadth, and foreign/institutional net flow. `cts_date` pagination surfaced when more pages exist. **(v0.7)** |
+| `ls_get_index_history` | `t1514` | Daily/weekly/monthly index time series — per-bar OHLC, volume, breadth, foreign/institutional net flow. `verbosity` shapes the payload; `output_mode=export` caches the whole series under a `dataset_id` for no-API-call drill (`from` / `to` / `recent_n`). |
 | `ls_get_industry_indices` | `t8424` + `t1511` fanout | Top-N industry indices sorted by change %. 60s cache so repeated calls with different `top_n` reuse one fanout. |
 | `ls_get_industry_stocks` | `t1516` | Stocks inside one industry + the industry's index summary. Body-based paging. Accepts `upcode` or `industry_keyword` (LIKE on cached t8424 catalog). |
 | `ls_get_market_funds_trend` | `t8428` | Market-liquidity time series — 고객예탁금, 신용잔고, 미수금, 선물예수금, and equity/mixed/bond/MMF fund money (억원). |
@@ -160,23 +164,17 @@ v0.7 net delta: +6 new (screeners + index history + metadata refresh) − 3 Tier
 
 ### Portfolio (local-only, no broker sync)
 
-Manual entries persisted to `portfolio.db` next to `token.db`. List responses fall back to a `quote_error` envelope when LS credentials are missing, but saved data still returns.
+Manual entries persisted to `portfolio.db` next to `token.db`. v0.10 folds the twenty v0.9 portfolio tools into **five action-routed dispatchers** — each takes an `action` argument and validates the per-action required parameters — plus two standalone tools. List responses fall back to a `quote_error` envelope when LS credentials are missing, but saved data still returns.
 
-| Tool | Purpose |
-|---|---|
-| `ls_accounts_list` | Every account with holdings counts and `is_default` flag. The default is derived from this flag. |
-| `ls_account_upsert` | Create or update an account by `account_number`. `nickname` must be unique; `set_default=true` promotes (auto-promotes when no default exists). `rename_broker_from` mode renames a broker label across every matching account (v0.7 fold of `ls_broker_rename`). |
-| `ls_account_remove` | Two-step `confirm` cascade for removal with auto-succession of the next account (id ASC) when the default goes. |
-| `ls_holdings_list` | Holdings grouped by account with per-account + total summary. Optional `account`, `theme_code`, `theme_keyword`, **`industry`** (v0.7, FICS substring) filters (AND-combine). Envelope includes a `metadata_freshness` block and `matched_themes` / `matching_industries` echoes. |
-| `ls_holdings_set` / `_buy` / `_sell` / `_remove` | Initial state / weighted-average merge on incremental buys / partial-or-full sell with auto-remove on zero / outright delete. `_sell` raises `InsufficientQuantity` above the position. |
-| `ls_holdings_corporate_action(type, ratio)` | Unified corporate-action dispatcher. `type ∈ {split, reverse_split, bonus}` today; v0.7+ extends via the open enum. With no `account`, applied across every account holding the symbol. Reverse-split rejects non-divisible quantities. v0.7 storage swap to integer fractional won (×10000) makes split↔reverse-split round-trips exact. |
-| `ls_stocks_refresh_metadata(shcodes?, kinds?)` | **(v0.7)** Synchronous refresh for theme / FICS industry caches. Default scope = holdings ∪ watchlist symbols when `shcodes` omitted. Blocks until LS calls finish, then echoes per-symbol update flags and any errors. |
-| `ls_watchlist_list(group?, scope?)` | Default `scope="items"` returns grouped item list (v0.6 behavior). `scope="groups"` returns group meta only (v0.7 fold of `ls_watchlist_groups_list`). |
-| `ls_watchlist_group_create(name, description?, rename_from?)` / `_group_delete` | Watchlist group CRUD. `rename_from` enables rename (v0.7 fold of `ls_watchlist_group_rename`). |
-| `ls_watchlist_add` / `_remove` | Stock entries inside groups. |
-| `ls_watched_themes_add` / `_remove` / `_list` | Track LS theme codes (`t1531` tmcode such as `0012`); list response carries each theme's avg percent change. |
-| `ls_portfolio_export(path?)` | Versioned JSON snapshot (schema v1) of accounts/holdings/watchlists/watched themes. Defaults to `exports/portfolio-<timestamp>.json` next to `portfolio.db`. |
-| `ls_portfolio_import(path, mode, confirm)` | `mode=merge` (default) skips duplicates with reason codes; `mode=replace` requires `confirm=true` and writes a `before-import-*.json` auto-backup before wiping. |
+| Tool | Actions | Purpose |
+|---|---|---|
+| `ls_account` | `list` / `upsert` / `remove` | Registered accounts. `upsert` also renames a broker label across accounts (`rename_broker_from` mode); `remove` is a two-step `confirm` cascade with auto-succession of the default (id ASC). |
+| `ls_holding` | `set` / `buy` / `sell` / `remove` / `corporate_action` | Holding writes — initial state, weighted-average buy merge, partial/full sell (auto-remove at zero, `InsufficientQuantity` above the position), outright delete, and the open-enum corporate action (`type` ∈ split / reverse_split / bonus). |
+| `ls_holdings_list` | — | Holdings grouped by account with per-account + total summary. Optional `account`, `theme_code`, `theme_keyword`, `industry` (FICS substring) filters (AND-combine). Standalone — the read path is the most common portfolio intent. |
+| `ls_stocks_refresh_metadata` | — | Synchronous refresh for theme / FICS-industry caches. Default scope = holdings ∪ watchlist symbols when `shcodes` omitted. Standalone. |
+| `ls_watchlist` | `list` / `add` / `remove` / `group_upsert` / `group_delete` | Saved watchlist items and their groups. `list` takes `scope` (`items` / `groups`); `group_upsert` creates, updates, or renames a group (`rename_from`). |
+| `ls_watched_themes` | `list` / `add` / `remove` | Track LS theme codes (`t1531` tmcode such as `0064`); `list` carries each theme's avg percent change. |
+| `ls_portfolio_io` | `export` / `import` | Versioned JSON snapshot (schema v1) of accounts/holdings/watchlists/watched themes. `import mode=replace` requires `confirm=true` and writes a `before-import-*.json` auto-backup. |
 
 **Ambiguity policy.** Reads fall back; writes require an explicit target when ambiguous. 0 accounts → `RequiresAccount`; 1 account → auto with `applied_to` echo; 2+ → `AmbiguousAccount` with `candidates[]` so the model can re-call without prompting the user. Every mutation response includes `applied_to` (single account) or `applied_to[]` with before/after snapshots (corporate actions).
 

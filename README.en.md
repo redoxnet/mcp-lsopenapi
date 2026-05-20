@@ -166,6 +166,8 @@ For more details from LS, see the [official usage guide](https://openapi.ls-sec.
 | `LS_APPKEY` | yes | LS OpenAPI app key. |
 | `LS_APPSECRETKEY` | yes | LS OpenAPI app secret key. |
 | `LS_MARKET` | no | `real` or `virtual` (default `virtual`). |
+| `LS_TOOL_PROFILE` | no | `standard` (default — hides the 3 catalog tools from `tools/list`) or `all` (exposes them). |
+| `LS_TOOL_PROFILE_STRICT` | no | `true` rejects a `tools/call` for a profile-hidden tool instead of honoring it (default `false`). |
 | `LS_BASEURL` | no | Override REST base URL (rarely needed). |
 | `LS_LOG_LEVEL` | no | Minimum log level: `Trace`/`Debug`/`Information`/`Warning`/`Error`/`Critical`/`None`. Default `Information`. |
 | `LSOPENAPI_DB_PATH` | no | Override the local portfolio SQLite path. Default: alongside `token.db`. |
@@ -225,6 +227,8 @@ Pass `include_chart: true` to receive a Plotly v5 JSON spec in the response. Cli
 ## Tools
 
 ### Meta
+
+These three catalog tools are hidden from `tools/list` in the default `standard` profile — set `LS_TOOL_PROFILE=all` to expose them.
 
 | Tool | Purpose |
 | --- | --- |
@@ -372,36 +376,43 @@ Clients that don't embed Plotly.js can ignore `structuredContent.chart` — the 
 
 These tools persist user-supplied data to a SQLite store at `%LOCALAPPDATA%\RedoxNet\LsOpenApi\portfolio.db` (override with `LSOPENAPI_DB_PATH`). They do not read or write any brokerage account; every entry is manual. Quote-enriching list responses fall back to a `quote_error` envelope when LS credentials are unavailable, but saved data still returns.
 
-#### Accounts
+#### Accounts — `ls_account(action)`
 
-| Tool | Purpose |
+| `action` | Purpose |
 | --- | --- |
-| `ls_accounts_list` | List registered accounts with holdings counts and the `is_default` flag. Empty array when no accounts exist. The default account is derived from this flag (v0.6: dedicated getter tool removed). |
-| `ls_account_upsert` | Create or update an account by `account_number`. `nickname` must be unique. `set_default=true` promotes the account; if no default exists yet, the upserted account auto-promotes regardless. **v0.7**: `rename_broker_from` mode renames a broker label across every matching account (replaces `ls_broker_rename`). |
-| `ls_account_remove` | Two-step cascade. `confirm=false` returns `RequiresConfirmation` with the holding count + market value preview when holdings exist. `confirm=true` proceeds. When removing the default account, the oldest remaining account (id ASC) is auto-promoted to default. |
+| `list` | Registered accounts with holdings counts and the `is_default` flag (empty array when none). The default is derived from this flag. |
+| `upsert` | Create or update an account by `account_number` (+ unique `nickname`). `set_default=true` promotes it; the first account auto-promotes. `rename_broker_from` mode relabels a broker across every matching account. |
+| `remove` | Two-step cascade — `confirm=false` returns `RequiresConfirmation` with a holding-count + market-value preview when holdings exist; `confirm=true` proceeds. Removing the default auto-promotes the oldest remaining account (id ASC). |
 
-#### Holdings
+#### Holdings — `ls_holding(action)` + two standalone tools
 
-| Tool | Purpose |
+The write path is the `ls_holding` dispatcher; `shcode` is required for every action.
+
+| `ls_holding` action | Purpose |
 | --- | --- |
-| `ls_holdings_list` | Holdings grouped by account with per-account `summary` and `total_summary`. Optional `account`, `theme_code` (exact), `theme_keyword` (LIKE on theme name), **`industry`** (v0.7, FICS substring) filters; AND-combine. Envelope includes a top-level `metadata_freshness` block plus `matched_themes` / `matching_industries` echoes. |
-| `ls_holdings_set` | Replace a position with `(quantity, avg_price)`. Use for initial registration. `quantity=0` is rejected — use `ls_holdings_remove`. |
-| `ls_holdings_buy` | Record an incremental buy. Cost basis merges via `new_avg = (old.qty*old.avg + qty*price) / (old.qty + qty)`. **v0.7**: storage swapped to integer fractional won (×10000) so split↔reverse-split round-trips are exact. |
-| `ls_holdings_sell` | Subtract from the position. Auto-removes the row when remaining quantity reaches zero. Raises `InsufficientQuantity` when the requested quantity exceeds the current position. |
-| `ls_holdings_remove` | Drop a holding row outright. Returns `removed=false` when the symbol is not held in any account. |
-| `ls_holdings_corporate_action(type, ratio)` | Unified corporate-action dispatcher. `type ∈ {split, reverse_split, bonus}` today; the open enum is reserved for `stock_dividend` / `spin_off` / `merger`. With no `account`, applied across every account holding the symbol. Reverse-split rejects non-divisible quantities. |
-| `ls_stocks_refresh_metadata(shcodes?, kinds?)` | **v0.7**: synchronous refresh for theme + FICS industry caches. Default scope = holdings ∪ watchlist symbols when `shcodes` omitted; `kinds` ∈ `themes` / `industry`. Blocks until LS calls finish (≈N seconds for N symbols at 1 TPS) and echoes per-symbol update flags. |
+| `set` | Replace a position with `(quantity, avg_price)` — initial registration. `quantity=0` is rejected (use `remove`). |
+| `buy` | Record an incremental buy. Cost basis merges via `new_avg = (old.qty*old.avg + qty*price) / (old.qty + qty)`. Storage is integer fractional won (×10000) so split↔reverse-split round-trips are exact. |
+| `sell` | Subtract from the position. Auto-removes the row at zero. Raises `InsufficientQuantity` when the requested quantity exceeds the position. |
+| `remove` | Drop a holding row outright. Returns `removed=false` when the symbol is not held in any account. |
+| `corporate_action` | Open-enum corporate action — `type ∈ {split, reverse_split, bonus}` (+ `ratio`); the enum is reserved for `stock_dividend` / `spin_off` / `merger`. With no `account`, applied across every account holding the symbol; reverse-split rejects non-divisible quantities. |
 
-#### Watchlists & themes
-
-| Tool | Purpose |
+| Standalone tool | Purpose |
 | --- | --- |
-| `ls_watchlist_list(group?, scope?)` | Default `scope="items"` returns entries grouped by watchlist group, enriched with live quotes when credentials are present. **v0.7**: `scope="groups"` returns group meta only (replaces `ls_watchlist_groups_list`). |
-| `ls_watchlist_group_create(name, description?, rename_from?)` | Create or update a group. **v0.7**: `rename_from` enables rename (replaces `ls_watchlist_group_rename`); rejects when the new name collides. |
-| `ls_watchlist_group_delete` | Delete a group; cascades items. |
-| `ls_watchlist_add` | Add or update a saved stock entry (lazy `t8407` metadata fetch + `t1532` theme enrichment when credentials are present). |
-| `ls_watchlist_remove` | Remove an entry from a group. |
-| `ls_watched_themes_add` / `_remove` / `_list` | Track LS theme codes (`t1531` tmcode such as `0064`); list response carries each theme's `change_pct` (avgdiff). **v0.6 rename from `ls_watched_sectors_*`** — v0.5 data preserved via schema v3 migration. |
+| `ls_holdings_list` | Holdings grouped by account with per-account `summary` and `total_summary`. Optional `account`, `theme_code` (exact), `theme_keyword` (LIKE on theme name), `industry` (FICS substring) filters; AND-combine. Envelope includes a top-level `metadata_freshness` block plus `matched_themes` / `matching_industries` echoes. Kept standalone — the read path is the single most common portfolio intent. |
+| `ls_stocks_refresh_metadata(shcodes?, kinds?)` | Synchronous refresh for theme + FICS industry caches. Default scope = holdings ∪ watchlist symbols when `shcodes` omitted; `kinds` ∈ `themes` / `industry`. Blocks until LS calls finish (≈N seconds for N symbols at 1 TPS) and echoes per-symbol update flags. |
+
+#### Watchlists & themes — `ls_watchlist(action)` + `ls_watched_themes(action)`
+
+| `ls_watchlist` action | Purpose |
+| --- | --- |
+| `list` | Entries grouped by watchlist group, enriched with live quotes when credentials are present. `scope="groups"` returns group metadata only. Optional `group_name` filter. |
+| `add` / `remove` | Add or drop a saved stock entry. `add` does a lazy `t8407` metadata fetch + `t1532` theme enrichment when credentials are present. |
+| `group_upsert` | Create a group, update its description, or rename one (`rename_from`); rejects a rename onto an existing name. |
+| `group_delete` | Delete a group; cascades its items. |
+
+| `ls_watched_themes` action | Purpose |
+| --- | --- |
+| `list` / `add` / `remove` | Track LS theme codes (`t1531` tmcode such as `0064`); `list` carries each theme's `change_pct` (avgdiff). |
 
 #### Index + industry
 
@@ -409,47 +420,47 @@ These tools persist user-supplied data to a SQLite store at `%LOCALAPPDATA%\Redo
 | --- | --- |
 | `ls_get_index_quote(index_code)` | Single Korean index snapshot via `t1511`. Aliases `kospi`/`kosdaq`/`kospi200`/`krx100`. Envelope includes value, change %, OHLC with timestamps, 52-week + YTD range, market breadth, 4 related auxiliary indices. |
 | `ls_get_global_market_quote(kind?, symbol?)` | Overseas index / FX / futures snapshot via `t3521`. Aliases include `nasdaq`, `sp500`, `dow`, `soxx`, `usdkrw`, `wti`, `gold`; raw LS symbols like `NAS@IXIC` are accepted. |
-| `ls_get_index_history(index_code, period_type?, count?, cts_date?)` | **v0.7**: daily/weekly/monthly time series for an index via `t1514`. Per-bar OHLC, volume, transaction value, market breadth (advance/decline/limit-up/limit-down), and foreign/institutional net flow. `cts_date` pagination surfaced when more pages exist. |
+| `ls_get_index_history(index_code, period_type?, count?, cts_date?, verbosity?, output_mode?, dataset_id?, from?, to?, recent_n?)` | Daily/weekly/monthly index time series via `t1514` — per-bar OHLC, volume, breadth, foreign/institutional net flow. `verbosity` (summary/compact/full) shapes the inline payload; `output_mode=export` caches the whole series under a `dataset_id` and a follow-up call with that id slices it (`from`/`to`/`recent_n`) with no further API call. |
 | `ls_get_industry_indices(market, top_n)` | Top-N industry indices sorted by change %. `t8424` + `t1511` fanout, 60s in-process cache (cold-cost ≈2.5s for KOSPI's ~25 codes; `top_n=5` and `top_n=30` reuse one fanout). |
-| `ls_get_industry_stocks(upcode \| industry_keyword, market, top_n)` | Stocks inside one industry + the industry's index summary. `t1516` body-based continuation paging. Keyword resolution against cached t8424: 0/1/N matches → `IndustryNotFound` / `resolved` echo / `AmbiguousIndustry` with candidates. |
+| `ls_get_industry_stocks(upcode \| industry_keyword, market, limit)` | Stocks inside one industry + the industry's index summary. `t1516` body-based continuation paging. Keyword resolution against cached t8424: 0/1/N matches → `IndustryNotFound` / `resolved` echo / `AmbiguousIndustry` with candidates. |
 | `ls_get_market_funds_trend(market?, count?)` | Market-liquidity time series via `t8428`. Per day the index plus 고객예탁금 / 신용잔고 / 미수금 / 선물예수금 and equity / mixed / bond / MMF fund money. All monetary fields in 억원. |
 
 #### Screeners & per-stock analytics
 
 | Tool | Purpose |
 | --- | --- |
-| `ls_get_fundamentals_rank(field, market?, count?)` | Rank Korean stocks by one fundamental metric via `t3341`: `per` / `pbr` / `peg` / `eps` / `bps` / `roe` / `sales_growth` / `operating_income_growth` / `ordinary_income_growth` / `debt_to_equity` / `retained_earnings_ratio`. PER / PBR / PEG are LS-side forced ascending. Each row carries every metric so two-metric comparisons need no follow-up call. |
+| `ls_get_fundamentals_rank(field, market?, limit?)` | Rank Korean stocks by one fundamental metric via `t3341`: `per` / `pbr` / `peg` / `eps` / `bps` / `roe` / `sales_growth` / `operating_income_growth` / `ordinary_income_growth` / `debt_to_equity` / `retained_earnings_ratio`. PER / PBR / PEG are LS-side forced ascending. Each row carries every metric so two-metric comparisons need no follow-up call. |
 | `ls_get_investor_flow(shcode?, …)` | Investor-type flow across `t1601` (intraday market-wide) + `t1702` (single-stock daily) dispatcher. 12 investor categories (개인 / 외국인 / 기관계 / 증권 / 투신 / 은행 / 보험 / 종금 / 기금 / 국가 / 기타 / 사모펀드). No shcode → market snapshot per segment; with shcode → daily series with `metric`/`direction`/`cumulative` toggles. |
 | `ls_get_stock_events(shcode, from?, to?, kinds?)` | Per-stock corporate-action / shareholder-meeting calendar via `t3202`. All 14 LS event types (dividends, AGMs, rights / bonus issues, capital changes, mergers/splits, stock-option exercises, CB conversions). TBD entries (`recdt='00000000'`) survive date filtering. |
-| `ls_get_market_warnings(kinds?, shcodes?, market?)` | KRX surveillance list via `t1404` + `t1405`. 13 designations (관리 / 매매정지 / 정리매매 / 단기과열 / 투자위험 + 8 more). Default queries the five most operationally critical kinds. `shcodes` clips against holdings for "any of my holdings on a watchlist?" queries. |
+| `ls_get_market_warnings(kinds?, shcodes?, market?, limit?)` | KRX surveillance list via `t1404` + `t1405`. 13 designations (관리 / 매매정지 / 정리매매 / 단기과열 / 투자위험 + 8 more). Default queries the five most operationally critical kinds. `shcodes` clips against holdings; `limit` (default 50) caps the rows. |
 | `ls_get_analyst_opinions(shcode, count?)` | Per-stock brokerage (sell-side) investment-opinion history via `t3401`. Each entry carries the rating and target price before/after the change, the broker, and the opinion-day close, plus a current-price snapshot. |
 | `ls_get_short_selling_trend(shcode, from?, to?, count?)` | Per-stock daily short-selling (공매도) trend via `t1927`. Short volume / value (백만원), short ratio, average short price, cumulative short volume, and the uptick-rule applied vs. exempt split. |
-| `ls_get_high_low_stocks(direction?, period?, maintained?, market?, top_n?, exclude_etf?)` | New-high / new-low (신고가 / 신저가) screener via `t1442`. `direction` high/low, `period` look-back (52w default), `maintained` 돌파유지 vs 일시돌파; ETF/ETN dropped by default. |
+| `ls_get_high_low_stocks(direction?, period?, maintained?, market?, limit?, exclude_etf?)` | New-high / new-low (신고가 / 신저가) screener via `t1442`. `direction` high/low, `period` look-back (52w default), `maintained` 돌파유지 vs 일시돌파; ETF/ETN dropped by default. |
 
 #### LS themes
 
 | Tool | Purpose |
 | --- | --- |
-| `ls_get_theme_stocks(theme_code \| theme_keyword, top_n)` | Stocks inside one LS curated theme + summary (tmcnt/upcnt/uprate). `t1537` header-based `tr_cont`/`tr_cont_key` paging. Keyword resolution same 0/1/N branches as the industry tool. |
+| `ls_get_theme_stocks(theme_code \| theme_keyword, limit)` | Stocks inside one LS curated theme + summary (tmcnt/upcnt/uprate). `t1537` header-based `tr_cont`/`tr_cont_key` paging. Keyword resolution same 0/1/N branches as the industry tool. |
 | `ls_get_stock_themes(shcode)` | Reverse lookup — every theme a stock belongs to via `t1532`. Empty array is a valid response (not every stock is themed). |
 
-#### Portfolio I/O
+#### Portfolio I/O — `ls_portfolio_io(action)`
 
-| Tool | Purpose |
+| `action` | Purpose |
 | --- | --- |
-| `ls_portfolio_export(path?)` | Versioned JSON snapshot (schema v1) of accounts/holdings/watchlists/watched themes. Default path: `<db-parent>/exports/portfolio-<timestamp>.json`. Stock and theme metadata caches are intentionally excluded — rebuilt by enrichment after import. |
-| `ls_portfolio_import(path, mode, confirm)` | `mode=merge` (default) skips duplicates with per-domain reason codes (`duplicate_account_number`, `duplicate_theme_code`, …); `mode=replace` requires `confirm=true` and writes a `before-import-*.json` auto-backup before the destructive wipe. Unsupported `schema_version` → `ImportSchemaMismatch`. |
+| `export` | Versioned JSON snapshot (schema v1) of accounts/holdings/watchlists/watched themes. Default path `<db-parent>/exports/portfolio-<timestamp>.json`. Stock and theme metadata caches are intentionally excluded — rebuilt by enrichment after import. |
+| `import` | `mode=merge` (default) skips duplicates with per-domain reason codes (`duplicate_account_number`, `duplicate_theme_code`, …); `mode=replace` requires `confirm=true` and writes a `before-import-*.json` auto-backup before the destructive wipe. Unsupported `schema_version` → `ImportSchemaMismatch`. |
 
 #### Ambiguity policy
 
 When a write tool does not specify `account`:
 
-| Tool | 0 accounts | 1 account | 2+ accounts |
+| Call | 0 accounts | 1 account | 2+ accounts |
 | --- | --- | --- | --- |
-| `ls_holdings_list` / `ls_accounts_list` | empty | auto | grouped (default first) |
-| `ls_holdings_set` / `_buy` | `RequiresAccount` | auto + `applied_to` echo | `AmbiguousAccount` (writes need an explicit target) |
-| `ls_holdings_sell` / `_remove` | error / `removed=false` | auto + echo when the symbol is held in exactly one account | `AmbiguousAccount` when the symbol is in multiple accounts |
-| `ls_holdings_corporate_action` | n/a | auto + echo | applies across every account holding the symbol; explicit `account` narrows to one |
+| `ls_holdings_list` / `ls_account(action="list")` | empty | auto | grouped (default first) |
+| `ls_holding(action="set"\|"buy")` | `RequiresAccount` | auto + `applied_to` echo | `AmbiguousAccount` (writes need an explicit target) |
+| `ls_holding(action="sell"\|"remove")` | error / `removed=false` | auto + echo when the symbol is held in exactly one account | `AmbiguousAccount` when the symbol is in multiple accounts |
+| `ls_holding(action="corporate_action")` | n/a | auto + echo | applies across every account holding the symbol; explicit `account` narrows to one |
 
 Every write response includes `applied_to` — a single `{account_number, nickname, broker, is_default}` for one-account writes, or an array of before/after snapshots for corporate actions across multiple accounts.
 
@@ -460,8 +471,8 @@ Every write response includes `applied_to` — a single `{account_number, nickna
 | `RequiresAccount` | `message` | No accounts registered. |
 | `AmbiguousAccount` | `message`, `candidates[]` | More than one valid target. |
 | `AccountNotFound` | `message`, `identifier`, `candidates[]` | Account identifier did not resolve. |
-| `RequiresConfirmation` | `message`, `account`, `holding_count`, `market_value` (account-remove) OR `source_path`, `accounts_in_file`, `holdings_in_file` (import replace) | `ls_account_remove` without `confirm=true` when holdings exist; or `ls_portfolio_import(mode=replace)` without `confirm=true`. |
-| `InsufficientQuantity` | `message`, `shcode`, `current_quantity`, `requested_quantity`, `applied_to` | `_sell` requested more shares than held. |
+| `RequiresConfirmation` | `message`, `account`, `holding_count`, `market_value` (account-remove) OR `source_path`, `accounts_in_file`, `holdings_in_file` (import replace) | `ls_account(action="remove")` without `confirm=true` when holdings exist; or `ls_portfolio_io(action="import", mode="replace")` without `confirm=true`. |
+| `InsufficientQuantity` | `message`, `shcode`, `current_quantity`, `requested_quantity`, `applied_to` | `ls_holding(action="sell")` requested more shares than held. |
 | `IndustryNotFound` / `ThemeNotFound` | `message`, `candidates[]` | Industry/theme keyword matched 0 catalog entries. |
 | `AmbiguousIndustry` / `AmbiguousTheme` | `message`, `candidates[]` | Keyword matched 2+ catalog entries. |
 | `ImportSchemaMismatch` | `message`, `file_schema_version`, `supported_schema_version` | Import file declares an unsupported `schema_version`. |
@@ -471,7 +482,7 @@ Every envelope is structured so the LLM can recover automatically — `candidate
 
 #### Split / bonus warning
 
-When `current_price / avg_price` diverges by 5× or more in either direction, the holding row carries a `warning` field hinting at a missed corporate action ("분할/무상증자 가능성: 현재가/평단 비율 N배"). The model can then suggest `ls_holdings_corporate_action(type="split", ratio=…)` or a manual `_set` correction.
+When `current_price / avg_price` diverges by 5× or more in either direction, the holding row carries a `warning` field hinting at a missed corporate action ("분할/무상증자 가능성: 현재가/평단 비율 N배"). The model can then suggest `ls_holding(action="corporate_action", type="split", ratio=…)` or a manual `ls_holding(action="set")` correction.
 
 ### Indicator specs (for `ls_get_chart`)
 
@@ -507,7 +518,7 @@ dotnet run --project src/RedoxNet.Mcp.LsOpenApi --framework net8.0
 - [x] **v0.7.0** — Screeners (fundamentals_rank via `t3341`, investor_flow via `t1601`+`t1702`, stock_events via `t3202`, market_warnings via `t1404`+`t1405`) + index time-series wrapper (`t1514`) + synchronous metadata refresh + FICS industry enrichment from `t3320` powering a new `industry?` filter on `ls_holdings_list`. Storage: `holdings.avg_price` migrated to integer fractional won (×10000, schema v4) so split↔reverse-split round-trips are exact; ETFs stop reporting perpetual `themes_pending` via stock_themes sentinel row. **BREAKING — Tier 2 (−3):** `ls_watchlist_group_rename` → `ls_watchlist_group_create(rename_from?)`, `ls_watchlist_groups_list` → `ls_watchlist_list(scope="groups")`, `ls_broker_rename` → `ls_account_upsert(rename_broker_from?)`. 43 tools total.
 - [x] **v0.8.0** — Overseas index / FX / futures snapshot + analyst-opinion / short-selling / new-high-low / market-funds wrappers (5 tools) + 12 new catalog TRs. 43 → 48 tools.
 - [x] **v0.9.0** — Response-shape / token-economy refactor (SPEC v0.9). Reshaped `ls_get_index_history` / `ls_get_stock_info` / `ls_holdings_list` — 66–97% fewer tokens on the default call. MCP SDK 1.3.0 + net10.0.
-- [ ] **v0.10.0** — Tool-surface compression (SPEC v0.10). `LS_TOOL_PROFILE` profiles + 5 domain dispatchers, 48 → ~32 tools.
+- [x] **v0.10.0** — Tool-surface compression (SPEC v0.10) — the last 0.x minor. 20 portfolio tools fold into 5 action-routed dispatchers; `LS_TOOL_PROFILE` hides the 3 catalog tools in the default `standard` profile. 48 → 32 (`standard`) / 35 (`all`). Additive in the same release: `ls_get_stock_info` `foreign` section (t1716), `limit` / `total_available` on list tools, `ls_get_index_history` `output_mode=export` + dataset-handle drill.
 - [ ] **v2.0.0** — Realtime quotes + realtime news header (NWS) paired with body fetch (`t3102`), live accounts/balances, orders (WebSocket end-to-end).
 
 Full changelog: [RELEASENOTES.Mcp.md](RELEASENOTES.Mcp.md) · [RELEASENOTES.Core.md](RELEASENOTES.Core.md).
