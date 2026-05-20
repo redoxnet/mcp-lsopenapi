@@ -183,15 +183,15 @@ prapp=0, prgubun="0", orggubun="0", frggubun="0", exchgubun="U"
 | `as_of` | t1716 `date` | 잔량 기준일 |
 | `held_shares` | t1716 `fsc_listing` | 금감원 외인 보유주식수 (주) |
 | `ownership_percent` | **derived** | 외국인 지분율 = `held_shares / (listing × 1000) × 100` |
-| `exhaustion_rate_percent` | t1716 `fsc_sjrate ÷ 100` | 외국인 소진율 |
+| `exhaustion_rate_percent` | t1716 `fsc_sjrate` (직접 %) | 외국인 소진율 |
 
 - **derived 지분율**: `listing`은 t1102 `fundamentals.capital.shares_in_thousands`(천주). `listing`이 0/누락이면 `ownership_percent`는 `null`. — 이 계산이 stock_info를 단순 passthrough가 아닌 **derived metric provider**로 만든다.
-- **`exhaustion_rate_percent` — normalized 단일 값**: t1716 `fsc_sjrate`는 정수×100 스케일("5251.00" = 52.51%). raw를 병기하지 않고 정규화된 단일 값만 emit한다 — 코드베이스 관례(`diff→change_percent`, `vol→turnover_ratio_percent`)와 일치, 토큰 절감(§묶음 A 테마), raw escape hatch는 `ls_call_tr`. 래퍼의 존재 이유가 wire 정규화다.
+- **`exhaustion_rate_percent` — normalized 단일 값**: t1716 `fsc_sjrate`는 직접 퍼센트 값이다(LS catalog `6.2` 포맷 — 소수 2자리, 예 "48.21" = 48.21%). LS 문서의 canned 샘플 "5251.00"은 mis-scaled placeholder였고 실 API는 퍼센트를 그대로 보낸다(2026-05-20 E2E, 005930) — 따라서 `÷100` 없이 raw를 그대로 emit한다. raw를 병기하지 않고 정규화 단일 값만 내보내는 건 코드베이스 관례(`diff→change_percent`)와 일치하며, raw escape hatch는 `ls_call_tr`.
 - t1716 행이 비면(거래 정지 등) `foreign` 섹션은 필드를 `null`로 채우고 `sections_shown`에는 그대로 echo.
 
 ### 3.5 데이터 주의 — E2E 검증 항목
 
-- `fsc_sjrate ÷ 100` 스케일은 이전 세션에서 확인됨. 다만 외국인 한도가 없는 종목(삼성전자 보통주 등)에서 소진율 의미가 달라질 수 있어 구현 중 실 API E2E 1회 재확인.
+- `fsc_sjrate` 스케일 — **E2E로 정정(2026-05-20)**: 이전 세션의 "÷100" 가정은 LS 문서 canned 샘플("5251.00")에 오도된 것이었다. 실 t1716(005930)은 `fsc_sjrate`를 직접 퍼센트(≈48%)로 보낸다 → 구현에서 `÷100` 제거. catalog `6.2` 포맷(소수 2자리)과도 일치.
 - testbed 샘플은 정적(canned doc sample)이라 값 진실 검증에 못 쓴다 — shape 핀 용도만.
 
 ---

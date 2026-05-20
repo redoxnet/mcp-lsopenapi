@@ -78,7 +78,8 @@ public class GetStockInfoToolFixtureTests
     // t1716 (외인기관 종목별 동향) — shape pinned to the LS doc sample, values
     // chosen so the derived ownership math lands on a clean number: with the
     // t1102 fixture's listing = 55,481 (thousand shares), fsc_listing 5,548,100
-    // → 5,548,100 / 55,481,000 × 100 = exactly 10.0 %.
+    // → 5,548,100 / 55,481,000 × 100 = exactly 10.0 %. fsc_sjrate is a direct
+    // percentage (LS 6.2 format), NOT the doc's mis-scaled "5251.00".
     const string TestbedT1716Response = """
     {
       "rsp_cd": "00000",
@@ -87,13 +88,13 @@ public class GetStockInfoToolFixtureTests
         {
           "date": "20260519", "close": 4535, "sign": "2", "change": 10, "diff": "0.22",
           "volume": 6929, "krx_0008": 1200, "krx_0018": -800, "krx_0009": -400,
-          "pgmvol": 50, "fsc_listing": 5548100, "fsc_sjrate": "1234.00",
+          "pgmvol": 50, "fsc_listing": 5548100, "fsc_sjrate": "12.34",
           "fsc_0009": -390, "gm_volume": 100, "gm_value": 1
         },
         {
           "date": "20260516", "close": 4525, "sign": "3", "change": 0, "diff": "0.00",
           "volume": 5000, "krx_0008": 0, "krx_0018": 0, "krx_0009": 0,
-          "pgmvol": 0, "fsc_listing": 5548000, "fsc_sjrate": "1233.80",
+          "pgmvol": 0, "fsc_listing": 5548000, "fsc_sjrate": "12.30",
           "fsc_0009": 0, "gm_volume": 0, "gm_value": 0
         }
       ]
@@ -354,7 +355,7 @@ public class GetStockInfoToolFixtureTests
         // t1716 ships newest-first; the wrapper takes row [0].
         foreign.GetProperty("as_of").GetString().Should().Be("20260519");
         foreign.GetProperty("held_shares").GetInt64().Should().Be(5548100);
-        // fsc_sjrate "1234.00" ships ×100-scaled → ÷100 → 12.34 %.
+        // fsc_sjrate "12.34" is a direct percentage (LS 6.2 format) — emitted as-is.
         foreign.GetProperty("exhaustion_rate_percent").GetDouble().Should().BeApproximately(12.34, 0.001);
         // Derived: 5,548,100 / (55,481 thousand × 1000) × 100 = 10.0 %.
         foreign.GetProperty("ownership_percent").GetDouble().Should().BeApproximately(10.0, 0.001);

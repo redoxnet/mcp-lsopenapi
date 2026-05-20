@@ -305,8 +305,11 @@ public static class GetStockInfoTool
             JsonElement latest = array.Value[0];
             long heldShares = latest.ReadLong("fsc_listing");
 
-            // fsc_sjrate ships ×100-scaled ("5251.00" = 52.51%). listing is in
-            // thousands of shares, so total shares = listingThousands × 1000.
+            // fsc_sjrate is the 소진율 as a direct percentage (LS catalog format
+            // 6.2 — a number with 2 decimals, e.g. "48.21" = 48.21%). The LS doc's
+            // canned sample "5251.00" is a mis-scaled placeholder; real t1716
+            // responses send the percentage directly (E2E-confirmed against
+            // 005930). listing is in thousands of shares → total = ×1000.
             return new
             {
                 as_of = latest.ReadString("date"),
@@ -314,7 +317,7 @@ public static class GetStockInfoTool
                 ownership_percent = listingThousands > 0
                     ? Math.Round(heldShares / (listingThousands * 1000.0) * 100.0, 2)
                     : (double?)null,
-                exhaustion_rate_percent = Math.Round(latest.ReadDouble("fsc_sjrate") / 100.0, 2),
+                exhaustion_rate_percent = Math.Round(latest.ReadDouble("fsc_sjrate"), 2),
             };
         }
         catch (LsAuthException ex)
