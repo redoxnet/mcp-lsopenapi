@@ -114,11 +114,11 @@ public class GetEtfHoldingsToolFixtureTests
     }
 
     [Fact]
-    public async Task GetEtfHoldings_TopN_TruncatesHoldingsArray()
+    public async Task GetEtfHoldings_Limit_TruncatesHoldingsArray()
     {
         var (client, _) = TestClientFactory.Create((_, _) => Ok(TestbedT1904Response));
 
-        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500", top_n: 1).TextContent();
+        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500", limit: 1).TextContent();
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         root.GetProperty("holdings").GetArrayLength().Should().Be(1);
@@ -131,11 +131,11 @@ public class GetEtfHoldingsToolFixtureTests
     }
 
     [Fact]
-    public async Task GetEtfHoldings_TopN_LargerThanList_ReturnsAllUntruncated()
+    public async Task GetEtfHoldings_Limit_LargerThanList_ReturnsAllUntruncated()
     {
         var (client, _) = TestClientFactory.Create((_, _) => Ok(TestbedT1904Response));
 
-        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500", top_n: 100).TextContent();
+        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500", limit: 100).TextContent();
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         root.GetProperty("holdings").GetArrayLength().Should().Be(2);
@@ -146,24 +146,24 @@ public class GetEtfHoldingsToolFixtureTests
     [Theory]
     [InlineData(0)]
     [InlineData(-5)]
-    public async Task GetEtfHoldings_TopN_ZeroOrBelowMinusOne_ReturnsError(int topN)
+    public async Task GetEtfHoldings_Limit_ZeroOrBelowMinusOne_ReturnsError(int limitArg)
     {
         var (client, _) = TestClientFactory.Create((_, _) => Ok(TestbedT1904Response));
 
-        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500", top_n: topN).TextContent();
+        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500", limit: limitArg).TextContent();
 
         JsonDocument.Parse(result).RootElement.GetProperty("error").GetString()
-            .Should().Contain("top_n");
+            .Should().Contain("limit");
     }
 
     [Fact]
-    public async Task GetEtfHoldings_TopNMinusOne_ReturnsAllHoldings()
+    public async Task GetEtfHoldings_LimitMinusOne_ReturnsAllHoldings()
     {
         // -1 is the opt-in "full list" sentinel, consistent with themes_limit
         // on ls_holdings_list — it bypasses the default 20-row cap.
         var (client, _) = TestClientFactory.Create((_, _) => Ok(BuildT1904WithHoldings(25)));
 
-        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500", top_n: -1).TextContent();
+        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500", limit: -1).TextContent();
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         root.GetProperty("holdings").GetArrayLength().Should().Be(25);
@@ -171,9 +171,9 @@ public class GetEtfHoldingsToolFixtureTests
     }
 
     [Fact]
-    public async Task GetEtfHoldings_NoTopN_WithinDefaultCap_ReturnsAllUntruncated()
+    public async Task GetEtfHoldings_NoLimitArg_WithinDefaultCap_ReturnsAllUntruncated()
     {
-        // The fixture has 2 holdings — under the default top_n=20 — so an
+        // The fixture has 2 holdings — under the default limit=20 — so an
         // un-capped call still returns everything and is not flagged truncated.
         var (client, _) = TestClientFactory.Create((_, _) => Ok(TestbedT1904Response));
 
@@ -185,16 +185,16 @@ public class GetEtfHoldingsToolFixtureTests
     }
 
     [Fact]
-    public async Task GetEtfHoldings_NoTopN_DefaultCapsAtTwenty()
+    public async Task GetEtfHoldings_NoLimitArg_DefaultCapsAtTwenty()
     {
-        // v0.10.1: top_n defaults to 20 so a large ETF doesn't dump every
+        // v0.10.1: limit defaults to 20 so a large ETF doesn't dump every
         // constituent into context. The summary still reports the full count.
         var (client, _) = TestClientFactory.Create((_, _) => Ok(BuildT1904WithHoldings(25)));
 
         string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500").TextContent();
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
-        root.GetProperty("holdings").GetArrayLength().Should().Be(20, "the default top_n caps the array at 20");
+        root.GetProperty("holdings").GetArrayLength().Should().Be(20, "the default limit caps the array at 20");
         root.GetProperty("holdings_returned").GetInt32().Should().Be(20);
         root.GetProperty("holdings_truncated").GetBoolean().Should().BeTrue();
         root.GetProperty("holdings_count").GetInt64().Should().Be(25, "the summary still reports every constituent");
