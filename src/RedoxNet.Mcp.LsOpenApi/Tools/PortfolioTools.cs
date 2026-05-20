@@ -108,36 +108,47 @@ internal static class PortfolioTools
         };
     }
 
-    // ---------------------- Themes ----------------------
+    // ---------------------- Watched themes ----------------------
 
-    [McpServerTool(Name = "ls_watched_themes_add")]
-    [Description("Adds an LS theme code (t1531 tmcode, 4-char) to the local watched themes list. Quotes enrich on list via t1531 avgdiff. Does not require LS credentials to save metadata.")]
-    public static async Task<string> ThemeWatch(
+    /// <summary>
+    /// v0.10 domain dispatcher (SPEC-v0.10 §2.6.3). Folds ls_watched_themes_add
+    /// / ls_watched_themes_remove / ls_watched_themes_list into one
+    /// action-routed tool. Kept separate from ls_watchlist — a theme code
+    /// (t1531 tmcode) is not a stock short code.
+    /// </summary>
+    [McpServerTool(Name = "ls_watched_themes")]
+    [Description("""
+        Manages the local watched-themes list (LS t1531 theme codes); no LS credentials needed to save. `action`: "list" (watched themes, enriched with t1531 avgdiff as change_pct when credentials exist), "add" (requires `theme_code` — a 4-char tmcode, e.g. '0064' 2차전지; optional `theme_name`, `note`), "remove" (drops `theme_code`). USE WHEN the user wants to track / 관심 테마 추가 an LS theme; theme codes are not stock short codes (use ls_watchlist for stocks). v0.10 BREAKING: replaces ls_watched_themes_add / _remove / _list.
+        """)]
+    public static async Task<string> WatchedThemes(
         IPortfolioService portfolio,
-        [Description("LS theme code (tmcode), e.g. '0012' (반도체 장비), '0064' (2차전지).")]
-        string theme_code,
-        [Description("Optional human-readable theme_name. Defaults to theme_code when omitted.")]
+        [Description("Operation to perform: 'list', 'add', or 'remove'.")]
+        string action,
+        [Description("add / remove: LS theme code (tmcode, 4-char), e.g. '0064'.")]
+        string? theme_code = null,
+        [Description("add: optional human-readable theme name (defaults to theme_code).")]
         string? theme_name = null,
-        [Description("Optional user note for this theme.")]
+        [Description("add: optional user note for this theme.")]
         string? note = null,
-        CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.WatchThemeAsync(theme_code, theme_name, note, cancellationToken)).ConfigureAwait(false);
-
-    [McpServerTool(Name = "ls_watched_themes_remove")]
-    [Description("Removes an LS theme code from the saved theme watch list. Does not require LS credentials.")]
-    public static async Task<string> ThemeUnwatch(
-        IPortfolioService portfolio,
-        [Description("LS theme code (tmcode) to remove.")]
-        string theme_code,
-        CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.UnwatchThemeAsync(theme_code, cancellationToken)).ConfigureAwait(false);
-
-    [McpServerTool(Name = "ls_watched_themes_list")]
-    [Description("Lists local watched LS themes and enriches them with t1531 avgdiff as change_pct when LS credentials are available. Saved metadata still returns without credentials.")]
-    public static async Task<string> ThemeList(
-        IPortfolioService portfolio,
-        CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.ListThemesAsync(cancellationToken)).ConfigureAwait(false);
+        CancellationToken cancellationToken = default)
+    {
+        const string tool = "ls_watched_themes";
+        switch (NormalizeAction(action))
+        {
+            case "list":
+                return await SerializeAsync(() => portfolio.ListThemesAsync(cancellationToken)).ConfigureAwait(false);
+            case "add":
+                if (string.IsNullOrWhiteSpace(theme_code))
+                    return MissingArgs(tool, "add", "theme_code");
+                return await SerializeAsync(() => portfolio.WatchThemeAsync(theme_code!, theme_name, note, cancellationToken)).ConfigureAwait(false);
+            case "remove":
+                if (string.IsNullOrWhiteSpace(theme_code))
+                    return MissingArgs(tool, "remove", "theme_code");
+                return await SerializeAsync(() => portfolio.UnwatchThemeAsync(theme_code!, cancellationToken)).ConfigureAwait(false);
+            default:
+                return UnknownAction(tool, action, "list", "add", "remove");
+        }
+    }
 
     // ---------------------- Accounts ----------------------
 
