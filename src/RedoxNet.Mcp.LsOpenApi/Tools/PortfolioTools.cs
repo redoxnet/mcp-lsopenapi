@@ -443,35 +443,46 @@ internal static class PortfolioTools
 
     // ---------------------- Portfolio I/O ----------------------
 
-    [McpServerTool(Name = "ls_portfolio_export")]
+    /// <summary>
+    /// v0.10 domain dispatcher (SPEC-v0.10 §2.6.4). Folds ls_portfolio_export
+    /// / ls_portfolio_import into one action-routed tool.
+    /// </summary>
+    [McpServerTool(Name = "ls_portfolio_io")]
     [Description("""
-        Exports the local portfolio (accounts, holdings, watchlists, watched themes) to a single versioned JSON file. Default path is a timestamped file under the exports/ directory next to portfolio.db; pass an absolute path to override.
+        Backs up or restores the local portfolio — accounts, holdings, watchlists, watched themes — as a single versioned JSON file. Does not require LS credentials. Pick the operation with `action`:
 
-        USE WHEN: the user asks to back up, export, save, "백업해줘", "내보내기", or wants to move data between machines. Stocks metadata cache (names, themes) is intentionally not exported — it rebuilds from quote enrichment after import.
+        - action="export" — writes the portfolio to a JSON file. `path` is optional; when omitted a timestamped file is written under exports/ next to portfolio.db. The stocks metadata cache is intentionally not exported — it rebuilds from quote enrichment after import.
+        - action="import" — restores from a previously-exported JSON file at `path` (required). `mode="merge"` (default) skips rows that already exist; `mode="replace"` wipes accounts/holdings/watchlists/themes first, requires `confirm=true`, and writes a before-import auto-backup.
+
+        USE WHEN: the user asks to back up / export / "백업해줘", or restore / import / "복원해줘" / migrate to a new machine.
+
+        v0.10 BREAKING: replaces ls_portfolio_export / ls_portfolio_import.
         """)]
-    public static async Task<string> PortfolioExport(
+    public static async Task<string> PortfolioIo(
         IPortfolioService portfolio,
-        [Description("Optional absolute path for the export file. When omitted, writes 'exports/portfolio-YYYY-MM-DDTHHmmss.json' next to portfolio.db.")]
+        [Description("Operation to perform: 'export' or 'import'.")]
+        string action,
+        [Description("export: optional absolute output path (default: timestamped file under exports/). import: REQUIRED absolute path to the JSON file.")]
         string? path = null,
-        CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.ExportPortfolioAsync(path, cancellationToken)).ConfigureAwait(false);
-
-    [McpServerTool(Name = "ls_portfolio_import")]
-    [Description("""
-        Imports a previously-exported portfolio JSON file. Two modes: 'merge' (default — skips rows that already exist by account_number / group name / theme_code / (group, shcode) / (account, shcode)), and 'replace' (wipes accounts/holdings/watchlists/themes first, requires confirm=true, and writes a before-import-* auto-backup to the same exports/ directory).
-
-        USE WHEN: the user wants to restore from a backup, migrate to a new machine, or "가져오기 / 복원해줘". After import, themes/quotes are re-enriched on next list/write call.
-        """)]
-    public static async Task<string> PortfolioImport(
-        IPortfolioService portfolio,
-        [Description("Absolute path to the previously-exported JSON file.")]
-        string path,
-        [Description("Import mode. 'merge' (default) skips duplicates. 'replace' wipes export-covered domains first and requires confirm=true.")]
+        [Description("import: 'merge' (default — skips duplicates) or 'replace' (wipes export-covered domains first, requires confirm).")]
         string mode = "merge",
-        [Description("Must be true to proceed with replace mode. Ignored for merge mode.")]
+        [Description("import: must be true to proceed with replace mode. Ignored for merge.")]
         bool confirm = false,
-        CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.ImportPortfolioAsync(path, mode, confirm, cancellationToken)).ConfigureAwait(false);
+        CancellationToken cancellationToken = default)
+    {
+        const string tool = "ls_portfolio_io";
+        switch (NormalizeAction(action))
+        {
+            case "export":
+                return await SerializeAsync(() => portfolio.ExportPortfolioAsync(path, cancellationToken)).ConfigureAwait(false);
+            case "import":
+                if (string.IsNullOrWhiteSpace(path))
+                    return MissingArgs(tool, "import", "path");
+                return await SerializeAsync(() => portfolio.ImportPortfolioAsync(path!, mode, confirm, cancellationToken)).ConfigureAwait(false);
+            default:
+                return UnknownAction(tool, action, "export", "import");
+        }
+    }
 
     // ---------------------- Dispatcher plumbing ----------------------
 
