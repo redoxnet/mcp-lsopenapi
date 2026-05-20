@@ -265,7 +265,7 @@ WebSocket-based stream identifiers, not REST TRs. ~50 channels including:
 
 ### Tool-surface budget
 
-Total reached **48** against a soft **~45** target (kept low so the LLM has less to route across). v0.6's Tier 1 compression removed 5 tools by folding variants into open enums — e.g. `ls_holdings_corporate_action(type=...)` absorbed the former `ls_holdings_split` / `_reverse_split` / `_bonus`. Further tool-surface compression is the v0.10.0 plan (`LS_TOOL_PROFILE` profiles + domain dispatchers, 48 → ~32) — see [SPEC-v0.10-tool-surface-compression.md](./SPEC-v0.10-tool-surface-compression.md).
+Total reached **48** against a soft **~45** target (kept low so the LLM has less to route across). v0.6's Tier 1 compression removed 5 tools by folding variants into open enums — e.g. `ls_holdings_corporate_action(type=...)` absorbed the former `ls_holdings_split` / `_reverse_split` / `_bonus`. Further tool-surface compression is part of the v0.10.0 plan (`LS_TOOL_PROFILE` profiles + domain dispatchers, 48 → ~32) — see [SPEC-v0.10.md](./SPEC-v0.10.md).
 
 ## Recommended next batch
 
