@@ -141,75 +141,87 @@ internal static class PortfolioTools
 
     // ---------------------- Accounts ----------------------
 
-    [McpServerTool(Name = "ls_accounts_list")]
-    [Description("Lists all registered local portfolio accounts with their holdings counts and the default flag. Returns an empty array when no accounts are registered.")]
-    public static async Task<string> AccountsList(
-        IPortfolioService portfolio,
-        CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.ListAccountsAsync(cancellationToken)).ConfigureAwait(false);
-
-    // ls_account_get removed in v0.6 (Tier 1 compression). The default
-    // account is exposed via ls_accounts_list's is_default flag — the model
-    // filters the array to get the same information without a dedicated tool.
-
-    [McpServerTool(Name = "ls_account_upsert")]
+    /// <summary>
+    /// v0.10 domain dispatcher (SPEC-v0.10 §2.6.1). Folds ls_accounts_list /
+    /// ls_account_upsert / ls_account_remove into one action-routed tool. The
+    /// earlier v0.6/v0.7 sub-merges stay folded — ls_account_get is the
+    /// is_default flag on action="list", ls_account_set_default is the
+    /// set_default flag, ls_broker_rename is the rename_broker_from parameter.
+    /// </summary>
+    [McpServerTool(Name = "ls_account")]
     [Description("""
-        Two modes selected by the optional `rename_broker_from`:
+        Manages local portfolio accounts — list, create/update, or remove. Does not require LS credentials. Pick the operation with `action`:
 
-        - Upsert mode (default — rename_broker_from omitted): creates or updates a local portfolio account by `account_number`. When `set_default` is true the account becomes the sole default; otherwise the previous default is preserved (and if none existed, the upserted account is auto-promoted to default).
+        - action="list" — lists every registered account with its holdings count and the is_default flag. Returns an empty array when none exist; no other parameters.
+        - action="upsert" — creates or updates an account by `account_number` (also requires `nickname`). `set_default=true` promotes it to the sole default; the first account is auto-promoted. Rename-broker sub-mode: set `rename_broker_from` to relabel the broker across every account currently using that label, with the replacement passed in `broker` (account_number / nickname / set_default are ignored).
+        - action="remove" — removes the account identified by `account` (account_number or nickname). When it owns holdings, returns RequiresConfirmation with a preview unless `confirm=true`. Removing the default auto-promotes the oldest remaining account.
 
-        - Rename-broker mode (`rename_broker_from` set): renames the broker label across every account currently using `rename_broker_from`, replacing it with the value passed in `broker`. In this mode `account_number`, `nickname`, and `set_default` are ignored.
+        USE WHEN: the user wants to register a brokerage account ("내 한투 계좌 등록해줘. 번호 X 닉네임 한투"), list their accounts, rename a broker label, or delete an account.
 
-        v0.7 Tier 2 BREAKING: the previous `ls_broker_rename` tool was folded here as the `rename_broker_from` parameter.
-
-        USE WHEN: the user wants to register their brokerage account locally — "내 한투 계좌 등록해줘. 번호 X 닉네임 한투" or adding a second account; OR wants to rename a broker label across accounts — "broker 'KB' 를 'KB증권' 으로 바꿔" (rename_broker_from="KB", broker="KB증권").
+        v0.10 BREAKING: replaces ls_accounts_list / ls_account_upsert / ls_account_remove.
         """)]
-    public static async Task<string> AccountUpsert(
+    public static async Task<string> Account(
         IPortfolioService portfolio,
-        [Description("Brokerage account number (upsert mode only — ignored when rename_broker_from is set).")]
+        [Description("Operation to perform: 'list', 'upsert', or 'remove'.")]
+        string action,
+        [Description("upsert: brokerage account number (required unless rename_broker_from is set).")]
         string? account_number = null,
-        [Description("Human-readable nickname (upsert mode only — ignored when rename_broker_from is set). Must be unique across accounts.")]
+        [Description("upsert: human-readable nickname, unique across accounts (required for a normal upsert).")]
         string? nickname = null,
-        [Description("Upsert mode: free-text broker label for this account (defaults to 'LS'). Rename-broker mode: REQUIRED — the replacement label that overwrites every account whose current broker is `rename_broker_from`.")]
+        [Description("upsert: free-text broker label (defaults to 'LS'). In rename-broker sub-mode this is REQUIRED — the replacement label.")]
         string? broker = null,
-        [Description("Upsert mode only: if true, promote this account to default. Rename-broker mode ignores this.")]
+        [Description("upsert: if true, promote this account to the sole default.")]
         bool set_default = false,
-        [Description("Optional. Current broker label to rename. When set, the tool enters rename-broker mode: every account whose broker equals this value is updated to use `broker` as the new label.")]
+        [Description("upsert: set this to enter rename-broker sub-mode — the current broker label to replace across every account.")]
         string? rename_broker_from = null,
+        [Description("remove: account identifier (account_number or nickname).")]
+        string? account = null,
+        [Description("remove: must be true to cascade-delete holdings owned by the account.")]
+        bool confirm = false,
         CancellationToken cancellationToken = default)
     {
-        if (!string.IsNullOrWhiteSpace(rename_broker_from))
+        const string tool = "ls_account";
+        switch (NormalizeAction(action))
         {
-            if (string.IsNullOrWhiteSpace(broker))
-                return McpJson.Error("rename_broker_from requires `broker` (the replacement label).");
-            return await SerializeAsync(() => portfolio.RenameBrokerAsync(rename_broker_from!.Trim(), broker!.Trim(), cancellationToken)).ConfigureAwait(false);
+            case "list":
+                return await SerializeAsync(() => portfolio.ListAccountsAsync(cancellationToken)).ConfigureAwait(false);
+            case "upsert":
+                return await AccountUpsertAsync(portfolio, account_number, nickname, broker, set_default, rename_broker_from, cancellationToken).ConfigureAwait(false);
+            case "remove":
+                if (string.IsNullOrWhiteSpace(account))
+                    return MissingArgs(tool, "remove", "account");
+                return await SerializeAsync(() => portfolio.RemoveAccountAsync(account!, confirm, cancellationToken)).ConfigureAwait(false);
+            default:
+                return UnknownAction(tool, action, "list", "upsert", "remove");
         }
-        if (string.IsNullOrWhiteSpace(account_number))
-            return McpJson.Error("account_number is required for upsert mode (omit only when rename_broker_from is set).");
-        if (string.IsNullOrWhiteSpace(nickname))
-            return McpJson.Error("nickname is required for upsert mode.");
-        return await SerializeAsync(() => portfolio.UpsertAccountAsync(account_number, nickname, broker, set_default, cancellationToken)).ConfigureAwait(false);
     }
 
-    [McpServerTool(Name = "ls_account_remove")]
-    [Description("""
-        Removes a local portfolio account. If the account owns holdings, returns RequiresConfirmation with the count/value preview unless confirm=true is passed. When removing the default account and others remain, the oldest (id ASC) is auto-promoted.
-        """)]
-    public static async Task<string> AccountRemove(
+    /// <summary>
+    /// action="upsert" body. Two modes: rename-broker (when
+    /// <paramref name="renameBrokerFrom"/> is set) vs account upsert.
+    /// </summary>
+    static async Task<string> AccountUpsertAsync(
         IPortfolioService portfolio,
-        [Description("Account identifier: account_number or nickname.")]
-        string account,
-        [Description("Must be true to cascade-delete holdings owned by the account.")]
-        bool confirm = false,
-        CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.RemoveAccountAsync(account, confirm, cancellationToken)).ConfigureAwait(false);
-
-    // ls_account_set_default removed in v0.6 (Tier 1 compression). The same
-    // effect is reachable via ls_account_upsert(set_default=true) without
-    // adding a separate tool to the surface.
-
-    // ls_broker_rename removed in v0.7 (Tier 2 compression). The same effect
-    // is reachable via ls_account_upsert(rename_broker_from=OLD, broker=NEW).
+        string? accountNumber,
+        string? nickname,
+        string? broker,
+        bool setDefault,
+        string? renameBrokerFrom,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(renameBrokerFrom))
+        {
+            if (string.IsNullOrWhiteSpace(broker))
+                return MissingArgs("ls_account", "upsert", "broker");
+            return await SerializeAsync(() => portfolio.RenameBrokerAsync(renameBrokerFrom!.Trim(), broker!.Trim(), cancellationToken)).ConfigureAwait(false);
+        }
+        List<string> missing = new();
+        if (string.IsNullOrWhiteSpace(accountNumber)) missing.Add("account_number");
+        if (string.IsNullOrWhiteSpace(nickname)) missing.Add("nickname");
+        if (missing.Count > 0)
+            return MissingArgs("ls_account", "upsert", missing.ToArray());
+        return await SerializeAsync(() => portfolio.UpsertAccountAsync(accountNumber!, nickname!, broker, setDefault, cancellationToken)).ConfigureAwait(false);
+    }
 
     // ---------------------- Holdings ----------------------
 
@@ -449,6 +461,31 @@ internal static class PortfolioTools
         bool confirm = false,
         CancellationToken cancellationToken = default) =>
         await SerializeAsync(() => portfolio.ImportPortfolioAsync(path, mode, confirm, cancellationToken)).ConfigureAwait(false);
+
+    // ---------------------- Dispatcher plumbing ----------------------
+
+    /// <summary>Normalizes a dispatcher <c>action</c> argument (trim + lowercase).</summary>
+    static string NormalizeAction(string? action) => (action ?? string.Empty).Trim().ToLowerInvariant();
+
+    /// <summary>
+    /// Structured "unknown action" error for a v0.10 domain dispatcher. The
+    /// echoed <c>valid_actions</c> list lets the model self-correct without a
+    /// docs round-trip (SPEC-v0.10 §2.3).
+    /// </summary>
+    static string UnknownAction(string tool, string? action, params string[] validActions) =>
+        McpJson.Error(
+            $"{tool}: unknown action '{action}'. Valid actions: {string.Join(", ", validActions)}.",
+            new { action, valid_actions = validActions });
+
+    /// <summary>
+    /// Structured "missing required argument(s) for this action" error. The
+    /// shape is model-recoverable — it echoes the action and the exact missing
+    /// parameter names (SPEC-v0.10 §2.3).
+    /// </summary>
+    static string MissingArgs(string tool, string action, params string[] missing) =>
+        McpJson.Error(
+            $"{tool} action='{action}' is missing required argument(s): {string.Join(", ", missing)}.",
+            new { action, missing });
 
     // ---------------------- Serialization + error envelopes ----------------------
 

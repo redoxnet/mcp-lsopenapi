@@ -7,19 +7,34 @@ using Xunit;
 namespace RedoxNet.Mcp.LsOpenApi.Tests.Tools;
 
 /// <summary>
-/// Covers v0.7 Tier 2-3 compression: ls_broker_rename folded into
-/// ls_account_upsert(rename_broker_from?). Two modes must remain
-/// distinguishable and the rename mode must guard its required parameters.
+/// Covers the v0.10 <c>ls_account</c> domain dispatcher (SPEC-v0.10 §2.6.1):
+/// ls_accounts_list / ls_account_upsert / ls_account_remove folded into one
+/// action-routed tool. Service-level math is tested in PortfolioServiceTests;
+/// here we exercise routing, the two upsert sub-modes, and per-action
+/// argument validation.
 /// </summary>
-public sealed class PortfolioToolsAccountUpsertTests
+public sealed class PortfolioToolsAccountTests
 {
     [Fact]
-    public async Task AccountUpsert_DefaultMode_CreatesAccount()
+    public async Task Account_List_ReturnsRegisteredAccounts()
+    {
+        await using TestEnvironment env = new();
+        await env.Repository.UpsertAccountAsync("AAA", "한투", null, setDefault: false);
+
+        string result = await PortfolioTools.Account(env.Service, action: "list");
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        root.ValueKind.Should().Be(JsonValueKind.Array);
+        root.EnumerateArray().Should().ContainSingle(a => a.GetProperty("nickname").GetString() == "한투");
+    }
+
+    [Fact]
+    public async Task Account_Upsert_DefaultMode_CreatesAccount()
     {
         await using TestEnvironment env = new();
 
-        string result = await PortfolioTools.AccountUpsert(
-            env.Service, account_number: "AAA", nickname: "한투", broker: "한국투자");
+        string result = await PortfolioTools.Account(
+            env.Service, action: "upsert", account_number: "AAA", nickname: "한투", broker: "한국투자");
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         root.GetProperty("account_number").GetString().Should().Be("AAA");
@@ -27,15 +42,15 @@ public sealed class PortfolioToolsAccountUpsertTests
     }
 
     [Fact]
-    public async Task AccountUpsert_RenameBrokerMode_UpdatesAllMatchingAccountsAndReportsCount()
+    public async Task Account_Upsert_RenameBrokerMode_UpdatesAllMatchingAccountsAndReportsCount()
     {
         await using TestEnvironment env = new();
         await env.Repository.UpsertAccountAsync("AAA", "한투-주식", "한투", setDefault: false);
         await env.Repository.UpsertAccountAsync("BBB", "한투-ISA", "한투", setDefault: false);
         await env.Repository.UpsertAccountAsync("CCC", "KB", "KB증권", setDefault: false);
 
-        string result = await PortfolioTools.AccountUpsert(
-            env.Service, broker: "한국투자증권", rename_broker_from: "한투");
+        string result = await PortfolioTools.Account(
+            env.Service, action: "upsert", broker: "한국투자증권", rename_broker_from: "한투");
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         root.GetProperty("from").GetString().Should().Be("한투");
@@ -47,27 +62,66 @@ public sealed class PortfolioToolsAccountUpsertTests
     }
 
     [Fact]
-    public async Task AccountUpsert_RenameBrokerMode_MissingBroker_ReturnsValidationError()
+    public async Task Account_Upsert_RenameBrokerMode_MissingBroker_ReturnsValidationError()
     {
         await using TestEnvironment env = new();
 
-        string result = await PortfolioTools.AccountUpsert(
-            env.Service, rename_broker_from: "한투");
+        string result = await PortfolioTools.Account(
+            env.Service, action: "upsert", rename_broker_from: "한투");
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         root.GetProperty("error").GetString().Should().Contain("broker");
+        root.GetProperty("details").GetProperty("missing")[0].GetString().Should().Be("broker");
     }
 
     [Fact]
-    public async Task AccountUpsert_DefaultMode_MissingAccountNumber_ReturnsValidationError()
+    public async Task Account_Upsert_DefaultMode_MissingAccountNumber_ReturnsValidationError()
     {
         await using TestEnvironment env = new();
 
-        string result = await PortfolioTools.AccountUpsert(
-            env.Service, nickname: "한투");
+        string result = await PortfolioTools.Account(env.Service, action: "upsert", nickname: "한투");
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         root.GetProperty("error").GetString().Should().Contain("account_number");
+        root.GetProperty("details").GetProperty("action").GetString().Should().Be("upsert");
+    }
+
+    [Fact]
+    public async Task Account_Remove_MissingAccount_ReturnsValidationError()
+    {
+        await using TestEnvironment env = new();
+
+        string result = await PortfolioTools.Account(env.Service, action: "remove");
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        root.GetProperty("error").GetString().Should().Contain("account");
+        root.GetProperty("details").GetProperty("missing")[0].GetString().Should().Be("account");
+    }
+
+    [Fact]
+    public async Task Account_Remove_CascadesWithConfirm()
+    {
+        await using TestEnvironment env = new();
+        await env.Repository.UpsertAccountAsync("AAA", "한투", null, setDefault: false);
+
+        string result = await PortfolioTools.Account(
+            env.Service, action: "remove", account: "한투", confirm: true);
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        root.GetProperty("removed").GetBoolean().Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Account_UnknownAction_ReturnsValidationErrorWithValidActions()
+    {
+        await using TestEnvironment env = new();
+
+        string result = await PortfolioTools.Account(env.Service, action: "frobnicate");
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        root.GetProperty("error").GetString().Should().Contain("unknown action");
+        root.GetProperty("details").GetProperty("valid_actions").EnumerateArray()
+            .Select(e => e.GetString()).Should().BeEquivalentTo(new[] { "list", "upsert", "remove" });
     }
 
     sealed class TestEnvironment : IAsyncDisposable
@@ -79,7 +133,7 @@ public sealed class PortfolioToolsAccountUpsertTests
 
         public TestEnvironment()
         {
-            _dir = Path.Combine(Path.GetTempPath(), "mcp-lsopenapi-au-" + Guid.NewGuid().ToString("N"));
+            _dir = Path.Combine(Path.GetTempPath(), "mcp-lsopenapi-acct-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(_dir);
             Repository = new SqlitePortfolioRepository(Path.Combine(_dir, "portfolio.db"));
             Service = new PortfolioService(Repository, new NoopQuoteService());
