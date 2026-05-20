@@ -11,7 +11,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 
-    <Version>0.8.0</Version>
+    <Version>0.9.0</Version>
     <PackageId>RedoxNet.Mcp.LsOpenApi</PackageId>
 	<Authors>Jong Hyun Kim</Authors>
     <Company>RedoxNet</Company>
@@ -24,7 +24,7 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>icon.png</PackageIcon>
     <Copyright>Copyright (c) 2026 RedoxNet</Copyright>
-    <PackageReleaseNotes>v0.8.0 (net +5 tools, 43 → 48): Overseas market data + per-stock analytics. ls_get_global_market_quote (t3521 overseas index/FX/futures snapshot — nasdaq/sp500/dow/soxx/usdkrw/wti/gold aliases), ls_get_analyst_opinions (t3401 brokerage 투자의견/목표가 change history), ls_get_short_selling_trend (t1927 per-stock 공매도 daily trend), ls_get_market_funds_trend (t8428 고객예탁금/신용잔고/펀드자금 series), ls_get_high_low_stocks (t1442 신고/신저가 screener). Embedded TR catalog grows 33 → 45 (adds t3102/t3518/t3521 plus nine staged TRs reachable via ls_call_tr). ls_call_tr now surfaces body continuation cursors (continuation.keys) for TRs that page by tr_cont header yet also carry a body cursor field (e.g. t3401). The response-shape / token-economy refactor that the v0.8 line originally bundled has moved to v0.9. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Mcp.md for full notes.</PackageReleaseNotes>
+    <PackageReleaseNotes>v0.9.0 (BREAKING — response-shape / token-economy refactor, Phase 1): Three high-traffic tools reshaped so the default call carries only what the common question needs and the heavy payload becomes opt-in. ls_get_index_history gains verbosity (summary | compact | full, default summary). ls_get_stock_info gains sections (default snapshot+fundamentals; response keys reorganized). ls_holdings_list gains themes_limit / include_industry / include_quote (per-holding themes is now a count/shown/items object). cl100k-measured default-call savings: 66–97%. Infra: ModelContextProtocol SDK 1.2.0 → 1.3.0; TargetFrameworks net8.0;net9.0 → net8.0;net10.0. See the Migration section in https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Mcp.md for restoring the v0.8 shape.</PackageReleaseNotes>
 
     <PackageType>McpServer</PackageType>
     <PackAsTool>true</PackAsTool>

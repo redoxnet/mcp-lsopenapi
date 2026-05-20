@@ -1,5 +1,16 @@
 # Release Notes — RedoxNet.LsOpenApi.Core
 
+## v0.9.0 (2026-05-20)
+
+Embedded catalog correction. The `t1102` entry carried 93 hand-curation
+errors in its OutBlock field descriptions — the broker 매수 / 매도
+(`s*` / `d*`) groups were swapped, `abscnt` / `vol` / `jkrate` / `exhratio`
+named the wrong concept, `bf*` quarterly figures were labeled 당기 / 전기
+instead of 전분기 / 전전분기, and the 외국계 buy/sell fields were
+mislabeled. All verified against the official t1102 spec and corrected, so
+`ls_describe_tr` now reports them accurately. Versioned in lockstep with
+`RedoxNet.Mcp.LsOpenApi` 0.9.0.
+
 ## v0.8.0 (2026-05-20)
 
 Twelve new TRs in the embedded catalog and one continuation-handling

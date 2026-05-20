@@ -1,5 +1,75 @@
 # Release Notes — RedoxNet.Mcp.LsOpenApi
 
+## v0.9.0 (2026-05-20)
+
+Response-shape / token-economy refactor — Phase 1 of the work deferred
+from the v0.8 line (see `docs/SPEC-v0.9-response-shapes.md`). Three
+high-traffic tools are reshaped so the **default** call carries only what
+the common question needs; the heavy payload becomes opt-in. **This is an
+intentional breaking release — see Migration below.**
+
+### Changed — Response shapes (BREAKING)
+
+- `ls_get_index_history` — new `verbosity` argument
+  (`summary` | `compact` | `full`), **default `summary`**. `summary`
+  returns only the aggregate digest (period extremes, totals, average
+  breadth / flows, `_meta` units); `compact` adds the 5 most recent bars;
+  `full` is the pre-v0.9 all-points shape. cl100k-measured 60-bar KOSPI:
+  summary 299 / compact 1,051 / full 8,979 tokens (96.7% / 88% / 0%
+  reduction).
+- `ls_get_stock_info` — new `sections` argument, **default
+  `["snapshot","fundamentals"]`** of five (`snapshot`, `fundamentals`,
+  `periods`, `brokers`, `flags`). Unselected sections are omitted;
+  `sections_shown` echoes the result; an unknown section name is a
+  validation error. Measured: default 565 / all five sections 1,484
+  tokens (62% reduction). Alongside the split, several long-standing
+  t1102 field-mapping errors are corrected: the `brokers` buy/sell
+  numbers were swapped (LS's `d*` = 매도, `s*` = 매수); `fundamentals`
+  quarterly figures are the two latest *settled* periods (`latest` /
+  `previous`), not a current quarter; `snapshot.turnover_ratio_percent`
+  now reads 회전율; `fundamentals.capital.margin_ratio_percent` is the
+  margin rate (was mislabeled equity ratio). The v0.8 `foreign` section
+  is **removed** — t1102 carries no foreign-investor data; use
+  `ls_get_investor_flow` for foreign / institutional flow.
+- `ls_holdings_list` — new `themes_limit` (default 5; `0` = count only,
+  `-1` = all), `include_industry`, `include_quote` (both default `true`).
+  Each holding's `themes` is now a `{count, shown, items}` object, not a
+  bare array; `include_quote=false` drops the per-holding quote /
+  valuation block (account and total summaries are still computed).
+  Measured 10-holding: default 3,664 / lightest call
+  (`themes_limit=0, include_*=false`) 804 tokens (78% reduction).
+
+### Changed — Infrastructure
+
+- ModelContextProtocol SDK `1.2.0` → `1.3.0`.
+- `TargetFrameworks` `net8.0;net9.0` → `net8.0;net10.0`.
+- New shared `ResponseShape` helper (`VerbosityMode`, `Slice<T>`,
+  `TryParseVerbosity`, `ParseSections`) backing the three reshaped tools.
+- Test-only `TokenEstimator` (cl100k_base via `Microsoft.ML.Tokenizers`)
+  pins every reshaped tool against a measured token budget.
+
+### Added — MCP Registry
+
+- An `mcp-name` marker in the package README and a manually-triggered
+  `publish-mcp-registry` workflow, preparing the listing on the Official
+  MCP Registry as `io.github.redoxnet/lsopenapi`.
+
+### Migration
+
+Every reshaped tool's *default* response changed. To restore the pre-v0.9
+(v0.8-equivalent) payload:
+
+| Tool | v0.9 default | Restore the v0.8 shape |
+|---|---|---|
+| `ls_get_index_history` | `verbosity="summary"` (digest only, no bars) | `verbosity="full"` |
+| `ls_get_stock_info` | `sections=["snapshot","fundamentals"]` | `sections=["snapshot","fundamentals","periods","brokers","flags"]` (the v0.8 `foreign` section is gone — it was wrong data) |
+| `ls_holdings_list` | `themes_limit=5` | `themes_limit=-1` |
+
+`ls_holdings_list themes_limit=0` omits the theme *items* entirely (count
+only) — it is **not** the full-restore value; use `-1`.
+
+Lockstep version bump with `RedoxNet.LsOpenApi.Core` 0.9.0.
+
 ## v0.8.0 (2026-05-20)
 
 Overseas market data + per-stock analytics. Tool surface 43 → **48**
