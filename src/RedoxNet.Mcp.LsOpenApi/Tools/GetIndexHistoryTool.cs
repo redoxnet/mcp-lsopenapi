@@ -40,10 +40,10 @@ public static class GetIndexHistoryTool
 
         period_type semantics mirror t1514.gubun2: 'day' (=1), 'week' (=2), 'month' (=3). 'min' is intentionally not supported — minute-level index time series belong to a separate roadmap item.
 
-        verbosity controls payload size:
-        - 'summary' (default): only the aggregate summary block, no per-bar points. Cheapest — covers most trend questions.
-        - 'compact': summary block + the 5 most recent bars only. Digest plus recent context.
-        - 'full': every per-bar point, no summary block (the pre-v0.9, v0.8-compatible shape).
+        verbosity controls payload size — keep the default; widen it only when the user truly needs every bar:
+        - 'summary' (default): the aggregate digest only — period open/close, total change, period high/low with dates, biggest up/down days, average breadth & flows. This ALREADY answers trend / 추세 / 흐름 / range / "how much did it move" questions. Do NOT request bars for those.
+        - 'compact': the digest + the 5 most recent bars. Use only when the user asks specifically about the most recent days.
+        - 'full': every per-bar point, no digest — roughly 30× the summary's token cost, and the whole series then lingers in conversation context for every later turn. Use ONLY when the user explicitly wants the entire per-bar series or needs a custom per-bar calculation the digest cannot give.
 
         Envelope:
         - summary aggregates the period: open/close, total change, period high/low, biggest up/down bars, average breadth, total flows. summary._meta carries the breadth and flow units.
@@ -62,7 +62,7 @@ public static class GetIndexHistoryTool
         int count = 60,
         [Description("Optional pagination cursor. Pass the cts_date echoed by a prior response to fetch the next (older) page.")]
         string? cts_date = null,
-        [Description("Response shape: 'summary' (default: digest only), 'compact' (summary + points), or 'full' (points only).")]
+        [Description("Response shape. 'summary' (default) is a digest that already answers trend / range questions — prefer it. 'compact' adds the 5 most recent bars. 'full' returns every bar (~30x the tokens, and it lingers in context) — only when the user explicitly needs the whole per-bar series.")]
         string verbosity = "summary",
         CancellationToken cancellationToken = default)
     {
