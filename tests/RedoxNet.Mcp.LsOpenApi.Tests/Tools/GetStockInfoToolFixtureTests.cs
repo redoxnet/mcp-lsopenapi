@@ -14,9 +14,9 @@ namespace RedoxNet.Mcp.LsOpenApi.Tests.Tools;
 /// </summary>
 /// <remarks>
 /// t1102 ("주식 현재가(시세)조회") is the analyst-oriented sister of t1101.
-/// It carries PER/PBR/EPS, quarterly financials (당기 vs 전기), growth rates,
-/// 52-week + YTD price ranges, top-5 brokerage flow on both sides, and
-/// foreign-investor activity in a single OutBlock with ~120 fields.
+/// It carries PER/PBR/EPS, the two most recent settled-period financials,
+/// year-over-year growth rates, 52-week + YTD price ranges, and top-5
+/// brokerage flow on both sides in a single ~160-field OutBlock.
 /// </remarks>
 public class GetStockInfoToolFixtureTests
 {
@@ -51,7 +51,7 @@ public class GetStockInfoToolFixtureTests
         "issueprice": 0, "target": 0, "tonghwa": "KRW", "janginfo": "KOSDAQ",
         "spac_gubun": "N", "abnormal_rise_gu": "0", "low_lqdt_gu": "0",
         "alloc_gubun": "",
-        "abscnt": 15778, "vol": "0.78", "fwsvl": 109, "fwdvl": 2,
+        "abscnt": 15778, "vol": "000.01", "fwsvl": 109, "fwdvl": 2,
         "ftradmsval": 0, "ftradmsvag": 4543, "ftradmscha": 0, "ftradmsdiff": "001.57",
         "ftradmdval": 0, "ftradmdvag": 4560, "ftradmdcha": 0, "ftradmddiff": "000.03",
         "offerno1": "유안타",   "offerno2": "키움증",   "offerno3": "삼성증",   "offerno4": "KB증권",   "offerno5": "신한투",
@@ -111,7 +111,8 @@ public class GetStockInfoToolFixtureTests
         JsonElement snap = root.GetProperty("snapshot");
         snap.GetProperty("price").GetInt64().Should().Be(4535);
         snap.GetProperty("change_percent").GetDouble().Should().BeApproximately(0.22, 0.01);
-        snap.GetProperty("turnover_ratio_percent").GetDouble().Should().BeApproximately(0.78, 0.01);
+        // turnover_ratio_percent reads `vol` (회전율) — not `exhratio` (소진율).
+        snap.GetProperty("turnover_ratio_percent").GetDouble().Should().BeApproximately(0.01, 0.001);
     }
 
     [Fact]
@@ -143,13 +144,14 @@ public class GetStockInfoToolFixtureTests
         f.GetProperty("expected_per").GetDouble().Should().BeApproximately(14.75, 0.01);
         f.GetProperty("pbr").GetDouble().Should().BeApproximately(0.26, 0.001);
 
-        f.GetProperty("current_period_label").GetString().Should().Be("2303 1분기");
+        // t1102's `name`/`bf*` are the latest settled period (전분기), `name2`/`bf*2` the one before.
+        f.GetProperty("latest_period_label").GetString().Should().Be("2303 1분기");
         f.GetProperty("previous_period_label").GetString().Should().Be("2212 결산");
 
-        f.GetProperty("sales_current").GetInt64().Should().Be(605);
+        f.GetProperty("sales_latest").GetInt64().Should().Be(605);
         f.GetProperty("sales_previous").GetInt64().Should().Be(2116);
-        f.GetProperty("net_income_current").GetInt64().Should().Be(150);
-        f.GetProperty("eps_current").GetDouble().Should().BeApproximately(206.51, 0.01);
+        f.GetProperty("net_income_latest").GetInt64().Should().Be(150);
+        f.GetProperty("eps_latest").GetDouble().Should().BeApproximately(206.51, 0.01);
 
         JsonElement growth = f.GetProperty("growth_percent");
         growth.GetProperty("net_income").GetDouble().Should().BeApproximately(-32.49, 0.01);
@@ -166,29 +168,18 @@ public class GetStockInfoToolFixtureTests
 
         JsonElement sellers = brokerage.GetProperty("sellers");
         sellers.GetArrayLength().Should().Be(5);
+        // LS suffix convention: the sell-side broker (offerno) pairs with the
+        // d* (매도) fields; the buy-side broker (bidno) with the s* (매수) fields.
         sellers[0].GetProperty("name").GetString().Should().Be("유안타");
         sellers[0].GetProperty("code").GetString().Should().Be("024");
-        sellers[0].GetProperty("avg_price").GetInt64().Should().Be(4554);
-        sellers[0].GetProperty("volume").GetInt64().Should().Be(1824);
+        sellers[0].GetProperty("avg_price").GetInt64().Should().Be(4542);
+        sellers[0].GetProperty("volume").GetInt64().Should().Be(1886);
 
         JsonElement buyers = brokerage.GetProperty("buyers");
         buyers.GetArrayLength().Should().Be(5);
         buyers[0].GetProperty("name").GetString().Should().Be("미래에");
-        buyers[0].GetProperty("volume").GetInt64().Should().Be(1886);
-        buyers[0].GetProperty("change_percent").GetDouble().Should().BeApproximately(27.22, 0.01);
-    }
-
-    [Fact]
-    public async Task GetStockInfo_ForeignSection_Block()
-    {
-        var (client, _) = TestClientFactory.Create((_, _) => Ok(TestbedT1102Response));
-
-        string result = await GetStockInfoTool.GetStockInfo(client, "078020", new[] { "foreign" });
-        JsonElement fi = JsonDocument.Parse(result).RootElement.GetProperty("foreign");
-
-        fi.GetProperty("holdings_shares").GetInt64().Should().Be(15778);
-        fi.GetProperty("holdings_percent").GetDouble().Should().BeApproximately(0.78, 0.01);
-        fi.GetProperty("buy").GetProperty("avg_price").GetInt64().Should().Be(4560);
+        buyers[0].GetProperty("volume").GetInt64().Should().Be(1824);
+        buyers[0].GetProperty("change_percent").GetDouble().Should().BeApproximately(26.32, 0.01);
     }
 
     [Fact]
@@ -227,7 +218,6 @@ public class GetStockInfoToolFixtureTests
         root.TryGetProperty("fundamentals", out _).Should().BeTrue();
         root.TryGetProperty("periods", out _).Should().BeFalse("unselected sections are omitted");
         root.TryGetProperty("brokers", out _).Should().BeFalse();
-        root.TryGetProperty("foreign", out _).Should().BeFalse();
         root.TryGetProperty("flags", out _).Should().BeFalse();
     }
 
@@ -276,7 +266,7 @@ public class GetStockInfoToolFixtureTests
 
         string result = await GetStockInfoTool.GetStockInfo(client, "078020");
 
-        // Default = snapshot + fundamentals. Measured ~551 tokens (cl100k_base).
+        // Default = snapshot + fundamentals. Measured ~565 tokens (cl100k_base).
         result.ShouldFitTokenBudget(800);
     }
 
@@ -287,11 +277,10 @@ public class GetStockInfoToolFixtureTests
 
         string result = await GetStockInfoTool.GetStockInfo(
             client, "078020",
-            new[] { "snapshot", "fundamentals", "periods", "brokers", "foreign", "flags" });
+            new[] { "snapshot", "fundamentals", "periods", "brokers", "flags" });
 
-        // All 6 sections. Measured ~1,605 tokens (cl100k_base); headroom for
-        // stocks with populated disclosure text in the flags section.
-        result.ShouldFitTokenBudget(2500);
+        // All 5 sections (foreign dropped — see SPEC-v0.9 §4.3). Measured ~1,484.
+        result.ShouldFitTokenBudget(2000);
     }
 
     [Fact]
@@ -310,7 +299,7 @@ public class GetStockInfoToolFixtureTests
             "high52w", "low52w", "highyear", "lowyear",
             // Brokerage
             "offerno1", "bidno1", "savg1", "davg1",
-            // Foreign
+            // Misc — float shares, turnover, foreign-brokerage flow
             "abscnt", "vol", "ftradmsval", "ftradmdval",
             // Flags
             "spac_gubun", "abnormal_rise_gu", "low_lqdt_gu",

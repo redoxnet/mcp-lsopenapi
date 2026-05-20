@@ -250,22 +250,23 @@ A의 가장 순수한 케이스(단일 종목, 단일 응답, 명확한 카테�
 ```
 ls_get_stock_info(
     shcode,
-    sections?: ("snapshot"|"fundamentals"|"periods"|"brokers"|"foreign"|"flags")[]
+    sections?: ("snapshot"|"fundamentals"|"periods"|"brokers"|"flags")[]
             = ["snapshot","fundamentals"]
 )
 ```
 
-**sections 의미**:
+**sections 의미** (5개):
 - `"snapshot"`: 현재가 / 등락 / 거래량 / OHLC / 상하한가 / 회전율.
-- `"fundamentals"`: PER / PBR / EPS + 분기 재무(전기 대비) + 성장률 + `capital`(시가총액·상장주식수·자본금).
-- `"periods"`: 52주 / 연중(YTD) 고저 범위. (t1102에 이격도 필드 없음 — 범위만.)
+- `"fundamentals"`: PER / PBR / EPS + 분기 재무(직전 분기 `latest` + 그 전 분기 `previous` — t1102는 당기 진행분 미제공) + 전년대비 성장률 + `capital`(시가총액·상장주식수·자본금).
+- `"periods"`: 52주 / 연중(YTD) 고저 범위.
 - `"brokers"`: top-5 매수 / 매도 거래원.
-- `"foreign"`: 외인 보유 비율 + 순매수 동향.
-- `"flags"`: SPAC / 단기과열 / 저유동성 / 배당 구분 플래그 + 공시 텍스트.
+- `"flags"`: SPAC / 단기과열 / 저유동성 / 배분 구분 플래그 + 공시 텍스트.
 
 식별 헤더(`shcode`, `name`, `market`, `currency`, `listing_date`, `par_value`, `trade_unit`)는 섹션과 무관하게 always emit. 각 섹션은 별도 키로 emit, 미선택 섹션은 omit, `sections_shown`으로 echo. section 파싱은 `ResponseShape.ParseSections`로 공통화 — 미인식 section 이름은 전체 호출을 validation error로 surface(typo 가시화).
 
-토큰 실측 (cl100k, 078020 fixture): 6개 섹션 전체 1,605 → default `["snapshot","fundamentals"]` 551 토큰 (66% 절감).
+> **`foreign` 섹션 제거 (2026-05-20).** 초안의 6번째 섹션 `foreign`은 t1102의 `abscnt`/`vol`/`ftradm*`/`fw*` 필드로 만들었으나, E2E 검증 결과 t1102엔 외국인 보유 데이터가 *없음*이 확인됨 — `abscnt`=유동주식수, `vol`=회전율, `ftradm*`/`fw*`=외국계(증권사) 매수/매도 합계(LS의 `d`=매도 / `s`=매수 관례 때문에 코드가 통째로 swap). 종목별 외인·기관 수급은 전용 TR **t1702**(`ls_get_investor_flow`)가 담당하고, 외국인 보유주식수/소진율은 **t1716**(`/stock/frgr-itt`)에 있음. → `foreign`은 제거, t1716 기반 재도입은 별도(2단계). 같은 t1102 정정 패스에서 brokers의 `s↔d` un-swap, `fundamentals`의 당기→latest(전분기) 재명명, `snapshot.turnover`←`vol`, `jkrate`=증거금율도 함께 수정.
+
+토큰 실측 (cl100k, 078020 fixture): 5개 섹션 전체 1,484 → default `["snapshot","fundamentals"]` 565 토큰 (62% 절감).
 
 ### 4.4 `ls_holdings_list` — A 패턴 적용 (amendments A2 / A3 / A6) — ✓ 구현 완료
 
@@ -431,8 +432,9 @@ v0.9는 의도적 BREAKING이므로 기존 사용자가 v0.8과 동일 출력을
 | 도구 | v0.7 / v0.8 동작 | v0.9 default | Full output 복원 |
 |---|---|---|---|
 | `ls_holdings_list` | 모든 themes 노출 | `themes_limit=5` | `themes_limit=-1` |
-| `ls_get_stock_info` | 모든 sections | `sections=["snapshot","fundamentals"]` | `sections=["snapshot","fundamentals","periods","brokers","foreign","flags"]` |
+| `ls_get_stock_info` | 모든 sections (+ 오류 매핑) | `sections=["snapshot","fundamentals"]` | `sections=["snapshot","fundamentals","periods","brokers","flags"]` |
 | `ls_get_index_history` | full points only | `verbosity="summary"` (digest only, points 없음) | `verbosity="full"` |
 
 > 주의 1: `ls_get_index_history`의 v0.9 기본 호출은 **per-bar points를 반환하지 않는다** (summary digest만). 봉이 필요하면 `verbosity="compact"`(digest + 최근 5봉) 또는 `verbosity="full"`(v0.8 전체 봉).
 > 주의 2: `ls_holdings_list`의 full 복원은 `themes_limit=-1`이다. `themes_limit=0`은 `themes` Slice의 `items`를 omit하므로(§4.4 / A6) full 복원이 아니다.
+> 주의 3: `ls_get_stock_info`는 v0.8의 `foreign` 섹션이 **제거**됐고(→ §4.3, t1102에 외국인 보유 데이터 없음 — `ls_get_investor_flow` 사용), brokers의 매수/매도 숫자·`fundamentals`의 당기/전기 라벨·`turnover`/`jkrate` 등 t1102 오류 매핑이 정정됐다. v0.8의 `foreign`/swap된 값은 **복원 불가** — 잘못된 데이터였기 때문.

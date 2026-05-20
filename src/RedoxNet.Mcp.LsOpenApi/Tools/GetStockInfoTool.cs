@@ -13,16 +13,19 @@ namespace RedoxNet.Mcp.LsOpenApi.Tools;
 /// sections.
 /// </summary>
 /// <remarks>
-/// v0.9 response-shape SPEC §4.3 (pattern A): the ~50-field t1102 dump is split
-/// into six sections; the default returns only <c>snapshot</c> + <c>fundamentals</c>
-/// so the common "how's this company" question stays cheap.
+/// v0.9 response-shape SPEC §4.3 (pattern A): the ~160-field t1102 dump is
+/// split into five sections; the default returns only <c>snapshot</c> +
+/// <c>fundamentals</c>. Field mapping is pinned to the official t1102 spec —
+/// note LS's counter-intuitive broker suffix convention (<c>d*</c> = 매도 /
+/// sell, <c>s*</c> = 매수 / buy). Foreign-investor data is intentionally NOT
+/// sourced here: t1102 has none — use <c>ls_get_investor_flow</c> (t1702).
 /// </remarks>
 [McpServerToolType]
 public static class GetStockInfoTool
 {
     /// <summary>All section names, in canonical emit order.</summary>
     static readonly string[] AllowedSections =
-        { "snapshot", "fundamentals", "periods", "brokers", "foreign", "flags" };
+        { "snapshot", "fundamentals", "periods", "brokers", "flags" };
 
     /// <summary>Narrow default — the sections the common question needs.</summary>
     static readonly string[] DefaultSections = { "snapshot", "fundamentals" };
@@ -34,16 +37,15 @@ public static class GetStockInfoTool
     [Description("""
         Returns a company profile + fundamentals snapshot for a Korean stock, split into selectable sections.
 
-        USE WHEN: the user wants company/financial context ("삼성전자 어떤 회사야?", "PER 얼마야?", "외국인 매수세 어때?", "52주 신고가 근처야?"). Pairs well with ls_get_quote for the level-2 book.
-        AVOID WHEN: only the latest price + 10-level order book are needed — use ls_get_quote (cheaper payload).
+        USE WHEN: the user wants company/financial context ("삼성전자 어떤 회사야?", "PER 얼마야?", "52주 신고가 근처야?"). Pairs well with ls_get_quote for the level-2 book.
+        AVOID WHEN: only the latest price + 10-level order book are needed — use ls_get_quote. For foreign / institutional flow ("외국인 매수세 어때?") use ls_get_investor_flow — t1102 carries no foreign-investor data.
 
         sections (default ["snapshot","fundamentals"]) — request only what the question needs:
         - "snapshot": 현재가 / 등락 / 거래량 / OHLC / 상하한가 / 회전율.
-        - "fundamentals": PER / PBR / EPS, 분기 매출·영업이익·순이익 (전기 대비) + 성장률, 시가총액·상장주식수·자본금.
+        - "fundamentals": PER / PBR / EPS, 분기 재무(직전 분기 latest + 그 전 분기 previous — t1102는 당기 진행분을 주지 않음) + 전년대비 성장률, 시가총액·상장주식수·자본금.
         - "periods": 52주 / 연중(YTD) 고저 범위.
         - "brokers": 매수 / 매도 상위 5 거래원.
-        - "foreign": 외국인 보유 비율 + 순매수 동향.
-        - "flags": SPAC / 단기과열 / 저유동성 / 배당 구분 상태 플래그 + 공시 텍스트.
+        - "flags": SPAC / 단기과열 / 저유동성 / 배분 구분 플래그 + 공시 텍스트.
 
         Identity fields (shcode, name, market, currency, listing_date, par_value, trade_unit) are always returned. Unselected sections are omitted; sections_shown echoes what was returned.
         """)]
@@ -51,7 +53,7 @@ public static class GetStockInfoTool
         LsApiClient apiClient,
         [Description("6-digit Korean short code, e.g. '005930'.")]
         string shcode,
-        [Description("""Sections to return — any of "snapshot", "fundamentals", "periods", "brokers", "foreign", "flags". Omit for the default ["snapshot","fundamentals"].""")]
+        [Description("""Sections to return — any of "snapshot", "fundamentals", "periods", "brokers", "flags". Omit for the default ["snapshot","fundamentals"].""")]
         string[]? sections = null,
         CancellationToken cancellationToken = default)
     {
@@ -107,8 +109,9 @@ public static class GetStockInfoTool
                     change = b.ReadLong("change"),
                     change_percent = b.ReadDouble("diff"),
                     volume = b.ReadLong("volume"),
-                    volume_vs_yesterday_same_time = b.ReadLong("volumediff"),
-                    yesterday_same_time_volume = b.ReadLong("jnilvolume"),
+                    volume_diff = b.ReadLong("volumediff"),
+                    yesterday_volume = b.ReadLong("jnilvolume"),
+                    yesterday_same_time_volume = b.ReadLong("jvolume"),
                     value = b.ReadLong("value"),
                     open = b.ReadLong("open"),
                     high = b.ReadLong("high"),
@@ -120,7 +123,7 @@ public static class GetStockInfoTool
                     upper_limit_price = b.ReadLong("uplmtprice"),
                     lower_limit_price = b.ReadLong("dnlmtprice"),
                     reference_price = b.ReadLong("recprice"),
-                    turnover_ratio_percent = b.ReadDouble("exhratio"),
+                    turnover_ratio_percent = b.ReadDouble("vol"),
                 };
 
             if (want.Contains("fundamentals"))
@@ -129,32 +132,36 @@ public static class GetStockInfoTool
                     per = b.ReadDouble("per"),
                     expected_per = b.ReadDouble("t_per"),
                     pbr = b.ReadDouble("pbrx"),
-                    current_period_label = b.ReadString("name"),
+                    // t1102 reports the two most recently *settled* periods —
+                    // there is no current-quarter-in-progress data.
+                    latest_period_label = b.ReadString("name"),
                     previous_period_label = b.ReadString("name2"),
                     settlement_month = b.ReadString("gsmm"),
-                    sales_current = b.ReadLong("bfsales"),
+                    sales_latest = b.ReadLong("bfsales"),
                     sales_previous = b.ReadLong("bfsales2"),
-                    operating_income_current = b.ReadLong("bfoperatingincome"),
+                    operating_income_latest = b.ReadLong("bfoperatingincome"),
                     operating_income_previous = b.ReadLong("bfoperatingincome2"),
-                    ordinary_income_current = b.ReadLong("bfordinaryincome"),
+                    ordinary_income_latest = b.ReadLong("bfordinaryincome"),
                     ordinary_income_previous = b.ReadLong("bfordinaryincome2"),
-                    net_income_current = b.ReadLong("bfnetincome"),
+                    net_income_latest = b.ReadLong("bfnetincome"),
                     net_income_previous = b.ReadLong("bfnetincome2"),
-                    eps_current = b.ReadDouble("bfeps"),
+                    eps_latest = b.ReadDouble("bfeps"),
                     eps_previous = b.ReadDouble("bfeps2"),
+                    // *rt fields are year-over-year (전년대비) growth percentages.
                     growth_percent = new
                     {
+                        sales = b.ReadDouble("salert"),
+                        operating_income = b.ReadDouble("opert"),
+                        ordinary_income = b.ReadDouble("ordrt"),
                         net_income = b.ReadDouble("netrt"),
                         eps = b.ReadDouble("epsrt"),
-                        ordinary_income = b.ReadDouble("ordrt"),
-                        operating_income = b.ReadDouble("opert"),
                     },
                     capital = new
                     {
                         market_cap_in_100m_won = b.ReadLong("total"),
                         shares_in_thousands = b.ReadLong("listing"),
                         capital_in_100m_won = b.ReadLong("capital"),
-                        equity_ratio_percent = b.ReadLong("jkrate"),
+                        margin_ratio_percent = b.ReadLong("jkrate"),
                         issue_price = b.ReadLong("issueprice"),
                         target_price = b.ReadLong("target"),
                     },
@@ -179,6 +186,9 @@ public static class GetStockInfoTool
                     },
                 };
 
+            // LS broker suffix convention is counter-intuitive: 'd*' fields are
+            // 매도 (sell), 's*' fields are 매수 (buy). offerno* names the sell-side
+            // broker, bidno* the buy-side.
             if (want.Contains("brokers"))
                 result["brokers"] = new
                 {
@@ -187,46 +197,23 @@ public static class GetStockInfoTool
                         rank = i,
                         code = b.ReadString($"offernocd{i}"),
                         name = b.ReadString($"offerno{i}"),
-                        avg_price = b.ReadLong($"savg{i}"),
-                        volume = b.ReadLong($"svol{i}"),
-                        value = b.ReadLong($"sval{i}"),
-                        change = b.ReadLong($"scha{i}"),
-                        change_percent = b.ReadDouble($"sdiff{i}"),
-                    }).ToList(),
-                    buyers = Enumerable.Range(1, 5).Select(i => new
-                    {
-                        rank = i,
-                        code = b.ReadString($"bidnocd{i}"),
-                        name = b.ReadString($"bidno{i}"),
                         avg_price = b.ReadLong($"davg{i}"),
                         volume = b.ReadLong($"dvol{i}"),
                         value = b.ReadLong($"dval{i}"),
                         change = b.ReadLong($"dcha{i}"),
                         change_percent = b.ReadDouble($"ddiff{i}"),
                     }).ToList(),
-                };
-
-            if (want.Contains("foreign"))
-                result["foreign"] = new
-                {
-                    holdings_shares = b.ReadLong("abscnt"),
-                    holdings_percent = b.ReadDouble("vol"),
-                    cumulative_net_sell = b.ReadLong("fwsvl"),
-                    cumulative_net_buy = b.ReadLong("fwdvl"),
-                    sell = new
+                    buyers = Enumerable.Range(1, 5).Select(i => new
                     {
-                        value = b.ReadLong("ftradmsval"),
-                        avg_price = b.ReadLong("ftradmsvag"),
-                        change = b.ReadLong("ftradmscha"),
-                        change_percent = b.ReadDouble("ftradmsdiff"),
-                    },
-                    buy = new
-                    {
-                        value = b.ReadLong("ftradmdval"),
-                        avg_price = b.ReadLong("ftradmdvag"),
-                        change = b.ReadLong("ftradmdcha"),
-                        change_percent = b.ReadDouble("ftradmddiff"),
-                    },
+                        rank = i,
+                        code = b.ReadString($"bidnocd{i}"),
+                        name = b.ReadString($"bidno{i}"),
+                        avg_price = b.ReadLong($"savg{i}"),
+                        volume = b.ReadLong($"svol{i}"),
+                        value = b.ReadLong($"sval{i}"),
+                        change = b.ReadLong($"scha{i}"),
+                        change_percent = b.ReadDouble($"sdiff{i}"),
+                    }).ToList(),
                 };
 
             if (want.Contains("flags"))
@@ -235,10 +222,10 @@ public static class GetStockInfoTool
                     is_spac = string.Equals(b.ReadString("spac_gubun"), "Y", StringComparison.OrdinalIgnoreCase),
                     abnormal_rise = b.ReadString("abnormal_rise_gu"),
                     low_liquidity = b.ReadString("low_lqdt_gu"),
-                    dividend_class = b.ReadString("alloc_gubun"),
+                    allocation_class = b.ReadString("alloc_gubun"),
+                    allocation_text = b.ReadString("alloc_text"),
                     short_term = b.ReadString("shterm_text"),
                     type_text = b.ReadString("ty_text"),
-                    dividend_text = b.ReadString("alloc_text"),
                     lending_text = b.ReadString("lend_text"),
                     info = new[]
                     {
