@@ -326,7 +326,7 @@ internal static class PortfolioTools
     [Description("""
         Lists the user's locally registered holdings grouped by account, enriches them with current price, market_value, PnL, and PnL percent using batch t8407 when LS credentials are available, and computes a per-account summary plus a total_summary across all accounts. v0.6 adds optional theme filters; when at least one filter is active the response also echoes the filter and a matched_themes array so LIKE false positives are visible.
 
-        USE WHEN: the user refers to their own position or portfolio, including Korean phrases like "내가 가진", "내가 산", "보유 중", "들고 있는", "내 종목", "내 포트폴리오", or English phrases like "my holdings", "my position", "my portfolio". Before calling general stock tools such as ls_get_chart or ls_get_quote, call this tool first to check the user's registered holdings. If it returns empty, guide the user to register holdings or fall back to general analysis.
+        USE WHEN: the user refers to their own position or portfolio, including Korean phrases like "내 보유 주식", "내 보유 주식 현황", "보유 현황", "내가 가진", "내가 산", "보유 중", "들고 있는", "내 종목", "내 잔고", "내 포트폴리오", or English phrases like "my holdings", "my position", "my portfolio". This is local data the user registered themselves — do NOT refuse such questions for lack of brokerage access. Before calling general stock tools such as ls_get_chart or ls_get_quote, call this tool first to check the user's registered holdings. If it returns empty, guide the user to register holdings or fall back to general analysis.
         AVOID WHEN: the user asks about a stock in general without personal ownership context, e.g. "삼성전자 어때?"; use market/quote/chart tools directly.
 
         Filter natural-language mapping:
