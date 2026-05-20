@@ -3,8 +3,8 @@ using System.Text.Json.Serialization;
 namespace RedoxNet.Mcp.LsOpenApi.Portfolio;
 
 /// <summary>
-/// Versioned portfolio snapshot used by both <c>ls_portfolio_export</c> and
-/// <c>ls_portfolio_import</c>. v0.6 ships schema_version=1.
+/// Versioned portfolio snapshot used by <c>ls_portfolio_io</c>
+/// (export / import actions). Ships schema_version=1.
 /// </summary>
 /// <remarks>
 /// Fields and casing follow the spec §3.3 export envelope. Property names
@@ -72,14 +72,14 @@ internal sealed record PortfolioIoCounts(
     int WatchlistItems,
     int WatchedThemes);
 
-/// <summary>Response envelope for <c>ls_portfolio_export</c>.</summary>
+/// <summary>Response envelope for <c>ls_portfolio_io(action="export")</c>.</summary>
 internal sealed record PortfolioExportResult(
     string Path,
     int SchemaVersion,
     PortfolioIoCounts Counts,
     long SizeBytes);
 
-/// <summary>Response envelope for <c>ls_portfolio_import</c>.</summary>
+/// <summary>Response envelope for <c>ls_portfolio_io(action="import")</c>.</summary>
 internal sealed record PortfolioImportResult(
     string Mode,
     string SourcePath,

@@ -205,7 +205,7 @@ internal sealed class PortfolioService : IPortfolioService
     public async Task<HoldingWriteResult> SetHoldingAsync(string symbol, int quantity, double avgPrice, string? notes, string? accountIdentifier, CancellationToken cancellationToken = default)
     {
         if (quantity <= 0)
-            throw new PortfolioValidationException("quantity must be positive; use ls_holdings_remove to delete a holding.");
+            throw new PortfolioValidationException("quantity must be positive; use ls_holding(action=\"remove\") to delete a holding.");
         if (avgPrice < 0)
             throw new PortfolioValidationException("avg_price must be non-negative.");
 
@@ -329,7 +329,7 @@ internal sealed class PortfolioService : IPortfolioService
             await _repository.GetStockIndustriesBatchAsync(distinctSymbols, cancellationToken).ConfigureAwait(false);
 
         // Fix A: lazy enrichment dispatch on cache miss. Holdings registered in
-        // prior sessions or imported via ls_portfolio_import never had a
+        // prior sessions or imported via ls_portfolio_io never had a
         // write-path FireAndForgetEnrich fire — without this, the cache stays
         // empty forever for read-only users. Dedup + cooldown in
         // FireAndForgetEnrich prevent storming when the same list call repeats.
@@ -723,7 +723,7 @@ internal sealed class PortfolioService : IPortfolioService
         IReadOnlyList<Account> accounts = await _repository.ListAccountsAsync(cancellationToken).ConfigureAwait(false);
         return accounts.Count switch
         {
-            0 => throw new RequiresAccountException("No accounts registered. Use ls_account_upsert to create one first."),
+            0 => throw new RequiresAccountException("No accounts registered. Use ls_account(action=\"upsert\") to create one first."),
             1 => accounts[0],
             _ => throw new AmbiguousAccountException(
                 $"Multiple accounts exist ({accounts.Count}). Specify an account via account_number or nickname.",

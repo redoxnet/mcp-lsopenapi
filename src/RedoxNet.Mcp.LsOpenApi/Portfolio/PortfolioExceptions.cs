@@ -123,7 +123,7 @@ internal sealed class ImportSchemaMismatchException : PortfolioException
 }
 
 /// <summary>
-/// Thrown when <c>ls_portfolio_import(mode=replace)</c> is invoked without
+/// Thrown when <c>ls_portfolio_io(action="import", mode="replace")</c> is invoked without
 /// <c>confirm=true</c>. Replace mode wipes accounts/holdings/watchlist/watched_themes
 /// so it always requires an explicit confirmation flag.
 /// </summary>

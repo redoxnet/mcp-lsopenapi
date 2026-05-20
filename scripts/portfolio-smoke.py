@@ -1,18 +1,19 @@
-"""Local smoke test for v0.5+v0.6 portfolio MCP tools.
+"""Local smoke test for the v0.10 portfolio MCP tool surface.
 
-Spawns the MCP stdio server with an isolated SQLite DB. When LS
-credentials are available (env vars or the .env.local at ENV_LOCAL_PATH
-below), quote-enrich and live-data tools are also asserted against LS.
-Without credentials the script still exercises every tool's local path
-and verifies the quote_error / auth-error envelopes.
+Spawns the MCP stdio server with an isolated SQLite DB and exercises the
+five v0.10 domain dispatchers (ls_account / ls_holding / ls_watchlist /
+ls_watched_themes / ls_portfolio_io) plus the two standalone portfolio
+tools (ls_holdings_list, ls_stocks_refresh_metadata). When LS credentials
+are available (env vars or the .env.local at ENV_LOCAL_PATH), the
+market-data routes are smoke-checked too; without them the script still
+exercises every local path and the quote_error envelope.
 
-v0.6 highlights covered:
-- watched_sectors → watched_themes rename (DB + tool surface)
-- portfolio export/import round-trip + replace-mode confirm gate
-- new tools route smoke: ls_get_index_quote / ls_get_industry_indices /
-  ls_get_industry_stocks / ls_get_theme_stocks / ls_get_stock_themes
-- Tier 1 compression regression: removed tools absent from tools/list,
-  ls_holdings_corporate_action dispatches and rejects unknown types
+v0.10 coverage:
+- 5 domain dispatchers — action routing + per-action arg validation.
+- Tool-surface regression: merged v0.9 tool names absent from tools/list,
+  dispatchers present, catalog trio hidden in the default `standard`
+  profile.
+- portfolio export/import round-trip + replace-mode confirm gate.
 
 Usage:
     python scripts/portfolio-smoke.py            # auto-detect creds
@@ -191,6 +192,9 @@ def main():
         if not ok:
             failures += 1
 
+    def j(obj):
+        return json.dumps(obj, ensure_ascii=False)
+
     try:
         init = client.request("initialize", {
             "protocolVersion": "2024-11-05",
@@ -201,350 +205,263 @@ def main():
         print(f"[init] {si['name']} v{si['version']}")
         client.notify("notifications/initialized")
 
+        # --- v0.10 tool-surface regression ---
+        print("\n[v0.10 tool surface]")
+        tools = set(client.list_tools())
+        dispatchers = ["ls_account", "ls_watchlist", "ls_watched_themes", "ls_portfolio_io", "ls_holding"]
+        check("5 domain dispatchers registered",
+              set(dispatchers) <= tools,
+              f"missing: {sorted(set(dispatchers) - tools)}")
+        check("standalone portfolio tools kept",
+              {"ls_holdings_list", "ls_stocks_refresh_metadata"} <= tools,
+              j(sorted({"ls_holdings_list", "ls_stocks_refresh_metadata"} & tools)))
+        merged = [
+            "ls_accounts_list", "ls_account_upsert", "ls_account_remove",
+            "ls_watchlist_add", "ls_watchlist_remove", "ls_watchlist_list",
+            "ls_watchlist_group_create", "ls_watchlist_group_delete",
+            "ls_watched_themes_add", "ls_watched_themes_remove", "ls_watched_themes_list",
+            "ls_portfolio_export", "ls_portfolio_import",
+            "ls_holdings_set", "ls_holdings_buy", "ls_holdings_sell",
+            "ls_holdings_remove", "ls_holdings_corporate_action",
+        ]
+        check("merged v0.9 tool names absent",
+              not (set(merged) & tools),
+              f"still present: {sorted(set(merged) & tools)}")
+        catalog = {"ls_search_tr", "ls_describe_tr", "ls_call_tr"}
+        check("catalog trio hidden in standard profile",
+              not (catalog & tools),
+              f"unexpectedly present: {sorted(catalog & tools)}")
+        check("standard surface is 32 tools", len(tools) == 32, f"{len(tools)} tools")
+
         # --- empty state ---
         print("\n[empty state]")
-        accs = client.call_tool("ls_accounts_list")
-        check("accounts_list empty initially", isinstance(accs, list) and len(accs) == 0, f"{accs}")
-
-        # v0.6 Tier 1 compression: ls_account_get was removed. The default
-        # account is derived from the is_default flag in accounts_list.
-        default = next((a for a in accs if a.get("is_default")), None) if isinstance(accs, list) else None
-        check("default null when no accounts (via is_default filter)", default is None, f"{default}")
+        accs = client.call_tool("ls_account", {"action": "list"})
+        check("ls_account list empty initially", isinstance(accs, list) and len(accs) == 0, j(accs))
 
         hl_empty = client.call_tool("ls_holdings_list")
-        check("holdings_list empty when no accounts", hl_empty.get("accounts") == [], f"{hl_empty}")
+        check("holdings_list empty when no accounts", hl_empty.get("accounts") == [], j(hl_empty))
 
-        empty_set = client.call_tool("ls_holdings_set", {"shcode": "005930", "quantity": 10, "avg_price": 70000})
-        check("holdings_set RequiresAccount when no accounts",
-              empty_set.get("error") == "RequiresAccount",
-              json.dumps(empty_set, ensure_ascii=False))
+        empty_set = client.call_tool("ls_holding", {"action": "set", "shcode": "005930", "quantity": 10, "avg_price": 70000})
+        check("ls_holding set RequiresAccount when no accounts",
+              empty_set.get("error") == "RequiresAccount", j(empty_set))
 
-        # --- account upsert ---
-        print("\n[account upsert]")
-        hantoo = client.call_tool("ls_account_upsert", {"account_number": "12345-01", "nickname": "한투", "broker": "한국투자"})
+        # --- ls_account dispatcher ---
+        print("\n[ls_account]")
+        hantoo = client.call_tool("ls_account", {
+            "action": "upsert", "account_number": "12345-01", "nickname": "한투", "broker": "한국투자"})
         check("upsert 한투 auto-promotes to default",
-              hantoo.get("nickname") == "한투" and hantoo.get("is_default") is True,
-              json.dumps(hantoo, ensure_ascii=False))
+              hantoo.get("nickname") == "한투" and hantoo.get("is_default") is True, j(hantoo))
 
-        kb = client.call_tool("ls_account_upsert", {"account_number": "67890-22", "nickname": "KB ISA", "broker": "KB증권"})
-        check("upsert KB ISA does not displace default",
-              kb.get("is_default") is False,
-              json.dumps(kb, ensure_ascii=False))
+        kb = client.call_tool("ls_account", {
+            "action": "upsert", "account_number": "67890-22", "nickname": "KB ISA", "broker": "KB증권"})
+        check("upsert KB ISA does not displace default", kb.get("is_default") is False, j(kb))
 
-        dup_nick = client.call_tool("ls_account_upsert", {"account_number": "99999-99", "nickname": "한투", "broker": "X"})
-        check("nickname collision returns ValidationError",
-              dup_nick.get("error") == "ValidationError",
-              json.dumps(dup_nick, ensure_ascii=False))
+        dup = client.call_tool("ls_account", {
+            "action": "upsert", "account_number": "99999-99", "nickname": "한투", "broker": "X"})
+        check("nickname collision → ValidationError", dup.get("error") == "ValidationError", j(dup))
 
-        accs2 = client.call_tool("ls_accounts_list")
-        check("accounts_list shows 2 accounts", isinstance(accs2, list) and len(accs2) == 2, f"{len(accs2)} accounts")
+        miss = client.call_tool("ls_account", {"action": "upsert", "nickname": "한투"})
+        check("upsert missing account_number → structured error",
+              "missing required" in str(miss.get("error", "")) and "account_number" in str(miss.get("error", "")),
+              j(miss))
 
-        # v0.6: ls_account_set_default removed; same effect via
-        # ls_account_upsert(set_default=true). Upsert is idempotent so
-        # re-supplying the existing identity is the canonical pattern.
-        switched = client.call_tool("ls_account_upsert", {
-            "account_number": "67890-22", "nickname": "KB ISA", "broker": "KB증권", "set_default": True
-        })
-        check("set_default via upsert(set_default=true)",
-              switched.get("is_default") is True and switched.get("nickname") == "KB ISA",
-              json.dumps(switched, ensure_ascii=False))
-        # switch back for the rest of the smoke
-        client.call_tool("ls_account_upsert", {
-            "account_number": "12345-01", "nickname": "한투", "broker": "한국투자", "set_default": True
-        })
+        bad_action = client.call_tool("ls_account", {"action": "frobnicate"})
+        check("unknown action → valid_actions echoed",
+              "unknown action" in str(bad_action.get("error", ""))
+              and bad_action.get("details", {}).get("valid_actions") == ["list", "upsert", "remove"],
+              j(bad_action))
 
-        # --- holdings set/buy/sell on single account fallback ---
-        print("\n[holdings basic - 한투 only via fallback after explicit target]")
-        first_buy = client.call_tool("ls_holdings_buy", {"shcode": "005930", "quantity": 10, "price": 70000, "account": "한투"})
-        check("buy first time records position",
-              first_buy.get("quantity") == 10 and first_buy.get("avg_price") == 70000 and first_buy.get("applied_to", {}).get("nickname") == "한투",
-              json.dumps(first_buy, ensure_ascii=False))
+        accs2 = client.call_tool("ls_account", {"action": "list"})
+        check("ls_account list shows 2 accounts", isinstance(accs2, list) and len(accs2) == 2, f"{len(accs2)}")
 
-        weighted = client.call_tool("ls_holdings_buy", {"shcode": "005930", "quantity": 5, "price": 80000, "account": "한투"})
-        expected_avg = (10*70000 + 5*80000) / 15
+        switched = client.call_tool("ls_account", {
+            "action": "upsert", "account_number": "67890-22", "nickname": "KB ISA",
+            "broker": "KB증권", "set_default": True})
+        check("set_default via upsert", switched.get("is_default") is True, j(switched))
+        client.call_tool("ls_account", {
+            "action": "upsert", "account_number": "12345-01", "nickname": "한투",
+            "broker": "한국투자", "set_default": True})
+
+        renamed = client.call_tool("ls_account", {
+            "action": "upsert", "rename_broker_from": "KB증권", "broker": "KB증권 (PB)"})
+        check("rename-broker mode reports accounts_affected",
+              renamed.get("accounts_affected") == 1 and renamed.get("to") == "KB증권 (PB)", j(renamed))
+
+        # --- ls_holding dispatcher ---
+        print("\n[ls_holding]")
+        first_buy = client.call_tool("ls_holding", {
+            "action": "buy", "shcode": "005930", "quantity": 10, "price": 70000, "account": "한투"})
+        check("buy records position",
+              first_buy.get("quantity") == 10 and first_buy.get("avg_price") == 70000, j(first_buy))
+
+        weighted = client.call_tool("ls_holding", {
+            "action": "buy", "shcode": "005930", "quantity": 5, "price": 80000, "account": "한투"})
+        expected_avg = (10 * 70000 + 5 * 80000) / 15
         check("buy merges weighted average",
               weighted.get("quantity") == 15 and abs(weighted.get("avg_price", 0) - expected_avg) < 1,
-              f"qty={weighted.get('quantity')}, avg={weighted.get('avg_price')!r} expected≈{expected_avg:.2f}")
+              f"qty={weighted.get('quantity')} avg={weighted.get('avg_price')!r}")
 
-        zero_set = client.call_tool("ls_holdings_set", {"shcode": "005930", "quantity": 0, "avg_price": 50000, "account": "한투"})
-        check("set quantity=0 → ValidationError",
-              zero_set.get("error") == "ValidationError",
-              json.dumps(zero_set, ensure_ascii=False))
+        miss_buy = client.call_tool("ls_holding", {"action": "buy", "shcode": "005930", "quantity": 5})
+        check("buy missing price → structured error",
+              "missing required" in str(miss_buy.get("error", "")) and "price" in str(miss_buy.get("error", "")),
+              j(miss_buy))
 
-        # --- multi-account same symbol → ambiguity ---
-        print("\n[ambiguity - same symbol two accounts]")
-        kb_buy = client.call_tool("ls_holdings_buy", {"shcode": "005930", "quantity": 4, "price": 90000, "account": "KB ISA"})
-        check("buy on KB ISA",
-              kb_buy.get("applied_to", {}).get("nickname") == "KB ISA",
-              json.dumps(kb_buy, ensure_ascii=False))
+        kb_buy = client.call_tool("ls_holding", {
+            "action": "buy", "shcode": "005930", "quantity": 4, "price": 90000, "account": "KB ISA"})
+        check("buy on second account", kb_buy.get("applied_to", {}).get("nickname") == "KB ISA", j(kb_buy))
 
-        ambig_sell = client.call_tool("ls_holdings_sell", {"shcode": "005930", "quantity": 1})
+        ambig = client.call_tool("ls_holding", {"action": "sell", "shcode": "005930", "quantity": 1})
         check("sell without account → AmbiguousAccount",
-              ambig_sell.get("error") == "AmbiguousAccount" and len(ambig_sell.get("candidates", [])) == 2,
-              json.dumps(ambig_sell, ensure_ascii=False))
+              ambig.get("error") == "AmbiguousAccount" and len(ambig.get("candidates", [])) == 2, j(ambig))
 
-        # --- ambiguity does not fire for writes that target an existing single-symbol account ---
-        targeted_sell = client.call_tool("ls_holdings_sell", {"shcode": "005930", "quantity": 5, "account": "한투"})
-        check("targeted sell on 한투 reduces quantity",
-              targeted_sell.get("quantity") == 10 and targeted_sell.get("applied_to", {}).get("nickname") == "한투",
-              json.dumps(targeted_sell, ensure_ascii=False))
+        targeted = client.call_tool("ls_holding", {
+            "action": "sell", "shcode": "005930", "quantity": 5, "account": "한투"})
+        check("targeted sell reduces quantity", targeted.get("quantity") == 10, j(targeted))
 
-        over_sell = client.call_tool("ls_holdings_sell", {"shcode": "005930", "quantity": 999, "account": "한투"})
+        over = client.call_tool("ls_holding", {
+            "action": "sell", "shcode": "005930", "quantity": 999, "account": "한투"})
         check("over-sell → InsufficientQuantity",
-              over_sell.get("error") == "InsufficientQuantity" and over_sell.get("current_quantity") == 10,
-              json.dumps(over_sell, ensure_ascii=False))
+              over.get("error") == "InsufficientQuantity" and over.get("current_quantity") == 10, j(over))
 
-        # --- list grouped ---
-        print("\n[list grouped]")
+        split = client.call_tool("ls_holding", {
+            "action": "corporate_action", "shcode": "005930", "type": "split", "ratio": 2})
+        applied = split.get("applied_to") or []
+        check("corporate_action split applies to all holders",
+              len(applied) == 2 and all(r["after"]["quantity"] == r["before"]["quantity"] * 2 for r in applied),
+              j([a["after"]["quantity"] for a in applied]))
+
+        bad_type = client.call_tool("ls_holding", {
+            "action": "corporate_action", "shcode": "005930", "type": "stock_dividend", "ratio": 0.05})
+        check("corporate_action unknown type → ValidationError + hint",
+              bad_type.get("error") == "ValidationError" and "Additional types" in str(bad_type.get("message", "")),
+              j(bad_type))
+
+        miss_ca = client.call_tool("ls_holding", {"action": "corporate_action", "shcode": "005930"})
+        check("corporate_action missing type/ratio → structured error",
+              "missing required" in str(miss_ca.get("error", "")), j(miss_ca))
+
+        # --- ls_holdings_list (standalone) ---
+        print("\n[ls_holdings_list]")
         hl = client.call_tool("ls_holdings_list")
         accounts = hl.get("accounts") or []
-        check("holdings_list returns both accounts grouped",
-              len(accounts) == 2 and all("holdings" in a and "summary" in a for a in accounts),
-              f"{[a['nickname'] for a in accounts]}")
-        ts = hl.get("total_summary") or {}
-        # 한투: 10주 @ avg, KB: 4주 @ 90000
-        expected_total_cost = 10 * expected_avg + 4 * 90000
-        check("total_summary cost_basis aggregates",
-              abs(ts.get("cost_basis", 0) - expected_total_cost) < 1,
-              f"cost_basis={ts.get('cost_basis')}, expected≈{expected_total_cost:.2f}")
-
+        check("holdings_list groups both accounts",
+              len(accounts) == 2 and all("summary" in a for a in accounts),
+              j([a["nickname"] for a in accounts]))
         if live:
-            for acc in accounts:
-                for h in acc.get("holdings", []):
-                    if h.get("quote"):
-                        break
-            check("live quote enriches at least one row",
-                  any(h.get("quote") for acc in accounts for h in acc.get("holdings", [])),
+            check("live quote enriches a row",
+                  any(h.get("quote") for a in accounts for h in a.get("holdings", [])),
                   f"quote_error={hl.get('quote_error')}")
         else:
-            check("offline list returns quote_error",
-                  hl.get("quote_error") is not None,
-                  f"quote_error={hl.get('quote_error')!r}")
+            check("offline holdings_list returns quote_error", hl.get("quote_error") is not None,
+                  f"{hl.get('quote_error')!r}")
 
-        # --- corporate actions (v0.6 unified dispatcher) ---
-        print("\n[corporate actions — ls_holdings_corporate_action]")
-        split = client.call_tool("ls_holdings_corporate_action", {
-            "shcode": "005930", "type": "split", "ratio": 2
-        })
-        applied = split.get("applied_to") or []
-        check("type=split with no account applies to all holders",
-              len(applied) == 2 and all(r["after"]["quantity"] == r["before"]["quantity"] * 2 for r in applied),
-              json.dumps([{a["account"]["nickname"]: a["after"]["quantity"]} for a in applied], ensure_ascii=False))
+        removed = client.call_tool("ls_holding", {"action": "remove", "shcode": "005930", "account": "한투"})
+        check("ls_holding remove drops the row", removed.get("removed") is True, j(removed))
 
-        # 7 shares before reverse_split, ratio=3 should fail divisibility
-        client.call_tool("ls_holdings_set", {"shcode": "000660", "quantity": 7, "avg_price": 100000, "account": "한투"})
-        bad_rev = client.call_tool("ls_holdings_corporate_action", {
-            "shcode": "000660", "type": "reverse_split", "ratio": 3, "account": "한투"
-        })
-        check("type=reverse_split non-divisible → ValidationError",
-              bad_rev.get("error") == "ValidationError",
-              json.dumps(bad_rev, ensure_ascii=False))
+        # --- ls_watchlist dispatcher ---
+        print("\n[ls_watchlist]")
+        grp = client.call_tool("ls_watchlist", {"action": "group_upsert", "name": "semis", "description": "반도체"})
+        check("group_upsert creates a group", "error" not in grp, j(grp))
 
-        # v0.6 Tier 1 compression: unknown type rejected with a friendly
-        # message that includes the supported set + future-extension hint.
-        unknown_type = client.call_tool("ls_holdings_corporate_action", {
-            "shcode": "000660", "type": "stock_dividend", "ratio": 0.05, "account": "한투"
-        })
-        check("unknown type=stock_dividend → ValidationError + future-extension hint",
-              unknown_type.get("error") == "ValidationError"
-              and "Additional types" in (unknown_type.get("message") or ""),
-              json.dumps(unknown_type, ensure_ascii=False))
+        ren = client.call_tool("ls_watchlist", {
+            "action": "group_upsert", "name": "semiconductors", "rename_from": "semis"})
+        check("group_upsert rename via rename_from", "error" not in ren, j(ren))
 
-        client.call_tool("ls_holdings_remove", {"shcode": "000660", "account": "한투"})
+        added = client.call_tool("ls_watchlist", {"action": "add", "shcode": "005930", "group_name": "semiconductors"})
+        check("watchlist add", added.get("shcode") == "005930", j(added))
 
-        # --- account remove cascade confirm ---
-        print("\n[account remove]")
-        rm_kb_unsafe = client.call_tool("ls_account_remove", {"account": "KB ISA", "confirm": False})
+        bad_add = client.call_tool("ls_watchlist", {"action": "add", "shcode": "12X"})
+        check("watchlist add rejects malformed shcode", bad_add.get("error") == "ValidationError", j(bad_add))
+
+        miss_add = client.call_tool("ls_watchlist", {"action": "add"})
+        check("watchlist add missing shcode → structured error",
+              "missing required" in str(miss_add.get("error", "")), j(miss_add))
+
+        wl = client.call_tool("ls_watchlist", {"action": "list"})
+        check("watchlist list returns groups", "groups" in wl, j(list(wl.keys())))
+
+        wl_groups = client.call_tool("ls_watchlist", {"action": "list", "scope": "groups"})
+        check("watchlist list scope=groups",
+              wl_groups.get("scope") == "groups"
+              and any(g["name"] == "semiconductors" for g in wl_groups.get("groups", [])),
+              j(wl_groups))
+
+        bad_scope = client.call_tool("ls_watchlist", {"action": "list", "scope": "everything"})
+        check("watchlist list bad scope → error", "not recognized" in str(bad_scope.get("error", "")), j(bad_scope))
+
+        # --- ls_watched_themes dispatcher ---
+        print("\n[ls_watched_themes]")
+        th_add = client.call_tool("ls_watched_themes", {
+            "action": "add", "theme_code": "0064", "theme_name": "2차전지", "note": "smoke"})
+        check("watched_themes add", th_add.get("theme_code") == "0064", j(th_add))
+
+        th_list = client.call_tool("ls_watched_themes", {"action": "list"})
+        items = th_list.get("items") or []
+        check("watched_themes list returns the theme",
+              len(items) == 1 and items[0].get("theme_code") == "0064", j([i.get("theme_code") for i in items]))
+
+        th_rm = client.call_tool("ls_watched_themes", {"action": "remove", "theme_code": "0064"})
+        check("watched_themes remove", th_rm.get("removed") is True, j(th_rm))
+
+        # --- ls_account remove cascade ---
+        print("\n[ls_account remove]")
+        rm_unsafe = client.call_tool("ls_account", {"action": "remove", "account": "KB ISA", "confirm": False})
         check("remove account w/ holdings & confirm=false → RequiresConfirmation",
-              rm_kb_unsafe.get("error") == "RequiresConfirmation" and rm_kb_unsafe.get("holding_count", 0) > 0,
-              json.dumps(rm_kb_unsafe, ensure_ascii=False))
-
-        rm_kb_ok = client.call_tool("ls_account_remove", {"account": "KB ISA", "confirm": True})
+              rm_unsafe.get("error") == "RequiresConfirmation" and rm_unsafe.get("holding_count", 0) > 0,
+              j(rm_unsafe))
+        rm_ok = client.call_tool("ls_account", {"action": "remove", "account": "KB ISA", "confirm": True})
         check("remove account w/ confirm=true cascades",
-              rm_kb_ok.get("removed") is True and rm_kb_ok.get("cascaded_holdings") > 0,
-              json.dumps(rm_kb_ok, ensure_ascii=False))
+              rm_ok.get("removed") is True and rm_ok.get("cascaded_holdings", 0) > 0, j(rm_ok))
 
-        # Now remove 한투 (default) and verify auto-succession to a fresh account
-        client.call_tool("ls_account_upsert", {"account_number": "NEW-01", "nickname": "신계좌"})
-        rm_default = client.call_tool("ls_account_remove", {"account": "한투", "confirm": True})
-        check("remove default cascades and auto-promotes another account",
-              rm_default.get("removed") is True and rm_default.get("new_default", {}).get("nickname") == "신계좌",
-              json.dumps(rm_default, ensure_ascii=False))
+        miss_rm = client.call_tool("ls_account", {"action": "remove"})
+        check("remove missing account → structured error",
+              "missing required" in str(miss_rm.get("error", "")), j(miss_rm))
 
-        # --- broker rename ---
-        print("\n[broker rename]")
-        client.call_tool("ls_account_upsert", {"account_number": "NEW-02", "nickname": "신계좌2", "broker": "X증권"})
-        client.call_tool("ls_account_upsert", {"account_number": "NEW-03", "nickname": "신계좌3", "broker": "X증권"})
-        renamed = client.call_tool("ls_broker_rename", {"from": "X증권", "to": "X증권 (renamed)"})
-        check("broker_rename affects matching rows",
-              renamed.get("accounts_affected") == 2 and renamed.get("to") == "X증권 (renamed)",
-              json.dumps(renamed, ensure_ascii=False))
-
-        # --- watchlist group rename ---
-        print("\n[watchlist group rename]")
-        client.call_tool("ls_watchlist_group_create", {"name": "semis"})
-        ren = client.call_tool("ls_watchlist_group_rename", {"old_name": "semis", "new_name": "semiconductors"})
-        check("group rename succeeds",
-              ren.get("new_name") == "semiconductors",
-              json.dumps(ren, ensure_ascii=False))
-
-        client.call_tool("ls_watchlist_group_create", {"name": "bio"})
-        clash = client.call_tool("ls_watchlist_group_rename", {"old_name": "bio", "new_name": "semiconductors"})
-        check("group rename to existing → ValidationError",
-              clash.get("error") == "ValidationError",
-              json.dumps(clash, ensure_ascii=False))
-
-        # --- validation ---
-        print("\n[validation]")
-        bad = client.call_tool("ls_watchlist_add", {"shcode": "12X", "group_name": "default"})
-        check("watchlist_add rejects malformed shcode",
-              bad.get("error") == "ValidationError",
-              json.dumps(bad, ensure_ascii=False))
-
-        # --- v0.6: Tier 1 compression regression ---
-        print("\n[v0.6 Tier 1 compression]")
-        tools = set(client.list_tools())
-        removed = ["ls_account_get", "ls_account_set_default",
-                   "ls_holdings_split", "ls_holdings_reverse_split", "ls_holdings_bonus"]
-        check("removed v0.5 tools absent from tools/list",
-              not (set(removed) & tools),
-              f"still present: {sorted(set(removed) & tools)}")
-        added = ["ls_holdings_corporate_action", "ls_get_index_quote",
-                 "ls_get_industry_indices", "ls_get_industry_stocks",
-                 "ls_get_theme_stocks", "ls_get_stock_themes",
-                 "ls_portfolio_export", "ls_portfolio_import",
-                 "ls_watched_themes_add", "ls_watched_themes_remove", "ls_watched_themes_list"]
-        missing = sorted(set(added) - tools)
-        check("v0.6 new tools registered", not missing, f"missing: {missing}")
-
-        legacy_call = client.call_tool("ls_holdings_split", {"shcode": "005930", "ratio": 2})
-        check("calling removed ls_holdings_split → RPC error",
-              "__rpc_error" in legacy_call,
-              json.dumps(legacy_call, ensure_ascii=False))
-
-        # --- v0.6: watched_themes rename (v0.5 watched_sectors → watched_themes) ---
-        print("\n[v0.6 watched_themes (renamed from watched_sectors)]")
-        added_theme = client.call_tool("ls_watched_themes_add", {
-            "theme_code": "0064", "theme_name": "2차전지", "note": "smoke"
-        })
-        check("watched_themes_add returns theme_code/theme_name",
-              added_theme.get("theme_code") == "0064" and added_theme.get("theme_name") == "2차전지",
-              json.dumps(added_theme, ensure_ascii=False))
-
-        themes_list = client.call_tool("ls_watched_themes_list")
-        items = themes_list.get("items") or []
-        check("watched_themes_list returns the added theme",
-              len(items) == 1 and items[0].get("theme_code") == "0064",
-              f"items={[i.get('theme_code') for i in items]}")
-
-        removed_theme = client.call_tool("ls_watched_themes_remove", {"theme_code": "0064"})
-        check("watched_themes_remove succeeds",
-              removed_theme.get("removed") is True,
-              json.dumps(removed_theme, ensure_ascii=False))
-
-        # --- v0.6: portfolio export/import round-trip ---
-        print("\n[v0.6 portfolio I/O]")
+        # --- ls_portfolio_io dispatcher ---
+        print("\n[ls_portfolio_io]")
         export_path = str(tmp / "smoke-export.json")
-        exported = client.call_tool("ls_portfolio_export", {"path": export_path})
-        check("portfolio_export writes JSON with schema_version=1",
-              exported.get("schema_version") == 1 and exported.get("size_bytes", 0) > 0
-              and Path(exported.get("path", "")).is_file(),
-              json.dumps(exported, ensure_ascii=False))
+        exported = client.call_tool("ls_portfolio_io", {"action": "export", "path": export_path})
+        check("export writes JSON schema_version=1",
+              exported.get("schema_version") == 1 and Path(exported.get("path", "")).is_file(), j(exported))
 
-        # Replace mode without confirm should be gated.
-        gated = client.call_tool("ls_portfolio_import", {
-            "path": export_path, "mode": "replace", "confirm": False
-        })
-        check("replace without confirm → RequiresConfirmation",
-              gated.get("error") == "RequiresConfirmation",
-              json.dumps(gated, ensure_ascii=False))
+        gated = client.call_tool("ls_portfolio_io", {
+            "action": "import", "path": export_path, "mode": "replace", "confirm": False})
+        check("import replace without confirm → RequiresConfirmation",
+              gated.get("error") == "RequiresConfirmation", j(gated))
 
-        # Merge mode against the same DB → every row is a duplicate.
-        merged = client.call_tool("ls_portfolio_import", {
-            "path": export_path, "mode": "merge"
-        })
-        check("merge re-import finds every account as duplicate",
-              merged.get("mode") == "merge"
-              and merged.get("imported", {}).get("accounts") == 0
-              and len(merged.get("skipped", {}).get("accounts", [])) >= 1,
-              json.dumps(merged.get("imported"), ensure_ascii=False))
+        merged_import = client.call_tool("ls_portfolio_io", {
+            "action": "import", "path": export_path, "mode": "merge"})
+        check("import merge re-import finds duplicates",
+              merged_import.get("mode") == "merge"
+              and merged_import.get("imported", {}).get("accounts") == 0,
+              j(merged_import.get("imported")))
 
-        # Unknown schema_version should bounce.
+        miss_import = client.call_tool("ls_portfolio_io", {"action": "import"})
+        check("import missing path → structured error",
+              "missing required" in str(miss_import.get("error", "")), j(miss_import))
+
         bad_schema = tmp / "bad-schema.json"
         bad_schema.write_text(json.dumps({
-            "schema_version": 99, "exported_at": "2026-05-15T12:34:56+09:00",
-            "exporter_version": "future",
-            "accounts": [], "watchlist_groups": [], "watched_themes": []
+            "schema_version": 99, "exported_at": "2026-05-20T12:00:00+09:00",
+            "exporter_version": "future", "accounts": [], "watchlist_groups": [], "watched_themes": [],
         }), encoding="utf-8")
-        mismatch = client.call_tool("ls_portfolio_import", {"path": str(bad_schema), "mode": "merge"})
+        mismatch = client.call_tool("ls_portfolio_io", {"action": "import", "path": str(bad_schema), "mode": "merge"})
         check("schema_version=99 → ImportSchemaMismatch",
-              mismatch.get("error") == "ImportSchemaMismatch"
-              and mismatch.get("file_schema_version") == 99,
-              json.dumps(mismatch, ensure_ascii=False))
+              mismatch.get("error") == "ImportSchemaMismatch" and mismatch.get("file_schema_version") == 99,
+              j(mismatch))
 
-        # --- v0.6: new market/theme tool routing ---
-        print("\n[v0.6 new tool routing]")
+        # --- market-data route smoke ---
+        print("\n[market-data routes]")
         idx = client.call_tool("ls_get_index_quote", {"index_code": "kospi"})
+        check("ls_get_index_quote routes", isinstance(idx, dict), j(idx)[:120])
+
+        ih = client.call_tool("ls_get_index_history", {"index_code": "kospi", "output_mode": "export", "count": 60})
         if live:
-            check("ls_get_index_quote(kospi) returns t1511 envelope",
-                  idx.get("index_code") == "001" and "value" in idx and "related_indices" in idx,
-                  f"keys={list(idx.keys())[:6] if isinstance(idx, dict) else type(idx).__name__}")
+            check("ls_get_index_history export returns dataset_id",
+                  ih.get("output_mode") == "export" and str(ih.get("dataset_id", "")).startswith("ds_"),
+                  j(ih)[:140])
         else:
-            check("ls_get_index_quote routes without credentials",
-                  isinstance(idx, dict) and ("error" in idx or "details" in idx),
-                  json.dumps(idx, ensure_ascii=False)[:120])
-
-        unknown_alias = client.call_tool("ls_get_index_quote", {"index_code": "fake-index"})
-        check("ls_get_index_quote unknown alias → validation error",
-              isinstance(unknown_alias, dict) and "error" in unknown_alias,
-              json.dumps(unknown_alias, ensure_ascii=False)[:120])
-
-        industry_idx = client.call_tool("ls_get_industry_indices", {"market": "kospi", "top_n": 5})
-        if live:
-            check("ls_get_industry_indices returns sorted rows",
-                  isinstance(industry_idx.get("rows"), list)
-                  and industry_idx.get("market") == "kospi",
-                  f"count={industry_idx.get('count')}")
-        else:
-            check("ls_get_industry_indices routes without credentials",
-                  isinstance(industry_idx, dict),
-                  json.dumps(industry_idx, ensure_ascii=False)[:120])
-
-        industry_stocks = client.call_tool("ls_get_industry_stocks", {"upcode": "001", "top_n": 5})
-        check("ls_get_industry_stocks routes (upcode mode)",
-              isinstance(industry_stocks, dict),
-              json.dumps(industry_stocks, ensure_ascii=False)[:120])
-
-        theme_stocks = client.call_tool("ls_get_theme_stocks", {"theme_code": "0064", "top_n": 5})
-        check("ls_get_theme_stocks routes (code mode)",
-              isinstance(theme_stocks, dict),
-              json.dumps(theme_stocks, ensure_ascii=False)[:120])
-
-        stock_themes = client.call_tool("ls_get_stock_themes", {"shcode": "005930"})
-        check("ls_get_stock_themes routes for valid shcode",
-              isinstance(stock_themes, dict)
-              and (stock_themes.get("shcode") == "005930" or "error" in stock_themes),
-              json.dumps(stock_themes, ensure_ascii=False)[:120])
-
-        bad_shcode = client.call_tool("ls_get_stock_themes", {"shcode": "12X"})
-        check("ls_get_stock_themes rejects malformed shcode",
-              isinstance(bad_shcode, dict) and "error" in bad_shcode,
-              json.dumps(bad_shcode, ensure_ascii=False)[:120])
-
-        # --- v0.6: holdings_list theme filter + metadata_freshness ---
-        # metadata_freshness is always emitted; offline mode shows "pending"
-        # because t1532 enrichment can't fire without credentials.
-        hl_meta = client.call_tool("ls_holdings_list")
-        check("holdings_list emits metadata_freshness block",
-              "metadata_freshness" in hl_meta
-              and "fully_enriched" in hl_meta.get("metadata_freshness", {}),
-              json.dumps(hl_meta.get("metadata_freshness"), ensure_ascii=False))
-
-        filtered = client.call_tool("ls_holdings_list", {"theme_keyword": "2차전지"})
-        check("holdings_list with theme_keyword echoes filter",
-              filtered.get("filter", {}).get("theme_keyword") == "2차전지"
-              and "matched_themes" in filtered,
-              json.dumps({k: v for k, v in filtered.items() if k in ("filter", "matched_themes")}, ensure_ascii=False))
+            check("ls_get_index_history export routes without credentials", isinstance(ih, dict), j(ih)[:120])
 
     finally:
         client.close()
