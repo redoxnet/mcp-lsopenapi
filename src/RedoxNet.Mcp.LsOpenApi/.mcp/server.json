@@ -16,7 +16,46 @@
       "runtimeHint": "dnx",
       "transport": {
         "type": "stdio"
-      }
+      },
+      "environmentVariables": [
+        {
+          "name": "LS_APPKEY",
+          "value": "{ls_appkey}",
+          "variables": {
+            "ls_appkey": {
+              "description": "LS Securities OpenAPI AppKey",
+              "isRequired": true,
+              "isSecret": true
+            }
+          }
+        },
+        {
+          "name": "LS_APPSECRETKEY",
+          "value": "{ls_appsecretkey}",
+          "variables": {
+            "ls_appsecretkey": {
+              "description": "LS Securities OpenAPI AppSecretKey",
+              "isRequired": true,
+              "isSecret": true
+            }
+          }
+        },
+        {
+          "name": "LS_MARKET",
+          "value": "{ls_market}",
+          "variables": {
+            "ls_market": {
+              "description": "LS OpenAPI environment: virtual or real",
+              "isRequired": false,
+              "default": "virtual",
+              "choices": [
+                "virtual",
+                "real"
+              ]
+            }
+          }
+        }
+      ]
     }
   ]
 }
