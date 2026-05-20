@@ -152,9 +152,10 @@ public sealed class LsApiClient
                     innerException: ex);
             }
 
-            // Continuation: header-based (CSPAQ-style) takes precedence. If no
-            // tr_cont header is sent at all, fall back to body-based legacy
-            // style — read each named field from <TrCode>OutBlock.
+            // Continuation has two LS styles and a TR can use both at once:
+            // header-based (CSPAQ-style tr_cont / tr_cont_key) and body-based
+            // (a named cursor field inside <TrCode>OutBlock, e.g. t3401's
+            // cts_date). Surface whichever the response carries.
             bool hasCont = false;
             string? contKey = null;
             Dictionary<string, string>? contKeys = null;
@@ -166,9 +167,16 @@ public sealed class LsApiClient
                 if (response.Headers.TryGetValues("tr_cont_key", out IEnumerable<string>? contKeyValues))
                     contKey = contKeyValues.FirstOrDefault();
             }
-            else if (meta.Continuation.Supported
-                     && meta.Continuation.KeyFields is { Count: > 0 } keyFields
-                     && root.ValueKind == JsonValueKind.Object)
+
+            // Body cursor fields: populate whenever the catalog declares
+            // key_fields — for pure body-paged TRs and for TRs that page by
+            // header yet still expose a body cursor. Skipped on the last page
+            // of a header-paged TR so a stale cursor is not surfaced once
+            // hasCont is already false.
+            if (meta.Continuation.Supported
+                && meta.Continuation.KeyFields is { Count: > 0 } keyFields
+                && root.ValueKind == JsonValueKind.Object
+                && (!headerSeen || hasCont))
             {
                 string headerBlockName = $"{meta.TrCode}OutBlock";
                 if (root.TryGetProperty(headerBlockName, out JsonElement headerBlock))
@@ -188,7 +196,9 @@ public sealed class LsApiClient
                         contKeys ??= new Dictionary<string, string>(StringComparer.Ordinal);
                         contKeys[field] = bodyKey;
                     }
-                    if (contKeys is { Count: > 0 })
+                    // Pure body-paged TRs derive hasCont from the cursor's
+                    // presence; header-paged TRs already set it from tr_cont.
+                    if (!headerSeen && contKeys is { Count: > 0 })
                         hasCont = true;
                 }
             }

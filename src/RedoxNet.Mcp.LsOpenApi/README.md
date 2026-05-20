@@ -104,9 +104,9 @@ Credentials are accepted **only** through the process environment — never thro
 
 Local data lives at `%LOCALAPPDATA%\RedoxNet\LsOpenApi\` on Windows and `~/.local/share/redoxnet/lsopenapi/` on Linux/macOS: `token.db` (auth cache, SHA-256 keyed) and `portfolio.db` (user-supplied holdings/watchlists; never read or written by tools outside the portfolio family).
 
-## Tools (main — 44 total)
+## Tools (main — 48 total)
 
-v0.7 net delta: +6 new (screeners + index history + metadata refresh) − 3 Tier 2 compression. Current main also adds `ls_get_global_market_quote` for overseas index / FX / futures snapshots. Headline pivot: natural screener questions answerable in one call — *"PER 낮은 종목"*, *"오늘 외인 매수 누구"*, *"다음 주총 언제"*, *"내 보유 중 관리종목"*. Storage hygiene: `avg_price` no longer drifts under split/reverse-split round-trips (schema v4 integer fractional won), ETFs stop reporting perpetual `themes_pending` (sentinel-row), and FICS industry classification populates `stocks.industry` for the new `industry?` filter on `ls_holdings_list`.
+v0.7 net delta: +6 new (screeners + index history + metadata refresh) − 3 Tier 2 compression. Current main also adds five wrappers — `ls_get_global_market_quote` (overseas index / FX / futures), `ls_get_analyst_opinions` (t3401), `ls_get_short_selling_trend` (t1927), `ls_get_high_low_stocks` (t1442), and `ls_get_market_funds_trend` (t8428). Headline pivot: natural screener questions answerable in one call — *"PER 낮은 종목"*, *"오늘 외인 매수 누구"*, *"다음 주총 언제"*, *"내 보유 중 관리종목"*. Storage hygiene: `avg_price` no longer drifts under split/reverse-split round-trips (schema v4 integer fractional won), ETFs stop reporting perpetual `themes_pending` (sentinel-row), and FICS industry classification populates `stocks.industry` for the new `industry?` filter on `ls_holdings_list`.
 
 ### Market data (LS-backed, credentials required)
 
@@ -135,6 +135,7 @@ v0.7 net delta: +6 new (screeners + index history + metadata refresh) − 3 Tier
 | `ls_get_index_history` | `t1514` | Daily/weekly/monthly time series for an index. Per-bar OHLC, volume, transaction value, market breadth, and foreign/institutional net flow. `cts_date` pagination surfaced when more pages exist. **(v0.7)** |
 | `ls_get_industry_indices` | `t8424` + `t1511` fanout | Top-N industry indices sorted by change %. 60s cache so repeated calls with different `top_n` reuse one fanout. |
 | `ls_get_industry_stocks` | `t1516` | Stocks inside one industry + the industry's index summary. Body-based paging. Accepts `upcode` or `industry_keyword` (LIKE on cached t8424 catalog). |
+| `ls_get_market_funds_trend` | `t8428` | Market-liquidity time series — 고객예탁금, 신용잔고, 미수금, 선물예수금, and equity/mixed/bond/MMF fund money (억원). **(v0.8)** |
 
 ### LS themes (LS-backed)
 
@@ -143,7 +144,7 @@ v0.7 net delta: +6 new (screeners + index history + metadata refresh) − 3 Tier
 | `ls_get_theme_stocks` | `t1537` | Stocks inside one LS curated theme + summary (tmcnt/upcnt/uprate). Header-based `tr_cont` paging. Accepts `theme_code` or `theme_keyword`. |
 | `ls_get_stock_themes` | `t1532` | Reverse lookup — every theme a stock belongs to. Empty array is a valid response. |
 
-### Screeners (v0.7 new, LS-backed)
+### Screeners & per-stock analytics (LS-backed)
 
 | Tool | TR | Purpose |
 |---|---|---|
@@ -151,6 +152,9 @@ v0.7 net delta: +6 new (screeners + index history + metadata refresh) − 3 Tier
 | `ls_get_investor_flow` | `t1601` + `t1702` | Investor-type flow across 12 categories (개인 / 외국인 / 기관계 / 증권 / 투신 / 은행 / 보험 / 종금 / 기금 / 국가 / 기타 / 사모펀드). No `shcode` → intraday market-wide snapshot (six unlabeled segments). With `shcode` → single-stock daily time series with metric (`volume`/`value`/`price`) + direction (`net`/`buy`/`sell`) + cumulative toggle. |
 | `ls_get_stock_events` | `t3202` | Per-stock corporate-action / 주주총회 calendar covering all 14 LS event types. `kinds` accepts English snake_case, Korean labels, or raw two-char upgu codes. TBD entries survive date filtering. |
 | `ls_get_market_warnings` | `t1404` + `t1405` | Union of the two KRX surveillance screens (13 designations: 관리 / 불성실공시 / 투자유의 / 투자환기 / 투자경고 / 매매정지 / 정리매매 / 투자주의 / 투자위험 / 위험예고 / 단기과열지정 / 이상급등 / 상장주식수부족). `shcodes` clips against holdings for "내 보유 중 관리종목" queries. |
+| `ls_get_analyst_opinions` | `t3401` | Per-stock brokerage (sell-side) investment-opinion history — rating + target price before/after each change, broker, opinion-day close, plus a current-price snapshot. **(v0.8)** |
+| `ls_get_short_selling_trend` | `t1927` | Per-stock daily short-selling (공매도) — short volume/value (백만원), short ratio, average short price, cumulative short volume, uptick-applied vs. exempt split. **(v0.8)** |
+| `ls_get_high_low_stocks` | `t1442` | New-high / new-low (신고가 / 신저가) screener. `direction`, `period` (52w default), `maintained` (돌파유지 vs 일시돌파); ETF/ETN excluded by default. **(v0.8)** |
 
 ### Portfolio (local-only, no broker sync)
 

@@ -29,7 +29,7 @@ When using the API, please review the [LS OpenAPI usage guide](https://openapi.l
 | `RedoxNet.Mcp.LsOpenApi` | dotnet tool | MCP server over stdio. |
 | `RedoxNet.LsOpenApi.Core.Catalog.Builder` | Dev tool | Scrapes the LS docs site to (re)generate the embedded TR catalog. Not shipped. |
 
-## 🆕 v0.6 — Market context + portfolio I/O
+## v0.6 — Market context + portfolio I/O
 
 The market-context layer that v0.5's portfolio module needed to make queries like *"how did KOSPI do today vs my holdings?"* actually answerable. Three TR families landed:
 
@@ -412,8 +412,9 @@ These tools persist user-supplied data to a SQLite store at `%LOCALAPPDATA%\Redo
 | `ls_get_index_history(index_code, period_type?, count?, cts_date?)` | **v0.7**: daily/weekly/monthly time series for an index via `t1514`. Per-bar OHLC, volume, transaction value, market breadth (advance/decline/limit-up/limit-down), and foreign/institutional net flow. `cts_date` pagination surfaced when more pages exist. |
 | `ls_get_industry_indices(market, top_n)` | Top-N industry indices sorted by change %. `t8424` + `t1511` fanout, 60s in-process cache (cold-cost ≈2.5s for KOSPI's ~25 codes; `top_n=5` and `top_n=30` reuse one fanout). |
 | `ls_get_industry_stocks(upcode \| industry_keyword, market, top_n)` | Stocks inside one industry + the industry's index summary. `t1516` body-based continuation paging. Keyword resolution against cached t8424: 0/1/N matches → `IndustryNotFound` / `resolved` echo / `AmbiguousIndustry` with candidates. |
+| `ls_get_market_funds_trend(market?, count?)` | **v0.8**: market-liquidity time series via `t8428`. Per day the index plus 고객예탁금 / 신용잔고 / 미수금 / 선물예수금 and equity / mixed / bond / MMF fund money. All monetary fields in 억원. |
 
-#### Screeners (v0.7)
+#### Screeners & per-stock analytics
 
 | Tool | Purpose |
 | --- | --- |
@@ -421,6 +422,9 @@ These tools persist user-supplied data to a SQLite store at `%LOCALAPPDATA%\Redo
 | `ls_get_investor_flow(shcode?, …)` | Investor-type flow across `t1601` (intraday market-wide) + `t1702` (single-stock daily) dispatcher. 12 investor categories (개인 / 외국인 / 기관계 / 증권 / 투신 / 은행 / 보험 / 종금 / 기금 / 국가 / 기타 / 사모펀드). No shcode → market snapshot per segment; with shcode → daily series with `metric`/`direction`/`cumulative` toggles. |
 | `ls_get_stock_events(shcode, from?, to?, kinds?)` | Per-stock corporate-action / shareholder-meeting calendar via `t3202`. All 14 LS event types (dividends, AGMs, rights / bonus issues, capital changes, mergers/splits, stock-option exercises, CB conversions). TBD entries (`recdt='00000000'`) survive date filtering. |
 | `ls_get_market_warnings(kinds?, shcodes?, market?)` | KRX surveillance list via `t1404` + `t1405`. 13 designations (관리 / 매매정지 / 정리매매 / 단기과열 / 투자위험 + 8 more). Default queries the five most operationally critical kinds. `shcodes` clips against holdings for "any of my holdings on a watchlist?" queries. |
+| `ls_get_analyst_opinions(shcode, count?)` | **v0.8**: per-stock brokerage (sell-side) investment-opinion history via `t3401`. Each entry carries the rating and target price before/after the change, the broker, and the opinion-day close, plus a current-price snapshot. |
+| `ls_get_short_selling_trend(shcode, from?, to?, count?)` | **v0.8**: per-stock daily short-selling (공매도) trend via `t1927`. Short volume / value (백만원), short ratio, average short price, cumulative short volume, and the uptick-rule applied vs. exempt split. |
+| `ls_get_high_low_stocks(direction?, period?, maintained?, market?, top_n?, exclude_etf?)` | **v0.8**: new-high / new-low (신고가 / 신저가) screener via `t1442`. `direction` high/low, `period` look-back (52w default), `maintained` 돌파유지 vs 일시돌파; ETF/ETN dropped by default. |
 
 #### LS themes
 

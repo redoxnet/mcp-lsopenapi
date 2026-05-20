@@ -42,7 +42,7 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 | `t1410` | 초저유동성 조회 | ⚪ | |
 | `t1422` | 상/하한 | ⚪ | |
 | `t1427` | 상/하한가 직전 | ⚪ | |
-| `t1442` | 신고/신저가 | 🔵 💎 | In catalog (`ls_call_tr` only). 신고/신저 스크리너 — 기간(전일~년중)·유지여부·가격/거래량 필터·제외 비트마스크. `ls_get_top_stocks` kind 확장 후보. |
+| `t1442` | 신고/신저가 | 🟢 💎 | `ls_get_high_low_stocks` — 신고/신저가 스크리너. direction·period(52주 등)·maintained(돌파유지/일시돌파), ETF/ETN 제외 기본. |
 | `t1449` | 가격대별 매매비중 조회 | ⚪ | |
 | `t1471` | 시간대별 호가잔량 추이 | ⚪ | |
 | `t1475` | 체결강도 추이 | 🔵 💎 | In catalog (`ls_call_tr` only). 체결강도(VP) 추이 + 5/20/60 이평, 시간별/일별. t8407은 latest만 — 이건 시계열. `ls_get_stock_info` section 흡수 후보. |
@@ -129,10 +129,10 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 | `t3202` | 종목별 증시일정 | ⚪ | Earnings/event calendar |
 | `t3320` | FNG 요약 | ⚪ | F&G index? |
 | `t3341` | 재무순위 종합 | ⚪ 💎 | Fundamentals: PER/PBR/ROE — anchors fundamental analysis tooling |
-| `t3401` | 투자의견 | 🔵 | In catalog (`ls_call_tr` only). 증권사 투자의견 변경 이력 — 의견·목표가 before/after. `ls_get_analyst_opinions` wrapper 후보. |
+| `t3401` | 투자의견 | 🟢 | `ls_get_analyst_opinions` — 종목별 증권사 투자의견 변경 이력 (의견·목표가 before/after, 회원사, 의견일 종가) + 현재가 스냅샷. |
 | `t3518` | 해외 실시간 지수 | 🔵 | In catalog (`ls_call_tr` only). Overseas index / FX / futures series (day/week/month/min/tick) with body continuation (`cts_date`, `cts_time`). |
 | `t3521` | 해외지수 조회 (API용) | 🟢 💡 | `ls_get_global_market_quote` — one-shot overseas index / FX / futures snapshot. Covers major US indices (`nasdaq`, `sp500`, `dow`, `soxx`) and FX (`usdkrw`) aliases. |
-| `t8428` | 증시주변자금 추이 | 🔵 | In catalog (`ls_call_tr` only). 일별 고객예탁금·신용잔고·미수금 + 펀드 자금(주식/혼합/채권/MMF). 매크로 유동성 시계열. |
+| `t8428` | 증시주변자금 추이 | 🟢 | `ls_get_market_funds_trend` — 일별 고객예탁금·신용잔고·미수금·선물예수금 + 펀드 자금(주식/혼합/채권/MMF), 억원. market(kospi/kosdaq) 선택. |
 
 ## [주식] 섹터 — LS curated themes (path `/stock/sector`)
 
@@ -184,7 +184,7 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 | `t1638` | 종목별 잔량/사전공시 | ⚪ | |
 | `t1921` | 신용거래 동향 | ⚪ | |
 | `t1926` | 종목별 신용정보 | ⚪ | |
-| `t1927` | 공매도 일별 추이 | 🔵 💎 | In catalog (`ls_call_tr` only). 일별 공매도 수량·대금·비중·평균단가 + 업틱룰 적용/예외. `ls_get_stock_info` section 흡수 후보. |
+| `t1927` | 공매도 일별 추이 | 🟢 💎 | `ls_get_short_selling_trend` — 종목별 일별 공매도 수량·대금(백만원)·비중·평균단가·누적 + 업틱룰 적용/예외. |
 | `t1941` | 종목별 대차거래 일간 추이 | ⚪ | |
 | `t8430` | 주식 종목조회 (legacy) | 🔵 | Catalog only; superseded by t8436 |
 | `t8436` | 주식 종목조회 API용 | 🟢 💡 | `ls_search_stock` — includes SPAC + 관리종목 flags |
