@@ -2291,12 +2291,12 @@
             { "name": "type1", "type": "char", "description": "신고신저. 0=신고, 1=신저", "required": true, "length": 1, "example": "0" },
             { "name": "type2", "type": "char", "description": "기간. 0=전일, 1=5일, 2=10일, 3=20일, 4=60일, 5=90일, 6=52주, 7=년중", "required": true, "length": 1, "example": "0" },
             { "name": "type3", "type": "char", "description": "유지여부. 0=일시돌파, 1=돌파유지", "required": true, "length": 1, "example": "0" },
-            { "name": "jc_num", "type": "int", "description": "대상제외 비트마스크 (관리종목·시장경보·거래정지·우선주 등)", "required": true, "length": 12 },
+            { "name": "jc_num", "type": "int", "description": "대상제외 비트마스크. 관리종목=0x80, 시장경보=0x100, 거래정지=0x200, 우선주=0x4000, 증거금50/100=0x200000, 증거금50=0x400000, 증거금100=0x800000, 정리매매=0x1000000, 투자유의=0x4000000, 불성실공시=0x80000000. 제외할 항목 값을 합산해 입력 (0=제외 없음)", "required": true, "length": 12 },
             { "name": "sprice", "type": "int", "description": "시작가격. 현재가 >= sprice", "required": true, "length": 8 },
             { "name": "eprice", "type": "int", "description": "종료가격. 현재가 <= eprice", "required": true, "length": 8 },
             { "name": "volume", "type": "long", "description": "거래량 필터. 거래량 >= volume", "required": true, "length": 12 },
             { "name": "idx", "type": "int", "description": "IDX. 처음 조회시 빈 값, 연속 조회시 직전 OutBlock의 idx", "required": true, "length": 4 },
-            { "name": "jc_num2", "type": "int", "description": "대상제외2 비트마스크 (ETF·SPAC·ETN·투자주의/위험 등)", "required": true, "length": 12 }
+            { "name": "jc_num2", "type": "int", "description": "대상제외2 비트마스크. ETF=1, 선박투자회사=2, SPAC=4, ETN=8, 투자주의=16, 투자위험=32, 위험예고=64, 담보불가=128. 제외할 항목 값을 합산해 입력 (예: ETF+ETN 제외 = 9, 0=제외 없음)", "required": true, "length": 12 }
           ]
         }
       ],
@@ -2416,16 +2416,16 @@
             { "name": "change", "type": "int", "description": "전일대비" },
             { "name": "diff", "type": "double", "description": "등락율" },
             { "name": "volume", "type": "long", "description": "거래량" },
-            { "name": "value", "type": "long", "description": "거래대금" },
+            { "name": "value", "type": "long", "description": "거래대금 (단위: 백만원)" },
             { "name": "gm_vo", "type": "long", "description": "공매도수량" },
-            { "name": "gm_va", "type": "long", "description": "공매도대금" },
+            { "name": "gm_va", "type": "long", "description": "공매도대금 (단위: 백만원)" },
             { "name": "gm_per", "type": "double", "description": "공매도 거래비중" },
             { "name": "gm_avg", "type": "long", "description": "평균 공매도단가" },
-            { "name": "gm_vo_sum", "type": "long", "description": "누적공매도수량" },
+            { "name": "gm_vo_sum", "type": "long", "description": "누적공매도수량 (조회 sdate 기준 누적 — 구간 마지막 날 값이 구간 합계)" },
             { "name": "gm_vo1", "type": "long", "description": "업틱룰 적용 공매도수량" },
-            { "name": "gm_va1", "type": "long", "description": "업틱룰 적용 공매도대금" },
+            { "name": "gm_va1", "type": "long", "description": "업틱룰 적용 공매도대금 (단위: 백만원)" },
             { "name": "gm_vo2", "type": "long", "description": "업틱룰 예외 공매도수량" },
-            { "name": "gm_va2", "type": "long", "description": "업틱룰 예외 공매도대금" }
+            { "name": "gm_va2", "type": "long", "description": "업틱룰 예외 공매도대금 (단위: 백만원)" }
           ]
         }
       ],
@@ -2461,7 +2461,7 @@
             { "name": "change", "type": "int", "description": "대비" },
             { "name": "diff", "type": "double", "description": "등락율" },
             { "name": "volume", "type": "long", "description": "거래량" },
-            { "name": "value", "type": "long", "description": "거래대금" }
+            { "name": "value", "type": "long", "description": "거래대금 (단위: 백만원)" }
           ]
         },
         {
