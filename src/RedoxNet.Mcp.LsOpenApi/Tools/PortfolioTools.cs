@@ -14,97 +14,91 @@ internal static class PortfolioTools
 {
     const string DefaultGroup = "default";
 
-    // ---------------------- Watchlist groups ----------------------
+    // ---------------------- Watchlist ----------------------
 
-    [McpServerTool(Name = "ls_watchlist_group_create")]
+    /// <summary>
+    /// v0.10 domain dispatcher (SPEC-v0.10 §2.6.2). Folds ls_watchlist_add /
+    /// ls_watchlist_remove / ls_watchlist_list / ls_watchlist_group_create /
+    /// ls_watchlist_group_delete into one action-routed tool. The v0.7
+    /// sub-merges stay folded — group rename is the group_upsert
+    /// `rename_from` parameter, group listing is action="list" scope="groups".
+    /// </summary>
+    [McpServerTool(Name = "ls_watchlist")]
     [Description("""
-        Creates a watchlist group, updates its description, or renames an existing group — all through the same tool. Does not require LS credentials.
+        Manages the local saved watchlist — stock items and their groups. Does not require LS credentials to save. Pick the operation with `action`:
 
-        USE WHEN: the user asks to "그룹 만들어 / create a list", "그룹 설명 바꿔 / update the description", or "이름 바꿔 / rename group X to Y".
+        - action="list" — lists watchlist data. Default returns grouped items, each enriched with current price / change_pct (batch t8407 when LS credentials are available; partial quote failures allowed). `scope="groups"` instead returns group metadata only ({name, description, sort_order, item_count}). Optional `group_name` filters items.
+        - action="add" — adds `shcode` to a watchlist group (`group_name`, defaults 'default'). Optional `note`. The item is saved even when LS credentials are unavailable.
+        - action="remove" — removes `shcode` from `group_name` (defaults 'default').
+        - action="group_upsert" — creates a group, updates its description, or renames one. `name` is the target group name; with `rename_from` set it renames that group to `name`, otherwise it inserts (or upserts the description). Optional `description`.
+        - action="group_delete" — deletes the group `name` and cascades its saved items.
 
-        Three modes:
-        - rename_from omitted, group `name` does not exist → INSERT the group.
-        - rename_from omitted, group `name` exists → UPDATE its description (upsert).
-        - rename_from set → RENAME the group currently called `rename_from` to `name` and (optionally) override its description. Fails with ValidationError when the target `name` already belongs to a different group.
+        USE WHEN: the user wants to remember / track / 관심종목 추가 a stock, see their watchlist, or manage watchlist groups. AVOID for general market questions unrelated to saved watchlists.
 
-        v0.7 Tier 2 BREAKING: the previous `ls_watchlist_group_rename` tool was folded here as the `rename_from` parameter.
+        v0.10 BREAKING: replaces ls_watchlist_add / ls_watchlist_remove / ls_watchlist_list / ls_watchlist_group_create / ls_watchlist_group_delete.
         """)]
-    public static async Task<string> WatchlistGroupCreate(
+    public static async Task<string> Watchlist(
         IPortfolioService portfolio,
-        [Description("Target group name (the post-rename name when rename_from is set).")]
-        string name,
-        [Description("Optional group description. Applied to the row whose name ends up being `name`.")]
-        string? description = null,
-        [Description("Optional. Existing group name to rename to `name`. Set this for the rename path; leave null/empty for insert / description upsert.")]
-        string? rename_from = null,
-        CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.CreateGroupAsync(name, description, rename_from, cancellationToken)).ConfigureAwait(false);
-
-    [McpServerTool(Name = "ls_watchlist_group_delete")]
-    [Description("Deletes a watchlist group and cascades its saved stock items. Does not require LS credentials.")]
-    public static async Task<string> WatchlistGroupDelete(
-        IPortfolioService portfolio,
-        [Description("Group name to delete.")]
-        string name,
-        CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.DeleteGroupAsync(name, cancellationToken)).ConfigureAwait(false);
-
-    // ---------------------- Watchlist items ----------------------
-
-    [McpServerTool(Name = "ls_watchlist_add")]
-    [Description("""
-        Adds a stock to the local saved watchlist. If group_name is omitted, uses default. If shcode is not in the local stocks cache, the service attempts a lazy LS t8407 metadata fetch; the item is still saved when credentials are unavailable.
-        USE WHEN: the user wants to remember, track, 관심종목 추가, or save a stock for later monitoring.
-        """)]
-    public static async Task<string> WatchlistAdd(
-        IPortfolioService portfolio,
-        [Description("6-character Korean short code (usually 6 digits, some ETFs include an uppercase letter, e.g. '005930' or '0117V0').")]
-        string shcode,
-        [Description("Optional watchlist group_name. Defaults to 'default'.")]
-        string group_name = DefaultGroup,
-        [Description("Optional user note for this watchlist item.")]
-        string? note = null,
-        CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.AddWatchlistAsync(shcode, group_name, note, cancellationToken)).ConfigureAwait(false);
-
-    [McpServerTool(Name = "ls_watchlist_remove")]
-    [Description("Removes shcode from a local saved watchlist group_name. Does not require LS credentials.")]
-    public static async Task<string> WatchlistRemove(
-        IPortfolioService portfolio,
-        [Description("6-character Korean short code (usually 6 digits, some ETFs include an uppercase letter, e.g. '005930' or '0117V0').")]
-        string shcode,
-        [Description("Optional watchlist group_name. Defaults to 'default'.")]
-        string group_name = DefaultGroup,
-        CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.RemoveWatchlistAsync(shcode, group_name, cancellationToken)).ConfigureAwait(false);
-
-    [McpServerTool(Name = "ls_watchlist_list")]
-    [Description("""
-        Lists local saved watchlist data. Two shapes selected by `scope`:
-        - scope="items" (default) → grouped watchlist items, each enriched with current price / change_pct via batch t8407 when LS credentials are available. Partial quote failures are allowed: quote may be null but saved items still return.
-        - scope="groups" → group metadata only ({ name, description, sort_order, item_count } per group). No LS calls.
-
-        v0.7 Tier 2 BREAKING: the previous `ls_watchlist_groups_list` tool was folded here as `scope="groups"`.
-
-        USE WHEN: the user asks for 관심종목 / watchlist / tracked stocks (scope="items"), or for the saved group list / "내 watchlist 그룹 뭐가 있어 / show my watchlist groups" (scope="groups"). AVOID WHEN: the user asks general market info unrelated to saved watchlists.
-        """)]
-    public static async Task<string> WatchlistList(
-        IPortfolioService portfolio,
-        [Description("Optional group name (only meaningful when scope='items'). When omitted, all groups are returned, including empty groups.")]
+        [Description("Operation to perform: 'list', 'add', 'remove', 'group_upsert', or 'group_delete'.")]
+        string action,
+        [Description("add / remove: 6-character Korean short code (e.g. '005930' or '0117V0').")]
+        string? shcode = null,
+        [Description("add / remove: watchlist group name (defaults to 'default'). list: optional group filter (scope='items' only).")]
         string? group_name = null,
-        [Description("Optional. 'items' (default) returns grouped items + quote enrichment; 'groups' returns group metadata only.")]
+        [Description("add: optional user note for this watchlist item.")]
+        string? note = null,
+        [Description("list: 'items' (default — grouped items + quote enrichment) or 'groups' (group metadata only).")]
         string? scope = null,
+        [Description("group_upsert / group_delete: the target group name.")]
+        string? name = null,
+        [Description("group_upsert: optional group description.")]
+        string? description = null,
+        [Description("group_upsert: optional existing group name to rename to `name`.")]
+        string? rename_from = null,
         CancellationToken cancellationToken = default)
+    {
+        const string tool = "ls_watchlist";
+        switch (NormalizeAction(action))
+        {
+            case "list":
+                return await WatchlistListAsync(portfolio, group_name, scope, cancellationToken).ConfigureAwait(false);
+            case "add":
+                if (string.IsNullOrWhiteSpace(shcode))
+                    return MissingArgs(tool, "add", "shcode");
+                return await SerializeAsync(() => portfolio.AddWatchlistAsync(shcode!, group_name ?? DefaultGroup, note, cancellationToken)).ConfigureAwait(false);
+            case "remove":
+                if (string.IsNullOrWhiteSpace(shcode))
+                    return MissingArgs(tool, "remove", "shcode");
+                return await SerializeAsync(() => portfolio.RemoveWatchlistAsync(shcode!, group_name ?? DefaultGroup, cancellationToken)).ConfigureAwait(false);
+            case "group_upsert":
+                if (string.IsNullOrWhiteSpace(name))
+                    return MissingArgs(tool, "group_upsert", "name");
+                return await SerializeAsync(() => portfolio.CreateGroupAsync(name!, description, rename_from, cancellationToken)).ConfigureAwait(false);
+            case "group_delete":
+                if (string.IsNullOrWhiteSpace(name))
+                    return MissingArgs(tool, "group_delete", "name");
+                return await SerializeAsync(() => portfolio.DeleteGroupAsync(name!, cancellationToken)).ConfigureAwait(false);
+            default:
+                return UnknownAction(tool, action, "list", "add", "remove", "group_upsert", "group_delete");
+        }
+    }
+
+    /// <summary>action="list" body — dispatches the <c>scope</c> shape (items vs groups).</summary>
+    static async Task<string> WatchlistListAsync(
+        IPortfolioService portfolio,
+        string? groupName,
+        string? scope,
+        CancellationToken cancellationToken)
     {
         string normalizedScope = string.IsNullOrWhiteSpace(scope) ? "items" : scope.Trim().ToLowerInvariant();
         if (normalizedScope != "items" && normalizedScope != "groups")
             return McpJson.Error($"scope '{scope}' is not recognized. Use 'items' (default) or 'groups'.");
-        if (normalizedScope == "groups" && !string.IsNullOrWhiteSpace(group_name))
+        if (normalizedScope == "groups" && !string.IsNullOrWhiteSpace(groupName))
             return McpJson.Error("scope='groups' does not accept group_name. Use scope='items' to filter items by group.");
         return normalizedScope switch
         {
             "groups" => await SerializeAsync(async () => new { scope = "groups", groups = await portfolio.ListGroupsAsync(cancellationToken).ConfigureAwait(false) }).ConfigureAwait(false),
-            _ => await SerializeAsync(() => portfolio.ListWatchlistAsync(group_name, cancellationToken)).ConfigureAwait(false),
+            _ => await SerializeAsync(() => portfolio.ListWatchlistAsync(groupName, cancellationToken)).ConfigureAwait(false),
         };
     }
 
