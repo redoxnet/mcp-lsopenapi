@@ -2,17 +2,11 @@ name: Publish to MCP Registry
 
 # Manual trigger. Run this AFTER the matching RedoxNet.Mcp.LsOpenApi version is
 # live on nuget.org: the MCP Registry validates the `mcp-name` line in the
-# published NuGet package's README, so NuGet must be indexed first.
-#
-# dry_run defaults to true — the first run only validates. Re-run with
-# dry_run=false to actually publish.
+# published NuGet package's README, so NuGet must be indexed first. The manual
+# workflow_dispatch is the safety gate — mcp-publisher has no client-side
+# dry-run / validate-only mode.
 on:
   workflow_dispatch:
-    inputs:
-      dry_run:
-        description: "Validate only — do not publish to the registry"
-        type: boolean
-        default: true
 
 jobs:
   publish:
@@ -24,26 +18,21 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # mcp-publisher is the official CLI from modelcontextprotocol/registry.
-      # If `go install` fails, confirm the module path against the current
-      # mcp-publisher release docs and adjust.
-      - uses: actions/setup-go@v5
-        with:
-          go-version: stable
-
+      # Official install path (https://modelcontextprotocol.io/registry/github-actions):
+      # the prebuilt mcp-publisher binary from the registry releases. `go install`
+      # does NOT work — the registry Go module exposes no cmd/mcp-publisher package.
       - name: Install mcp-publisher
-        run: go install github.com/modelcontextprotocol/registry/cmd/mcp-publisher@latest
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
 
       # GitHub Actions OIDC login. The workflow's repository owner must own the
       # io.github.redoxnet namespace declared in .mcp/server.json.
       - name: Authenticate (GitHub OIDC)
-        run: mcp-publisher login github-oidc
+        run: ./mcp-publisher login github-oidc
 
+      # mcp-publisher reads server.json from the working directory; the binary
+      # itself was extracted to the repo root by the install step.
       - name: Publish server.json
         working-directory: src/RedoxNet.Mcp.LsOpenApi/.mcp
         run: |
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
-            mcp-publisher publish --dry-run
-          else
-            mcp-publisher publish
-          fi
+          "$GITHUB_WORKSPACE/mcp-publisher" publish
