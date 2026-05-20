@@ -115,19 +115,19 @@ public class GetStockInfoToolFixtureTests
     }
 
     [Fact]
-    public async Task GetStockInfo_Range52w_AndYtd()
+    public async Task GetStockInfo_PeriodsSection_52wAndYtd()
     {
         var (client, _) = TestClientFactory.Create((_, _) => Ok(TestbedT1102Response));
 
-        string result = await GetStockInfoTool.GetStockInfo(client, "078020");
-        JsonElement range = JsonDocument.Parse(result).RootElement.GetProperty("range");
+        string result = await GetStockInfoTool.GetStockInfo(client, "078020", new[] { "periods" });
+        JsonElement periods = JsonDocument.Parse(result).RootElement.GetProperty("periods");
 
-        range.GetProperty("week52").GetProperty("high").GetInt64().Should().Be(7110);
-        range.GetProperty("week52").GetProperty("low").GetInt64().Should().Be(4135);
-        range.GetProperty("week52").GetProperty("high_date").GetString().Should().Be("20220607");
+        periods.GetProperty("week52").GetProperty("high").GetInt64().Should().Be(7110);
+        periods.GetProperty("week52").GetProperty("low").GetInt64().Should().Be(4135);
+        periods.GetProperty("week52").GetProperty("high_date").GetString().Should().Be("20220607");
 
-        range.GetProperty("ytd").GetProperty("high").GetInt64().Should().Be(5480);
-        range.GetProperty("ytd").GetProperty("low").GetInt64().Should().Be(4135);
+        periods.GetProperty("ytd").GetProperty("high").GetInt64().Should().Be(5480);
+        periods.GetProperty("ytd").GetProperty("low").GetInt64().Should().Be(4135);
     }
 
     [Fact]
@@ -157,12 +157,12 @@ public class GetStockInfoToolFixtureTests
     }
 
     [Fact]
-    public async Task GetStockInfo_Brokerage_TopFiveSellersAndBuyers()
+    public async Task GetStockInfo_BrokersSection_TopFiveSellersAndBuyers()
     {
         var (client, _) = TestClientFactory.Create((_, _) => Ok(TestbedT1102Response));
 
-        string result = await GetStockInfoTool.GetStockInfo(client, "078020");
-        JsonElement brokerage = JsonDocument.Parse(result).RootElement.GetProperty("brokerage");
+        string result = await GetStockInfoTool.GetStockInfo(client, "078020", new[] { "brokers" });
+        JsonElement brokerage = JsonDocument.Parse(result).RootElement.GetProperty("brokers");
 
         JsonElement sellers = brokerage.GetProperty("sellers");
         sellers.GetArrayLength().Should().Be(5);
@@ -179,12 +179,12 @@ public class GetStockInfoToolFixtureTests
     }
 
     [Fact]
-    public async Task GetStockInfo_ForeignInvestor_Block()
+    public async Task GetStockInfo_ForeignSection_Block()
     {
         var (client, _) = TestClientFactory.Create((_, _) => Ok(TestbedT1102Response));
 
-        string result = await GetStockInfoTool.GetStockInfo(client, "078020");
-        JsonElement fi = JsonDocument.Parse(result).RootElement.GetProperty("foreign_investor");
+        string result = await GetStockInfoTool.GetStockInfo(client, "078020", new[] { "foreign" });
+        JsonElement fi = JsonDocument.Parse(result).RootElement.GetProperty("foreign");
 
         fi.GetProperty("holdings_shares").GetInt64().Should().Be(15778);
         fi.GetProperty("holdings_percent").GetDouble().Should().BeApproximately(0.78, 0.01);
@@ -192,22 +192,106 @@ public class GetStockInfoToolFixtureTests
     }
 
     [Fact]
-    public async Task GetStockInfo_Listing_AndFlags()
+    public async Task GetStockInfo_CapitalAndFlagsSections()
+    {
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(TestbedT1102Response));
+
+        string result = await GetStockInfoTool.GetStockInfo(client, "078020", new[] { "fundamentals", "flags" });
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        // The former top-level `listing` block now nests under fundamentals.capital.
+        JsonElement capital = root.GetProperty("fundamentals").GetProperty("capital");
+        capital.GetProperty("shares_in_thousands").GetInt64().Should().Be(55481);
+        capital.GetProperty("capital_in_100m_won").GetInt64().Should().Be(2774);
+        capital.GetProperty("market_cap_in_100m_won").GetInt64().Should().Be(2516);
+
+        JsonElement flags = root.GetProperty("flags");
+        flags.GetProperty("is_spac").GetBoolean().Should().BeFalse();
+        flags.GetProperty("abnormal_rise").GetString().Should().Be("0");
+        flags.GetProperty("low_liquidity").GetString().Should().Be("0");
+    }
+
+    // ---------------------- v0.9 §4.3 — pattern A (sections) ----------------------
+
+    [Fact]
+    public async Task GetStockInfo_Default_OnlySnapshotAndFundamentals()
     {
         var (client, _) = TestClientFactory.Create((_, _) => Ok(TestbedT1102Response));
 
         string result = await GetStockInfoTool.GetStockInfo(client, "078020");
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
-        JsonElement listing = root.GetProperty("listing");
-        listing.GetProperty("shares_in_thousands").GetInt64().Should().Be(55481);
-        listing.GetProperty("capital_in_100m_won").GetInt64().Should().Be(2774);
-        listing.GetProperty("market_cap_in_100m_won").GetInt64().Should().Be(2516);
+        root.GetProperty("sections_shown").EnumerateArray().Select(e => e.GetString())
+            .Should().Equal("snapshot", "fundamentals");
+        root.TryGetProperty("snapshot", out _).Should().BeTrue();
+        root.TryGetProperty("fundamentals", out _).Should().BeTrue();
+        root.TryGetProperty("periods", out _).Should().BeFalse("unselected sections are omitted");
+        root.TryGetProperty("brokers", out _).Should().BeFalse();
+        root.TryGetProperty("foreign", out _).Should().BeFalse();
+        root.TryGetProperty("flags", out _).Should().BeFalse();
+    }
 
-        JsonElement flags = root.GetProperty("flags");
-        flags.GetProperty("is_spac").GetBoolean().Should().BeFalse();
-        flags.GetProperty("abnormal_rise").GetString().Should().Be("0");
-        flags.GetProperty("low_liquidity").GetString().Should().Be("0");
+    [Fact]
+    public async Task GetStockInfo_ExplicitSections_EmitsOnlyRequested()
+    {
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(TestbedT1102Response));
+
+        string result = await GetStockInfoTool.GetStockInfo(client, "078020", new[] { "snapshot" });
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        root.GetProperty("sections_shown").EnumerateArray().Should().ContainSingle();
+        root.TryGetProperty("snapshot", out _).Should().BeTrue();
+        root.TryGetProperty("fundamentals", out _).Should().BeFalse("only the requested section is emitted");
+    }
+
+    [Fact]
+    public async Task GetStockInfo_SectionsEchoedInCanonicalOrder()
+    {
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(TestbedT1102Response));
+
+        // Requested out of order — echo and emission follow canonical order.
+        string result = await GetStockInfoTool.GetStockInfo(client, "078020", new[] { "flags", "snapshot" });
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        root.GetProperty("sections_shown").EnumerateArray().Select(e => e.GetString())
+            .Should().Equal("snapshot", "flags");
+    }
+
+    [Fact]
+    public async Task GetStockInfo_UnknownSection_ReturnsValidationError()
+    {
+        var (client, handler) = TestClientFactory.Create((_, _) => Ok(TestbedT1102Response));
+
+        string result = await GetStockInfoTool.GetStockInfo(client, "078020", new[] { "bogus" });
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        handler.Requests.Should().BeEmpty("validation error short-circuits before any TR call");
+        root.GetProperty("error").GetString().Should().Contain("bogus");
+    }
+
+    [Fact]
+    public async Task GetStockInfo_Default_FitsTokenBudget()
+    {
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(TestbedT1102Response));
+
+        string result = await GetStockInfoTool.GetStockInfo(client, "078020");
+
+        // Default = snapshot + fundamentals. Measured ~551 tokens (cl100k_base).
+        result.ShouldFitTokenBudget(800);
+    }
+
+    [Fact]
+    public async Task GetStockInfo_AllSections_FitsTokenBudget()
+    {
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(TestbedT1102Response));
+
+        string result = await GetStockInfoTool.GetStockInfo(
+            client, "078020",
+            new[] { "snapshot", "fundamentals", "periods", "brokers", "foreign", "flags" });
+
+        // All 6 sections. Measured ~1,605 tokens (cl100k_base); headroom for
+        // stocks with populated disclosure text in the flags section.
+        result.ShouldFitTokenBudget(2500);
     }
 
     [Fact]

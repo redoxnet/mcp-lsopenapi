@@ -29,6 +29,14 @@ internal sealed record Slice<T>(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     IReadOnlyList<T>? Items);
 
+/// <summary>
+/// Result of <see cref="ResponseShape.ParseSections"/>: the selected section
+/// names in canonical order, plus any requested names that were not recognized.
+/// </summary>
+internal sealed record SectionSelection(
+    IReadOnlyList<string> Selected,
+    IReadOnlyList<string> Unknown);
+
 /// <summary>Factory for <see cref="Slice{T}"/> projections.</summary>
 internal static class Slice
 {
@@ -105,4 +113,36 @@ internal static class ResponseShape
         VerbosityMode.Full => "full",
         _ => "summary",
     };
+
+    /// <summary>
+    /// Parses an A-pattern <c>sections</c> argument. A null or blank-only request
+    /// resolves to <paramref name="defaults"/>. The selection is returned in
+    /// <paramref name="allowed"/> (canonical) order regardless of request order;
+    /// unrecognized names are reported in <see cref="SectionSelection.Unknown"/>
+    /// so the tool can surface a validation error.
+    /// </summary>
+    public static SectionSelection ParseSections(
+        IEnumerable<string>? requested,
+        IReadOnlyList<string> allowed,
+        IReadOnlyList<string> defaults)
+    {
+        List<string> req = (requested ?? Enumerable.Empty<string>())
+            .Select(s => s?.Trim() ?? string.Empty)
+            .Where(s => s.Length > 0)
+            .ToList();
+
+        if (req.Count == 0)
+            return new SectionSelection(defaults, Array.Empty<string>());
+
+        var allowedSet = new HashSet<string>(allowed, StringComparer.OrdinalIgnoreCase);
+        var requestedSet = new HashSet<string>(req, StringComparer.OrdinalIgnoreCase);
+
+        IReadOnlyList<string> selected = allowed.Where(requestedSet.Contains).ToList();
+        IReadOnlyList<string> unknown = req
+            .Where(s => !allowedSet.Contains(s))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return new SectionSelection(selected, unknown);
+    }
 }

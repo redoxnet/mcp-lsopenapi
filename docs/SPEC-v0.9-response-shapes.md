@@ -118,8 +118,8 @@ public async Task GetIndexHistory_Summary60Bars_FitsTokenBudget()
 | `ls_get_index_history` summary (60d) | 500 | 측정 299. 기본 모드. |
 | `ls_get_index_history` compact (60d) | 1,500 | 측정 1,051. summary + 최근 5봉. |
 | `ls_get_index_history` full (60d) | 11,000 | 측정 8,979. 전체 봉, v0.8 호환 복원. |
-| `ls_get_stock_info` default | 1,000 | Phase 1 `stock_info`에서 측정·pin. |
-| `ls_get_stock_info` full sections | 3,000 | Phase 1 `stock_info`에서 측정·pin. |
+| `ls_get_stock_info` default | 800 | 측정 551. snapshot + fundamentals. |
+| `ls_get_stock_info` full sections | 2,500 | 측정 1,605. 6개 섹션 전체. |
 | `ls_holdings_list` default (10 holdings) | 2,000 | Phase 1 `holdings_list`에서 측정·pin. |
 | `ls_holdings_list` full (10 holdings) | 6,000 | Phase 1 `holdings_list`에서 측정·pin. |
 
@@ -135,7 +135,7 @@ v0.8 surface 48 tools 전부를 한꺼번에 refactor하는 건 risk 큼. **3-5�
 
 1. ✓ **공통 인프라**: `TokenEstimator`(cl100k_base) 테스트 헬퍼 + `ResponseShape` 공통 헬퍼 + budget 테이블. (→ §4.1)
 2. ✓ **`ls_get_index_history`** (패턴 B) — 60일 dense 시계열. `summary` 블록 + `verbosity`. (→ §4.2)
-3. **`ls_get_stock_info`** (패턴 A) — 단일 종목 ~50 fields. `sections` 카테고리 필터. A의 가장 순수한 케이스. (→ §4.3)
+3. ✓ **`ls_get_stock_info`** (패턴 A) — 단일 종목 ~50 fields. `sections` 카테고리 필터. A의 가장 순수한 케이스. (→ §4.3)
 4. **`ls_holdings_list`** (패턴 A 누락) — 보유 종목당 themes 평균 15개로 폭발. `themes_limit` + `include_*`. A + 리스트 + 테마 폭발 복합 케이스. (→ §4.4)
 
 ### Phase 2 — 리스트성 도구 D 컨벤션 정착 (v0.9.x)
@@ -243,7 +243,7 @@ ls_get_index_history(
 - `breadth_unit: "stocks_per_day"` — `breadth_avg`는 일평균 상승/하락/보합 *종목 수*.
 - `flows_unit: "thousand_shares"` — `flows_total`은 외인·기관 누적 순매수. t1514 `frgsvolume`/`orgsvolume` = **천주** (구현 `[Description]`과 일치; 초안의 `million_krw`는 오기 — 정정).
 
-### 4.3 `ls_get_stock_info` — A 패턴 적용
+### 4.3 `ls_get_stock_info` — A 패턴 적용 — ✓ 구현 완료
 
 A의 가장 순수한 케이스(단일 종목, 단일 응답, 명확한 카테고리) — Phase 1에서 `holdings_list`보다 먼저 작업해 `sections` 컨벤션을 확정.
 
@@ -256,16 +256,16 @@ ls_get_stock_info(
 ```
 
 **sections 의미**:
-- `"snapshot"`: 현재가/거래량/OHLC.
-- `"fundamentals"`: PER/PBR/EPS + 분기 재무 + 성장률.
-- `"periods"`: 52주 / YTD 범위 + 이격도.
-- `"brokers"`: top-5 매수/매도 거래원.
-- `"foreign"`: 외인 동향 + 보유 비율.
-- `"flags"`: SPAC / 관리종목 / 단기과열 등 상태 플래그.
+- `"snapshot"`: 현재가 / 등락 / 거래량 / OHLC / 상하한가 / 회전율.
+- `"fundamentals"`: PER / PBR / EPS + 분기 재무(전기 대비) + 성장률 + `capital`(시가총액·상장주식수·자본금).
+- `"periods"`: 52주 / 연중(YTD) 고저 범위. (t1102에 이격도 필드 없음 — 범위만.)
+- `"brokers"`: top-5 매수 / 매도 거래원.
+- `"foreign"`: 외인 보유 비율 + 순매수 동향.
+- `"flags"`: SPAC / 단기과열 / 저유동성 / 배당 구분 플래그 + 공시 텍스트.
 
-각 섹션은 응답에서 별도 키로 emit. 미선택 섹션은 omit. 응답에 `sections_shown: [...]` echo. section 파싱은 `ResponseShape.ParseSections`로 공통화하며 (이 작업 시 헬퍼에 추가), 미인식 section 이름은 validation error로 surface.
+식별 헤더(`shcode`, `name`, `market`, `currency`, `listing_date`, `par_value`, `trade_unit`)는 섹션과 무관하게 always emit. 각 섹션은 별도 키로 emit, 미선택 섹션은 omit, `sections_shown`으로 echo. section 파싱은 `ResponseShape.ParseSections`로 공통화 — 미인식 section 이름은 전체 호출을 validation error로 surface(typo 가시화).
 
-토큰 예상: 전체 호출 ~2.5k → `sections=["snapshot","fundamentals"]` ~800 토큰 (Phase 1 작업 시 실측 pin).
+토큰 실측 (cl100k, 078020 fixture): 6개 섹션 전체 1,605 → default `["snapshot","fundamentals"]` 551 토큰 (66% 절감).
 
 ### 4.4 `ls_holdings_list` — A 패턴 적용 (amendments A2 / A3 / A6)
 
@@ -404,7 +404,7 @@ TokenEstimator(cl100k_base) + ResponseShape 헬퍼 + budget 테이블 (인프라
    ↓
 ls_get_index_history B 적용 (가장 깔끔, 학습용)  ✓
    ↓
-ls_get_stock_info sections (A pattern 순수 케이스 — 컨벤션 확정)
+ls_get_stock_info sections (A pattern 순수 케이스 — 컨벤션 확정)  ✓
    ↓
 ls_holdings_list A 적용 (가장 큰 절감, 복합 케이스)
    ↓
