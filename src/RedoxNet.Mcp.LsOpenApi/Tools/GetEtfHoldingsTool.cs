@@ -23,7 +23,7 @@ public static class GetEtfHoldingsTool
     /// <param name="apiClient">Injected LS API client.</param>
     /// <param name="shcode">6-digit Korean short code of an ETF.</param>
     /// <param name="date">Optional PDF basis date in <c>yyyyMMdd</c>; defaults to today (KST).</param>
-    /// <param name="top_n">Optional cap on the number of constituents returned, taken from the top of the LS-sorted list. <see langword="null"/> returns all holdings.</param>
+    /// <param name="top_n">Cap on the constituents returned, from the top of the LS-sorted list. Defaults to 20; pass -1 for the full list.</param>
     /// <param name="include_chart">If true, ship a Plotly treemap spec + side-panel as structuredContent so MCP Apps (SEP-1865) hosts render the composition inline. Default false.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Text content with the ETF summary and the holdings array, plus an optional <c>structuredContent.chart</c>/<c>panel</c> pair for inline rendering.</returns>
@@ -36,7 +36,7 @@ public static class GetEtfHoldingsTool
 
         The basis date defaults to today (KST). LS publishes PDF per trading day, so on weekends or before today's PDF is posted, pass an explicit `date` (yyyyMMdd) of a recent trading day. Holdings come back sorted by valuation amount (LS InBlock `sgb=1`); the alternative `sgb=2` (share count) is accessible via `ls_call_tr` if needed.
 
-        Use `top_n` to cap the constituent array (e.g. `top_n=10` for the largest-10 view). Useful when an ETF has 200+ holdings (KODEX 200 ≈ 201) and the full payload would blow past inline token budgets. The summary block (`holdings_count`, AUM, NAV, etc.) always reflects the full ETF — only the `holdings[]` array is truncated.
+        `top_n` caps the constituent array — it defaults to 20, since the largest holdings carry most of an ETF's weight. Pass `top_n=-1` for the full list; an ETF with 200+ holdings (KODEX 200 ≈ 201) returned in full would blow past inline token budgets. The summary block (`holdings_count`, AUM, NAV, etc.) always reflects the full ETF regardless — only the `holdings[]` array is capped, and `holdings_truncated` flags when it was.
 
         Set include_chart=true for inline composition rendering on MCP Apps hosts (Claude Desktop, Claude.ai, ChatGPT, Goose, VS Code). A Plotly treemap + top-10 side panel ships as structuredContent (not in the model's text context — zero token cost) and the host's iframe renders it via ui://lsopenapi/plotly. The panel surfaces a concentration badge (분산형 / 균형형 / 집중형 / 초집중형 by top-5 cumulative weight), the top-10 cumulative weights, and notes for single-name concentrations ≥30% and cash buffers.
 
@@ -48,16 +48,16 @@ public static class GetEtfHoldingsTool
         string shcode,
         [Description("Optional PDF basis date in 'yyyyMMdd' format. Defaults to today (KST). Use an explicit weekday date if today's PDF hasn't been posted yet.")]
         string? date = null,
-        [Description("Optional cap on the holdings array — e.g. 10 for top-10 view. Default: return every constituent.")]
-        int? top_n = null,
+        [Description("Cap on the holdings array. Default 20 — the largest holdings carry most of an ETF's weight. Pass -1 for the full list.")]
+        int top_n = 20,
         [Description("If true, ship a Plotly treemap + side-panel as structuredContent so MCP Apps hosts render the composition inline. Default false.")]
         bool include_chart = false,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(shcode))
             return McpJson.ErrorResult("shcode is required.");
-        if (top_n is int n && n <= 0)
-            return McpJson.ErrorResult("top_n must be a positive integer.");
+        if (top_n == 0 || top_n < -1)
+            return McpJson.ErrorResult("top_n must be a positive integer, or -1 for the full list.");
 
         // LS's t1904 InBlock requires three fields: shcode, date (yyyyMMdd), and
         // sgb (정렬기준 — 1=평가금액, 2=증권수). Omitting any of date or sgb
@@ -107,7 +107,9 @@ public static class GetEtfHoldingsTool
             JsonElement s = summaryBlock.Value;
 
             var holdings = new List<object>();
-            int? cap = top_n;
+            // top_n = -1 is the opt-in "full list" sentinel (consistent with
+            // themes_limit on ls_holdings_list); a null cap means no truncation.
+            int? cap = top_n < 0 ? null : top_n;
             int rowsInResponse = holdingsBlock is { ValueKind: JsonValueKind.Array }
                 ? holdingsBlock.Value.GetArrayLength()
                 : 0;

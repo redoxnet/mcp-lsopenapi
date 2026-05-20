@@ -130,7 +130,7 @@ v0.10 (BREAKING) compresses the tool surface: the twenty v0.9 portfolio tools fo
 | `ls_reframe_chart` | (handle cache + chart TR) | Reframes a `dataset_id` to a new period/count using the cached symbol. Example: *"이걸 일봉으로 바꿔서 최근 6개월만 보여줘"*. |
 | `ls_search_stock` | `t8436` | Name → code search with `instrument` filter (`all` / `stock` / `etf`). |
 | `ls_get_etf_info` | `t1901` | ETF/ETN snapshot — NAV, 괴리율, 추적오차율, reference index, AUM, LP list. |
-| `ls_get_etf_holdings` | `t1904` | ETF PDF (구성종목) with optional `top_n` cap. |
+| `ls_get_etf_holdings` | `t1904` | ETF PDF (구성종목) — per-holding weight / valuation. `top_n` caps the rows (default 20; `top_n=-1` for the full list). |
 | `ls_get_global_market_quote` | `t3521` | Overseas index / FX / futures snapshot. Aliases include `nasdaq`, `sp500`, `dow`, `soxx`, `usdkrw`, `wti`, `gold`; raw LS symbols like `NAS@IXIC` are accepted. |
 
 ### Index + industry (LS-backed)

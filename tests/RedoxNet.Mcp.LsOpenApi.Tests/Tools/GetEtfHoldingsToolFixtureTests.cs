@@ -143,20 +143,38 @@ public class GetEtfHoldingsToolFixtureTests
         root.GetProperty("holdings_truncated").GetBoolean().Should().BeFalse();
     }
 
-    [Fact]
-    public async Task GetEtfHoldings_TopN_ZeroOrNegative_ReturnsError()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-5)]
+    public async Task GetEtfHoldings_TopN_ZeroOrBelowMinusOne_ReturnsError(int topN)
     {
         var (client, _) = TestClientFactory.Create((_, _) => Ok(TestbedT1904Response));
 
-        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500", top_n: 0).TextContent();
+        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500", top_n: topN).TextContent();
 
         JsonDocument.Parse(result).RootElement.GetProperty("error").GetString()
             .Should().Contain("top_n");
     }
 
     [Fact]
-    public async Task GetEtfHoldings_NoTopN_ReturnsAll_WithFalseTruncatedFlag()
+    public async Task GetEtfHoldings_TopNMinusOne_ReturnsAllHoldings()
     {
+        // -1 is the opt-in "full list" sentinel, consistent with themes_limit
+        // on ls_holdings_list — it bypasses the default 20-row cap.
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(BuildT1904WithHoldings(25)));
+
+        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500", top_n: -1).TextContent();
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        root.GetProperty("holdings").GetArrayLength().Should().Be(25);
+        root.GetProperty("holdings_truncated").GetBoolean().Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetEtfHoldings_NoTopN_WithinDefaultCap_ReturnsAllUntruncated()
+    {
+        // The fixture has 2 holdings — under the default top_n=20 — so an
+        // un-capped call still returns everything and is not flagged truncated.
         var (client, _) = TestClientFactory.Create((_, _) => Ok(TestbedT1904Response));
 
         string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500").TextContent();
@@ -164,6 +182,39 @@ public class GetEtfHoldingsToolFixtureTests
 
         root.GetProperty("holdings").GetArrayLength().Should().Be(2);
         root.GetProperty("holdings_truncated").GetBoolean().Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetEtfHoldings_NoTopN_DefaultCapsAtTwenty()
+    {
+        // v0.10.1: top_n defaults to 20 so a large ETF doesn't dump every
+        // constituent into context. The summary still reports the full count.
+        var (client, _) = TestClientFactory.Create((_, _) => Ok(BuildT1904WithHoldings(25)));
+
+        string result = await GetEtfHoldingsTool.GetEtfHoldings(client, "069500").TextContent();
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        root.GetProperty("holdings").GetArrayLength().Should().Be(20, "the default top_n caps the array at 20");
+        root.GetProperty("holdings_returned").GetInt32().Should().Be(20);
+        root.GetProperty("holdings_truncated").GetBoolean().Should().BeTrue();
+        root.GetProperty("holdings_count").GetInt64().Should().Be(25, "the summary still reports every constituent");
+    }
+
+    /// <summary>Builds a synthetic t1904 response with <paramref name="count"/> uniform holdings.</summary>
+    static string BuildT1904WithHoldings(int count)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append("""{"rsp_cd":"00000","t1904OutBlock":{"date":"20230104","chk_tday":"1","price":10000,"nav":"10000.00","etfnum":""");
+        sb.Append(count);
+        sb.Append(""","etfcunum":1,"etftotcap":100,"tot_pval":0,"tot_sigatval":0,"cash":0},"t1904OutBlock1":[""");
+        for (int i = 0; i < count; i++)
+        {
+            if (i > 0) sb.Append(',');
+            string code = (100000 + i).ToString("D6", System.Globalization.CultureInfo.InvariantCulture);
+            sb.Append($$"""{"shcode":"{{code}}","hname":"종목{{i}}","weight":"1.00","price":1000,"sign":"3","change":0,"diff":"0","volume":0,"value":0,"pvalue":0,"sigatvalue":0,"parprice":0,"profitdate":""}""");
+        }
+        sb.Append("]}");
+        return sb.ToString();
     }
 
     [Fact]

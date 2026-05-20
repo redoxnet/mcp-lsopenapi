@@ -11,7 +11,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 
-    <Version>0.10.0</Version>
+    <Version>0.10.1</Version>
     <PackageId>RedoxNet.LsOpenApi.Core</PackageId>
     <Authors>Jong Hyun Kim</Authors>
     <Company>RedoxNet</Company>
@@ -24,7 +24,7 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
 	<PackageIcon>icon.png</PackageIcon>
     <Copyright>Copyright (c) 2026 RedoxNet</Copyright>
-    <PackageReleaseNotes>v0.10.0: One embedded-catalog addition — t1716 (외국인기간별추이, /stock/frgr-itt), the 금감원 foreign held-share level series. It backs the new opt-in `foreign` section on ls_get_stock_info in RedoxNet.Mcp.LsOpenApi 0.10.0. Catalog count 45 → 46 TRs. Lockstep version bump with RedoxNet.Mcp.LsOpenApi 0.10.0. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Core.md for full notes.</PackageReleaseNotes>
+    <PackageReleaseNotes>v0.10.1: No Core code changes — lockstep version bump with RedoxNet.Mcp.LsOpenApi 0.10.1 (which fixes the MCP Registry publish and caps the ls_get_etf_holdings default page size). The embedded TR catalog and all public Core APIs are identical to 0.10.0. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Core.md for full notes.</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>

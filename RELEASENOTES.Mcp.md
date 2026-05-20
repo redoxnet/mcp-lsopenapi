@@ -1,5 +1,22 @@
 # Release Notes — RedoxNet.Mcp.LsOpenApi
 
+## v0.10.1 (2026-05-20)
+
+Patch over v0.10.0 — fixes the MCP Registry publish and one token-budget gap.
+
+### Fixed
+
+- **MCP Registry publish.** `.mcp/server.json`'s `description` exceeded the
+  registry's 100-character limit, so `mcp-publisher publish` failed
+  validation (HTTP 422 on `body.description`). Shortened the description.
+- **`ls_get_etf_holdings` token budget.** `top_n` defaulted to *unbounded* —
+  an un-capped call on a 200+-holding ETF could dump 20k+ tokens into
+  context. The default is now **20** (the largest holdings carry most of an
+  ETF's weight); pass `top_n=-1` for the full list. The summary block's
+  `holdings_count` still reports the full constituent count.
+
+Versioned in lockstep with `RedoxNet.LsOpenApi.Core` 0.10.1 (no Core code changes).
+
 ## v0.10.0 (2026-05-20)
 
 The **last 0.x minor** — it clears the entire post-v0.9 SPEC backlog in

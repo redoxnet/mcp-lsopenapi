@@ -1,5 +1,13 @@
 # Release Notes — RedoxNet.LsOpenApi.Core
 
+## v0.10.1 (2026-05-20)
+
+No Core code changes — a lockstep version bump with
+`RedoxNet.Mcp.LsOpenApi` 0.10.1, which fixes the MCP Registry publish
+(an over-long `.mcp/server.json` description) and caps the
+`ls_get_etf_holdings` default page size. The embedded TR catalog and all
+public Core APIs are identical to 0.10.0.
+
 ## v0.10.0 (2026-05-20)
 
 One embedded-catalog addition: **`t1716` (외국인기간별추이)** under
