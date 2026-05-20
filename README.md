@@ -110,14 +110,14 @@ LS증권 OpenAPI 키 한 쌍(`AppKey` + `AppSecretKey`)이 필요합니다 — [
 }
 ```
 
-Codex CLI · VS Code · AssistStudio 등 다른 호스트의 설정 예시와 환경 변수 전체 목록은 [영문 README](README.en.md#quick-start)에 있습니다. 인라인 차트 렌더링은 AssistStudio v1.1 이상이 필요합니다.
+Codex CLI · VS Code 등 다른 호스트의 설정 예시와 환경 변수 전체 목록은 [영문 README](README.en.md#quick-start)에 있습니다. AssistStudio에서는 차트가 대화창에 인라인으로 렌더링됩니다(v1.1 이상 필요).
 
 ---
 
 ## 데이터와 보안
 
 - **내 포트폴리오·관심종목은 로컬 디스크에만** 저장됩니다 (`%LOCALAPPDATA%\RedoxNet\LsOpenApi\`). 브로커 계좌 동기화나 외부 송신은 없습니다.
-- **수동 입력 기반의 read-only 도구**입니다 — 실주문이나 실계좌 잔고 조회는 하지 않습니다.
+- **시장 데이터와 브로커 계좌에 대해서는 read-only**입니다 — 실주문이나 실계좌 잔고 조회는 하지 않습니다. 보유 종목·관심종목·백업 등 포트폴리오 노트만 사용자가 직접 입력해 로컬 DB/JSON에 기록합니다.
 - **자격증명(API 키)은 환경변수로만** 전달받습니다. 채팅·도구 인자·MCP 엘리시테이션 등 모델이 관찰할 수 있는 경로로는 절대 받지 않습니다 — 의도된 보안 설계이며, 상세 정책은 [영문 README](README.en.md#credential-handling-policy)에 있습니다.
 
 ---
@@ -128,7 +128,7 @@ Codex CLI · VS Code · AssistStudio 등 다른 호스트의 설정 예시와 �
 
 본 도구는 **정보 제공 목적의 시세·차트 데이터 조회용**입니다. 투자 자문이나 매매 권유가 아니며, 주식 거래에는 원금 손실을 포함한 위험이 따릅니다. 모든 투자 결정과 그에 따른 손익은 전적으로 사용자 본인의 책임입니다.
 
-API 사용 시 [LS증권 OpenAPI 이용 안내](https://openapi.ls-sec.co.kr/howto-use)를 참조하고, 사이트에 표시되는 정식 이용약관을 확인 후 준수하시기 바랍니다. 현재 범위는 **국내주식 read-only 시세 데이터 + 로컬 포트폴리오 노트**이며, 실시간 시세(WebSocket)·실계좌 조회·주문은 후속 릴리스 예정입니다.
+API 사용 시 [LS증권 OpenAPI 이용 안내](https://openapi.ls-sec.co.kr/howto-use)를 참조하고, 사이트에 표시되는 정식 이용약관을 확인 후 준수하시기 바랍니다. 현재 범위는 **국내주식 중심의 read-only 시장 데이터**(일부 해외 지수·환율·선물 스냅샷 포함) **+ 로컬 포트폴리오 노트**이며, 실시간 시세(WebSocket)·실계좌 조회·주문은 후속 릴리스 예정입니다.
 
 ---
 
