@@ -1,5 +1,5 @@
-<p align="right">
-  <strong>한국어</strong> · <a href="README.en.md">English</a>
+﻿<p align="right">
+  <strong>한글</strong> · <a href="README.en.md">English</a>
 </p>
 
 # mcp-lsopenapi
