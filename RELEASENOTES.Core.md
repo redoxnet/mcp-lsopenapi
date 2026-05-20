@@ -1,5 +1,39 @@
 # Release Notes — RedoxNet.LsOpenApi.Core
 
+## v0.8.0 (2026-05-20)
+
+Twelve new TRs in the embedded catalog and one continuation-handling
+change. Versioned in lockstep with `RedoxNet.Mcp.LsOpenApi` 0.8.0.
+
+### Added — Catalog rows (12 new TRs)
+
+- **`t3521` (해외지수조회 API용)** + **`t3518` (해외실시간지수)** under
+  `/stock/investinfo` — overseas index / FX / futures, snapshot and
+  day/week/month/min/tick series. Back the new `ls_get_global_market_quote`
+  wrapper; `t3518` is `ls_call_tr`-only for now.
+- **`t3102` (뉴스본문)** under `/stock/investinfo` — news body by
+  `sNewsno`. Catalog-only: `sNewsno` discovery requires the NWS
+  WebSocket push (the push payload's `realkey` is the `sNewsno`).
+- Nine staged TRs reachable via `ls_call_tr` and, where wrapped, the
+  v0.8 Mcp tools: **`t1105`** (피봇/디마크), **`t1305`** (기간별주가),
+  **`t1403`** (신규상장종목), **`t1442`** (신고/신저가), **`t1475`**
+  (체결강도추이), **`t1927`** (공매도일별추이), **`t3401`** (투자의견),
+  **`t8425`** (전체테마), **`t8428`** (증시주변자금추이).
+
+### Changed
+
+- Catalog count **33 → 45 TRs**.
+- `LsApiClient` continuation handling: body cursor fields
+  (`LsTrResponse.ContinuationKeys`) are now populated from the catalog's
+  `key_fields` even when a TR also pages by the `tr_cont` header. Pure
+  body-paged and pure header-paged TRs are unaffected — only TRs that
+  use both styles (e.g. `t3401`) gain the body-cursor map.
+
+> Versioned in lockstep with `RedoxNet.Mcp.LsOpenApi` 0.8.0. The only
+> public Core change is the additive continuation field above; consumers
+> that read the catalog or call TRs through `LsApiClient` get the new
+> rows automatically.
+
 ## v0.7.0 (2026-05-18)
 
 Seven new TRs in the embedded catalog, no public API changes.

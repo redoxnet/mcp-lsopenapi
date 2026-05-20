@@ -1,5 +1,63 @@
 # Release Notes — RedoxNet.Mcp.LsOpenApi
 
+## v0.8.0 (2026-05-20)
+
+Overseas market data + per-stock analytics. Tool surface 43 → **48**
+(+5). The v0.8 line split in two: this release ships the wrapper +
+catalog work, while the response-shape / token-economy refactor moves to
+v0.9. Five new wrappers turn natural questions — *"나스닥 지수"*,
+*"원달러 환율"*, *"삼성전자 투자의견"*, *"SK하이닉스 공매도 추이"*,
+*"오늘 52주 신고가"*, *"요즘 예탁금 추이"* — into one tool call each.
+
+### Added — Overseas market data (1 tool)
+
+- `ls_get_global_market_quote(kind?, symbol?)` — one-shot overseas
+  index / FX / futures snapshot via `t3521`. An alias table maps
+  `nasdaq` → `NAS@IXIC`, `sp500` → `SPI@SPX`, plus `dow` / `soxx` /
+  `usdkrw` / `wti` / `gold` and more; raw LS symbols pass through
+  unchanged. `kind` ∈ `index` / `fx` / `futures`.
+
+### Added — Per-stock analytics & screener (4 tools)
+
+- `ls_get_analyst_opinions(shcode, count?)` — brokerage (sell-side)
+  investment-opinion history via `t3401`. Each entry carries the
+  opinion-day date, 회원사, the rating before/after the change, the
+  target price before/after, and the opinion-day close, plus a
+  current-price snapshot. Returns the ~20 most recent changes.
+- `ls_get_short_selling_trend(shcode, from?, to?, count?)` — per-stock
+  daily short-selling (공매도) via `t1927`. Short volume / value
+  (백만원), short ratio, average short price, cumulative short volume,
+  and the uptick-rule applied vs. exempt split, with a period summary
+  (totals + highest-ratio day).
+- `ls_get_market_funds_trend(market?, count?)` — market-liquidity
+  series via `t8428`. Per day: index, 고객예탁금, 예탁증감, 신용잔고,
+  미수금, 선물예수금, and equity / mixed / bond / MMF fund money.
+  All monetary fields in 억원.
+- `ls_get_high_low_stocks(direction?, period?, maintained?, market?, top_n?, exclude_etf?)`
+  — 신고가 / 신저가 screener via `t1442`. Defaults tuned from live
+  E2E: `maintained=true` (돌파유지) and ETF/ETN excluded server-side,
+  so the result is the clean "currently at a new high" list. `period`
+  look-back spans 전일 ~ 52주 ~ 년중.
+
+### Changed
+
+- Embedded TR catalog 33 → **45**: `t3102` / `t3518` / `t3521` plus the
+  nine staged TRs (`t1105` / `t1305` / `t1403` / `t1442` / `t1475` /
+  `t1927` / `t3401` / `t8425` / `t8428`), all reachable via `ls_call_tr`.
+- `ls_call_tr` now surfaces body continuation cursors. A TR that pages
+  by `tr_cont` header yet also carries a body cursor field (e.g.
+  t3401's `cts_date`) previously returned `continuation.keys: {}`; the
+  keys map is now populated from the catalog's `key_fields` so the
+  caller knows which field to advance for the next page.
+
+### Notes
+
+- News (`t3102`) is catalog-only. The LS news pipeline discovers
+  article IDs (`sNewsno`) through the NWS WebSocket push — the push
+  payload's `realkey` is the `sNewsno` — which this server does not yet
+  implement. A first-class news wrapper waits on WebSocket transport
+  (v2.0).
+
 ## v0.7.0 (2026-05-18)
 
 Screeners + index history + industry filter. Tool surface 40 → **43**

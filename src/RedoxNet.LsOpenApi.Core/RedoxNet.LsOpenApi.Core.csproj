@@ -11,7 +11,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 
-    <Version>0.7.0</Version>
+    <Version>0.8.0</Version>
     <PackageId>RedoxNet.LsOpenApi.Core</PackageId>
     <Authors>Jong Hyun Kim</Authors>
     <Company>RedoxNet</Company>
@@ -24,7 +24,7 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
 	<PackageIcon>icon.png</PackageIcon>
     <Copyright>Copyright (c) 2026 RedoxNet</Copyright>
-    <PackageReleaseNotes>v0.7.0: Embedded TR catalog grows to 33 entries (was 26). Adds t3320 (FNG_요약) + t3341 (재무순위종합) + t3202 (종목별 증시일정) under /stock/investinfo, t1601 (투자자별 종합) + t1702 (외인기관 종목별 동향) under /stock/investor, and t1404 (관리/불성실공시/투자유의) + t1405 (투자경고/매매정지/정리매매 …) under /stock/market-data. Backs the Mcp package's v0.7 screener wrappers (ls_get_fundamentals_rank / ls_get_investor_flow / ls_get_stock_events / ls_get_market_warnings) plus the A1 FICS industry enrichment path. No public API changes; lockstep version bump with RedoxNet.Mcp.LsOpenApi 0.7.0. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Core.md for full notes.</PackageReleaseNotes>
+    <PackageReleaseNotes>v0.8.0: Embedded TR catalog grows to 45 entries (was 33). Adds t3521 (해외지수조회) + t3518 (해외실시간지수) + t3102 (뉴스본문) under /stock/investinfo, plus nine staged TRs — t1105 (피봇/디마크), t1305 (기간별주가), t1403 (신규상장), t1442 (신고/신저가), t1475 (체결강도추이), t1927 (공매도일별추이), t3401 (투자의견), t8425 (전체테마), t8428 (증시주변자금). LsApiClient continuation now populates body cursor fields (LsTrResponse.ContinuationKeys) from the catalog's key_fields even for TRs that page by tr_cont header — pure body-paged and pure header-paged TRs are unaffected. Backs the Mcp package's v0.8 wrappers (ls_get_global_market_quote / ls_get_analyst_opinions / ls_get_short_selling_trend / ls_get_market_funds_trend / ls_get_high_low_stocks). Lockstep version bump with RedoxNet.Mcp.LsOpenApi 0.8.0. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Core.md for full notes.</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>
