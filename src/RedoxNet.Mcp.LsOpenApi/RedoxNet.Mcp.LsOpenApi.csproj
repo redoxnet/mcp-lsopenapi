@@ -11,7 +11,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 
-    <Version>0.9.0</Version>
+    <Version>0.10.0</Version>
     <PackageId>RedoxNet.Mcp.LsOpenApi</PackageId>
 	<Authors>Jong Hyun Kim</Authors>
     <Company>RedoxNet</Company>
@@ -24,7 +24,7 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>icon.png</PackageIcon>
     <Copyright>Copyright (c) 2026 RedoxNet</Copyright>
-    <PackageReleaseNotes>v0.9.0 (BREAKING — response-shape / token-economy refactor, Phase 1): Three high-traffic tools reshaped so the default call carries only what the common question needs and the heavy payload becomes opt-in. ls_get_index_history gains verbosity (summary | compact | full, default summary). ls_get_stock_info gains sections (default snapshot+fundamentals; response keys reorganized). ls_holdings_list gains themes_limit / include_industry / include_quote (per-holding themes is now a count/shown/items object). cl100k-measured default-call savings: 66–97%. Infra: ModelContextProtocol SDK 1.2.0 → 1.3.0; TargetFrameworks net8.0;net9.0 → net8.0;net10.0. See the Migration section in https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Mcp.md for restoring the v0.8 shape.</PackageReleaseNotes>
+    <PackageReleaseNotes>v0.10.0 (BREAKING — tool-surface compression; the last 0.x minor): 20 portfolio tools fold into 5 action-routed dispatchers — ls_account / ls_watchlist / ls_watched_themes / ls_portfolio_io / ls_holding (each takes an `action` argument). New LS_TOOL_PROFILE env var: `standard` (default) hides the 3 catalog tools, `all` exposes them. Surface 48 → 32 in the standard profile (35 in all). Additive: ls_get_stock_info gains an opt-in `foreign` section (t1716 foreign-ownership level); list/screener tools unify their row cap to `limit` and emit `total_available`; ls_get_index_history gains output_mode=export with a dataset_id drill. See the Migration section in https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Mcp.md.</PackageReleaseNotes>
 
     <PackageType>McpServer</PackageType>
     <PackAsTool>true</PackAsTool>

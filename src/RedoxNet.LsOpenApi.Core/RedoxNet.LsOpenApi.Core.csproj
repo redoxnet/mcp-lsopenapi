@@ -11,7 +11,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 
-    <Version>0.9.0</Version>
+    <Version>0.10.0</Version>
     <PackageId>RedoxNet.LsOpenApi.Core</PackageId>
     <Authors>Jong Hyun Kim</Authors>
     <Company>RedoxNet</Company>
@@ -24,7 +24,7 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
 	<PackageIcon>icon.png</PackageIcon>
     <Copyright>Copyright (c) 2026 RedoxNet</Copyright>
-    <PackageReleaseNotes>v0.9.0: Embedded TR catalog correction — the t1102 entry had 93 mislabeled OutBlock field descriptions (broker 매수/매도 s*/d* swapped; abscnt/vol/jkrate/exhratio wrong concepts; bf* quarterly figures labeled 당기/전기 instead of 전분기/전전분기; 외국계 buy/sell fields), all verified against the official t1102 spec and fixed so ls_describe_tr reports them accurately. Lockstep version bump with RedoxNet.Mcp.LsOpenApi 0.9.0. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Core.md for full notes.</PackageReleaseNotes>
+    <PackageReleaseNotes>v0.10.0: One embedded-catalog addition — t1716 (외국인기간별추이, /stock/frgr-itt), the 금감원 foreign held-share level series. It backs the new opt-in `foreign` section on ls_get_stock_info in RedoxNet.Mcp.LsOpenApi 0.10.0. Catalog count 45 → 46 TRs. Lockstep version bump with RedoxNet.Mcp.LsOpenApi 0.10.0. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Core.md for full notes.</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>

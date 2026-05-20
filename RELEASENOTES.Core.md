@@ -1,5 +1,15 @@
 # Release Notes — RedoxNet.LsOpenApi.Core
 
+## v0.10.0 (2026-05-20)
+
+One embedded-catalog addition: **`t1716` (외국인기간별추이)** under
+`/stock/frgr-itt` — the 금감원 foreign held-share level series
+(`fsc_listing` 보유주식수 / `fsc_sjrate` 소진율). It backs the new opt-in
+`foreign` section on `ls_get_stock_info` in `RedoxNet.Mcp.LsOpenApi`
+0.10.0. Catalog count **45 → 46 TRs**. No public API change — the only
+delta is the additional catalog row. Versioned in lockstep with
+`RedoxNet.Mcp.LsOpenApi` 0.10.0.
+
 ## v0.9.0 (2026-05-20)
 
 Embedded catalog correction. The `t1102` entry carried 93 hand-curation

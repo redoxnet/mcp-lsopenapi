@@ -1,5 +1,111 @@
 # Release Notes — RedoxNet.Mcp.LsOpenApi
 
+## v0.10.0 (2026-05-20)
+
+The **last 0.x minor** — it clears the entire post-v0.9 SPEC backlog in
+one breaking release (see `docs/SPEC-v0.10.md`): tool-surface
+compression, foreign-ownership data, list-tool normalization, and a
+generalized dataset cache. **The only breaking change is the tool-surface
+compression — see Migration below.** v1.0.0 is stabilization only (no new
+breaking changes; the tool surface and response shapes are frozen).
+
+### Changed — Tool-surface compression (BREAKING)
+
+- **Five domain dispatchers.** Twenty single-purpose portfolio tools
+  collapse into five action-routed tools. Each takes an `action` argument
+  and validates the per-action required parameters, returning a
+  structured, model-recoverable envelope on a miss (`error` +
+  `details.action` + `details.missing` / `details.valid_actions`).
+  - `ls_account` — was `ls_accounts_list` / `ls_account_upsert` / `ls_account_remove`
+  - `ls_watchlist` — was `ls_watchlist_add` / `_remove` / `_list` / `_group_create` / `_group_delete`
+  - `ls_watched_themes` — was `ls_watched_themes_add` / `_remove` / `_list`
+  - `ls_portfolio_io` — was `ls_portfolio_export` / `ls_portfolio_import`
+  - `ls_holding` — was `ls_holdings_set` / `_buy` / `_sell` / `_remove` / `_corporate_action`
+
+  `ls_holdings_list` and `ls_stocks_refresh_metadata` stay standalone —
+  the holdings read path is the single most common portfolio intent, and
+  the metadata refresh belongs to no one domain.
+- **`LS_TOOL_PROFILE` profile.** A new env var: `standard` (default) or
+  `all`. `standard` hides the three catalog tools (`ls_search_tr` /
+  `ls_describe_tr` / `ls_call_tr`) from `tools/list` — they are
+  developer-fallback TR access, not first-line routing candidates; `all`
+  exposes them. `LS_TOOL_PROFILE_STRICT=true` additionally rejects a
+  `tools/call` for a profile-hidden tool instead of honoring it.
+
+Net surface: **48 → 32** tools in the `standard` profile (35 in `all`).
+`tools/list` JSON shrinks ~8% (65,025 → 60,014 chars).
+
+### Changed — List-tool normalization (minor BREAKING)
+
+The row-count parameter on every list / screener tool is unified to
+`limit` (was `top_n` or `count`), and tools that can cheaply know the
+unfiltered total now emit `total_available`.
+
+| Tool | Was | Now |
+|---|---|---|
+| `ls_get_top_stocks` | `top_n` | `limit` |
+| `ls_get_high_low_stocks` | `top_n` | `limit` |
+| `ls_get_industry_stocks` | `top_n` | `limit` |
+| `ls_get_theme_stocks` | `top_n` | `limit` |
+| `ls_get_fundamentals_rank` | `count` | `limit` |
+| `ls_get_market_warnings` | (unbounded) | `limit` (default 50, 1–200) |
+
+### Added — Foreign-ownership data
+
+- `ls_get_stock_info` gains an opt-in `foreign` section (six sections
+  total). Sourced from the newly catalogued **t1716**, it carries the
+  금감원 foreign held-share *level* — `held_shares`, a derived
+  `ownership_percent`, and a normalized `exhaustion_rate_percent`. The
+  default `sections` is unchanged, so existing calls are unaffected and
+  pay no extra TR call. (Daily foreign net *flow* remains
+  `ls_get_investor_flow`; t1716's unique value is the holding level.)
+
+### Added — Index-history export (dataset handle)
+
+- `ls_get_index_history` gains `output_mode` (`summary` default,
+  `export`). `export` caches the whole series behind a `dataset_id` and
+  returns only the digest; a follow-up call with that `dataset_id` (plus
+  optional `from` / `to` / `recent_n`) slices the cached bars with **no
+  further API call**. `count` may reach 2,500 in export mode (vs 500 for
+  summary). The chart-only `DatasetHandleCache` was generalized into a
+  kind-tagged store to back this.
+
+### Migration
+
+The compression is the only breaking change — the merged tools are gone.
+Re-map each old call to its dispatcher action:
+
+| v0.9 tool | v0.10 call |
+|---|---|
+| `ls_accounts_list` | `ls_account(action="list")` |
+| `ls_account_upsert(…)` | `ls_account(action="upsert", …)` |
+| `ls_account_remove(…)` | `ls_account(action="remove", …)` |
+| `ls_watchlist_add(…)` | `ls_watchlist(action="add", …)` |
+| `ls_watchlist_remove(…)` | `ls_watchlist(action="remove", …)` |
+| `ls_watchlist_list(…)` | `ls_watchlist(action="list", …)` |
+| `ls_watchlist_group_create(…)` | `ls_watchlist(action="group_upsert", …)` |
+| `ls_watchlist_group_delete(…)` | `ls_watchlist(action="group_delete", …)` |
+| `ls_watched_themes_add(…)` | `ls_watched_themes(action="add", …)` |
+| `ls_watched_themes_remove(…)` | `ls_watched_themes(action="remove", …)` |
+| `ls_watched_themes_list` | `ls_watched_themes(action="list")` |
+| `ls_portfolio_export(…)` | `ls_portfolio_io(action="export", …)` |
+| `ls_portfolio_import(…)` | `ls_portfolio_io(action="import", …)` |
+| `ls_holdings_set(…)` | `ls_holding(action="set", …)` |
+| `ls_holdings_buy(…)` | `ls_holding(action="buy", …)` |
+| `ls_holdings_sell(…)` | `ls_holding(action="sell", …)` |
+| `ls_holdings_remove(…)` | `ls_holding(action="remove", …)` |
+| `ls_holdings_corporate_action(…)` | `ls_holding(action="corporate_action", …)` |
+| `ls_search_tr` / `ls_describe_tr` / `ls_call_tr` | same names — set `LS_TOOL_PROFILE=all` to expose them |
+| `ls_get_{top_stocks,high_low_stocks,industry_stocks,theme_stocks}(top_n=…)` | `(limit=…)` |
+| `ls_get_fundamentals_rank(count=…)` | `ls_get_fundamentals_rank(limit=…)` |
+
+`ls_holdings_list`, `ls_stocks_refresh_metadata`, and every market-data
+tool keep their names. `ls_get_stock_info` and `ls_get_index_history`
+keep their names too — the new `foreign` section and `output_mode` are
+additive, so existing calls are unaffected.
+
+Lockstep version bump with `RedoxNet.LsOpenApi.Core` 0.10.0.
+
 ## v0.9.0 (2026-05-20)
 
 Response-shape / token-economy refactor — Phase 1 of the work deferred
