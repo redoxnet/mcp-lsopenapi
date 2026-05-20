@@ -16,12 +16,21 @@ namespace RedoxNet.Mcp.LsOpenApi.Tools;
 /// v0.9 response-shape SPEC §4.2 (pattern B): emits a <c>summary</c> aggregate
 /// block and a <c>verbosity</c> axis so a 60-bar series can collapse to a
 /// ~400-token digest without the model having to read every bar.
+/// <para>
+/// v0.10 SPEC §5.3 (pattern C): an <c>output_mode="export"</c> caches the whole
+/// series under a <c>dataset_id</c> (kind-tagged <see cref="DatasetHandleCache"/>)
+/// and returns only the digest + handle; a follow-up call with that
+/// <c>dataset_id</c> drills the cached bars with no further API call.
+/// </para>
 /// </remarks>
 [McpServerToolType]
 public static class GetIndexHistoryTool
 {
-    /// <summary>Upper bound on candle count per request. LS caps a single t1514 page well above this; we cap to keep payload small.</summary>
+    /// <summary>Upper bound on candle count for output_mode="summary". LS caps a single t1514 page well above this; we cap to keep the inline payload small.</summary>
     const int MaxCount = 500;
+
+    /// <summary>Upper bound on candle count for output_mode="export" — bars are cached, not returned inline, so a multi-year series is allowed.</summary>
+    const int MaxExportCount = 2500;
 
     /// <summary>Bars kept in 'compact' verbosity — a recent window layered on top of the summary digest.</summary>
     const int CompactTailBars = 5;
@@ -45,6 +54,10 @@ public static class GetIndexHistoryTool
         - 'compact': the digest + the 5 most recent bars. Use only when the user asks specifically about the most recent days.
         - 'full': every per-bar point, no digest — roughly 30× the summary's token cost, and the whole series then lingers in conversation context for every later turn. Use ONLY when the user explicitly wants the entire per-bar series or needs a custom per-bar calculation the digest cannot give.
 
+        output_mode controls whether the series is returned inline or cached for drill-down:
+        - 'summary' (default): the response is shaped by `verbosity` above.
+        - 'export': fetches up to `count` bars (raise `count` toward 2500 for a multi-year series), caches the whole series under a `dataset_id`, and returns ONLY the aggregate digest + that handle — no per-bar points enter context. Then call ls_get_index_history again with that `dataset_id` (plus optional `from` / `to` / `recent_n`) to slice the cached bars with no further API call. Use 'export' for long series — e.g. 5+ years of daily bars — where even verbosity='full' would be too large.
+
         Envelope:
         - summary aggregates the period: open/close, total change, period high/low, biggest up/down bars, average breadth, total flows. summary._meta carries the breadth and flow units.
         - points[].change / change_pct are signed (LS ships unsigned magnitudes + a separate sign code; the wrapper applies the sign).
@@ -58,14 +71,28 @@ public static class GetIndexHistoryTool
         string index_code = "kospi",
         [Description("Bar size: 'day' (default), 'week', or 'month'.")]
         string period_type = "day",
-        [Description("Number of bars to return, 1–500. Default 60.")]
+        [Description("Number of bars to fetch. 1–500 for output_mode='summary'; 1–2500 for 'export' (raise it for a multi-year series). Default 60.")]
         int count = 60,
         [Description("Optional pagination cursor. Pass the cts_date echoed by a prior response to fetch the next (older) page.")]
         string? cts_date = null,
         [Description("Response shape. 'summary' (default) is a digest that already answers trend / range questions — prefer it. 'compact' adds the 5 most recent bars. 'full' returns every bar (~30x the tokens, and it lingers in context) — only when the user explicitly needs the whole per-bar series.")]
         string verbosity = "summary",
+        [Description("'summary' (default) returns the series inline per verbosity. 'export' caches the full series under a dataset_id and returns only the digest + handle for follow-up drill.")]
+        string output_mode = "summary",
+        [Description("Drill mode: pass a dataset_id from a prior output_mode='export' call to slice its cached bars with no API call. When set, index_code / period_type / count / cts_date / verbosity / output_mode are all ignored.")]
+        string? dataset_id = null,
+        [Description("Drill mode only: keep cached bars on or after this yyyyMMdd date.")]
+        string? from = null,
+        [Description("Drill mode only: keep cached bars on or before this yyyyMMdd date.")]
+        string? to = null,
+        [Description("Drill mode only: after from/to filtering, keep only the most recent N bars.")]
+        int? recent_n = null,
         CancellationToken cancellationToken = default)
     {
+        // Drill path: a dataset_id slices a previously exported series with no API call.
+        if (!string.IsNullOrWhiteSpace(dataset_id))
+            return DrillCachedDataset(dataset_id!.Trim(), from, to, recent_n);
+
         string upcode = GetIndexQuoteTool.NormalizeIndexCode(index_code);
         if (string.IsNullOrEmpty(upcode))
             return McpJson.Error($"index_code '{index_code}' is not recognized. Use one of: kospi, kosdaq, kospi200, krx100, or a 3-character upcode.");
@@ -73,11 +100,17 @@ public static class GetIndexHistoryTool
         if (!TryResolvePeriod(period_type, out string gubun2, out string normalizedPeriod))
             return McpJson.Error($"period_type '{period_type}' is not recognized. Use 'day', 'week', or 'month'.");
 
-        if (count < 1 || count > MaxCount)
-            return McpJson.Error($"count must be between 1 and {MaxCount}.", new { received = count });
-
         if (!ResponseShape.TryParseVerbosity(verbosity, VerbosityMode.Summary, out VerbosityMode mode))
             return McpJson.Error($"verbosity '{verbosity}' is not recognized. Use 'summary', 'compact', or 'full'.");
+
+        string normalizedMode = (output_mode ?? "summary").Trim().ToLowerInvariant();
+        if (normalizedMode is not ("summary" or "export"))
+            return McpJson.Error($"output_mode '{output_mode}' is not recognized. Use 'summary' or 'export'.");
+        bool isExport = normalizedMode == "export";
+
+        int maxCount = isExport ? MaxExportCount : MaxCount;
+        if (count < 1 || count > maxCount)
+            return McpJson.Error($"count must be between 1 and {maxCount} for output_mode='{normalizedMode}'.", new { received = count });
 
         try
         {
@@ -144,10 +177,14 @@ public static class GetIndexHistoryTool
                 }
             }
 
-            // §4.2: summary is present unless 'full'. Points depend on mode —
-            // 'summary' omits them, 'compact' keeps only the most recent bars,
-            // 'full' keeps all (the v0.8-compatible shape). An empty result
-            // always emits points[] so the caller sees the empty set.
+            // §5.3 export: cache the whole series, return only the digest + handle.
+            if (isExport)
+                return BuildExportResponse(upcode, normalizedPeriod, points, nextCts);
+
+            // §4.2 summary: summary is present unless 'full'. Points depend on
+            // mode — 'summary' omits them, 'compact' keeps only the most recent
+            // bars, 'full' keeps all (the v0.8-compatible shape). An empty
+            // result always emits points[] so the caller sees the empty set.
             bool emitSummary = mode != VerbosityMode.Full && points.Count > 0;
             IReadOnlyList<IndexHistoryPoint>? emittedPoints = (mode, points.Count) switch
             {
@@ -179,6 +216,70 @@ public static class GetIndexHistoryTool
         {
             return McpJson.Error("TR call failed.", new { reason = ex.Message, status = ex.StatusCode });
         }
+    }
+
+    /// <summary>
+    /// §5.3 export: caches the whole series under a kind="index_history" handle
+    /// and returns only the aggregate digest + that handle.
+    /// </summary>
+    static string BuildExportResponse(string upcode, string period, List<IndexHistoryPoint> points, string? nextCts)
+    {
+        // Store ascending by date so the drill slicer can range-filter directly.
+        List<IndexHistoryPoint> ascending = points.OrderBy(p => p.Date, StringComparer.Ordinal).ToList();
+        string datasetId = DatasetHandleCache.Add(
+            "index_history",
+            new IndexHistoryDataset(upcode, period, ascending, DateTimeOffset.UtcNow));
+
+        var payload = new IndexHistoryExportPayload
+        {
+            IndexCode = upcode,
+            PeriodType = period,
+            DatasetId = datasetId,
+            Count = ascending.Count,
+            Summary = ascending.Count > 0 ? BuildSummary(ascending) : null,
+            CtsDate = nextCts,
+        };
+        return JsonSerializer.Serialize(payload, McpJson.Tool);
+    }
+
+    /// <summary>
+    /// §5.3 drill: resolves an exported dataset and slices the cached bars by
+    /// <paramref name="from"/> / <paramref name="to"/> / <paramref name="recentN"/>
+    /// with no LS call. Self-contained — not wired to the chart indicator pipeline.
+    /// </summary>
+    static string DrillCachedDataset(string datasetId, string? from, string? to, int? recentN)
+    {
+        if (!DatasetHandleCache.TryGet<IndexHistoryDataset>(datasetId, out IndexHistoryDataset? ds) || ds is null)
+            return McpJson.Error("Unknown or expired dataset_id.", new { dataset_id = datasetId });
+
+        string? fromKey = string.IsNullOrWhiteSpace(from) ? null : from.Trim();
+        string? toKey = string.IsNullOrWhiteSpace(to) ? null : to.Trim();
+
+        // Dates are yyyyMMdd, so an ordinal string compare is chronological.
+        IEnumerable<IndexHistoryPoint> query = ds.Points;
+        if (fromKey is not null)
+            query = query.Where(p => string.CompareOrdinal(p.Date, fromKey) >= 0);
+        if (toKey is not null)
+            query = query.Where(p => string.CompareOrdinal(p.Date, toKey) <= 0);
+        List<IndexHistoryPoint> sliced = query.ToList();
+
+        int? appliedRecentN = recentN is > 0 ? recentN : null;
+        if (appliedRecentN is not null && sliced.Count > appliedRecentN.Value)
+            sliced = sliced.Skip(sliced.Count - appliedRecentN.Value).ToList();
+
+        var payload = new IndexHistoryDrillPayload
+        {
+            IndexCode = ds.IndexCode,
+            PeriodType = ds.PeriodType,
+            DatasetId = datasetId,
+            From = fromKey,
+            To = toKey,
+            RecentN = appliedRecentN,
+            Count = sliced.Count,
+            Summary = sliced.Count > 0 ? BuildSummary(sliced) : null,
+            Points = sliced,
+        };
+        return JsonSerializer.Serialize(payload, McpJson.Tool);
     }
 
     /// <summary>Builds the §4.2 aggregate block from a non-empty point list.</summary>
@@ -249,6 +350,59 @@ public static class GetIndexHistoryTool
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? CtsDate { get; init; }
     }
+
+    /// <summary>output_mode="export" envelope — digest + dataset handle, no per-bar points.</summary>
+    sealed record IndexHistoryExportPayload
+    {
+        public string IndexCode { get; init; } = "";
+        public string PeriodType { get; init; } = "";
+        public string OutputMode => "export";
+        public string DatasetId { get; init; } = "";
+        public int Count { get; init; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public IndexHistorySummary? Summary { get; init; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? CtsDate { get; init; }
+
+        public string DrillHint =>
+            "Pass dataset_id back to ls_get_index_history with from / to / recent_n to slice these cached bars without another API call.";
+    }
+
+    /// <summary>Drill envelope — the sliced cached bars plus a digest of the slice.</summary>
+    sealed record IndexHistoryDrillPayload
+    {
+        public string IndexCode { get; init; } = "";
+        public string PeriodType { get; init; } = "";
+        public string DatasetId { get; init; } = "";
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? From { get; init; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? To { get; init; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public int? RecentN { get; init; }
+
+        public int Count { get; init; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public IndexHistorySummary? Summary { get; init; }
+
+        public IReadOnlyList<IndexHistoryPoint> Points { get; init; } = Array.Empty<IndexHistoryPoint>();
+    }
+
+    /// <summary>
+    /// Cached payload behind an export <c>dataset_id</c> — the whole bar series
+    /// (ascending by date) plus the index metadata needed to echo it on a drill.
+    /// </summary>
+    sealed record IndexHistoryDataset(
+        string IndexCode,
+        string PeriodType,
+        IReadOnlyList<IndexHistoryPoint> Points,
+        DateTimeOffset CreatedAtUtc);
 
     sealed record IndexHistorySummary(
         SummaryPeriod Period,

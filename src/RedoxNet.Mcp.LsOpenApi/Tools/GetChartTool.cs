@@ -186,7 +186,7 @@ public static class GetChartTool
                     f.Context,
                     f.Summary)).ToList();
 
-            string datasetId = DatasetHandleCache.Add(new ChartDataset(
+            string datasetId = DatasetHandleCache.Add("chart", new ChartDataset(
                 shcode,
                 name,
                 periods,
@@ -395,7 +395,7 @@ public static class GetChartTool
             return McpJson.ErrorResult("dataset_id is required.");
         if (string.IsNullOrWhiteSpace(indicator))
             return McpJson.ErrorResult("indicator is required.");
-        if (!DatasetHandleCache.TryGet(dataset_id, out ChartDataset? dataset) || dataset is null)
+        if (!DatasetHandleCache.TryGet<ChartDataset>(dataset_id, out ChartDataset? dataset) || dataset is null)
             return McpJson.ErrorResult("Unknown or expired dataset_id.", new { dataset_id });
         if (!IndicatorSpecParser.TryParse(indicator, out IndicatorSpec? addedSpec, out string? error))
             return McpJson.ErrorResult($"Invalid indicator spec '{indicator}'.", new { reason = error });
@@ -507,7 +507,7 @@ public static class GetChartTool
             return McpJson.ErrorResult("dataset_id is required.");
         if (string.IsNullOrWhiteSpace(period_type))
             return McpJson.ErrorResult("period_type is required.");
-        if (!DatasetHandleCache.TryGet(dataset_id, out ChartDataset? dataset) || dataset is null)
+        if (!DatasetHandleCache.TryGet<ChartDataset>(dataset_id, out ChartDataset? dataset) || dataset is null)
             return McpJson.ErrorResult("Unknown or expired dataset_id.", new { dataset_id });
 
         string period = period_type.Trim().ToLowerInvariant();
