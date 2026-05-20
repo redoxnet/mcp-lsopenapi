@@ -266,15 +266,14 @@ ls_get_index_history(..., output_mode?: "summary" | "export" = "summary")
 - **drill**: `ls_get_index_history(dataset_id=..., from?, to?, recent_n?)` — 캐시된 봉을 추가 API 호출 없이 슬라이스. 자체 완결형 drill — chart의 indicator 파이프라인에 배선하지 않는다.
 - cache key: SPEC-v0.9 §5.4 A10 정책(canonical-json SHA-256, `output_mode` 제외) 재사용.
 
-### 5.4 `ls_get_fundamentals_rank` dataset_id — **v0.10.0 제외 (리뷰 포인트)**
+### 5.4 `ls_get_fundamentals_rank` dataset_id — v0.10.0 제외 (확정 2026-05-20)
 
-SPEC-v0.9 §7 Phase 3 item 8은 fundamentals_rank를 dataset_id 후보로 들었으나, **v0.10.0에서 제외**할 것을 권고한다:
+SPEC-v0.9 §7 Phase 3 item 8은 fundamentals_rank를 dataset_id 후보로 들었으나 **v0.10.0에서 제외**한다 (사용자 확정 2026-05-20):
 
-- fundamentals_rank는 이미 §4(Phase 2)에서 `limit`+`cursor`를 받는다 — "많은 행" 문제는 cursor가 해결.
-- 1000행 ranking을 random-access로 슬라이스하는 수요는 사변적. 현실 질의는 "PER 상위 20"(`limit=20`)이 대부분.
-- SPEC-v0.9 §2.1 C 원칙: "C는 정말 무거운 1~2개 도구만". Phase 2 적용 후 fundamentals_rank는 그 바를 넘지 않는다.
+- 1000행 ranking을 random-access로 슬라이스하는 수요는 사변적. 현실 질의는 "PER 상위 20"(`limit=20`)이 대부분이고, `limit`(1~200, 내부 multi-page)이 이를 커버한다.
+- SPEC-v0.9 §2.1 C 원칙: "C는 정말 무거운 1~2개 도구만". fundamentals_rank는 그 바를 넘지 않는다.
 
-→ index_history만 C 패턴 적용, fundamentals_rank dataset_id는 [§10 open question]으로 v1.x 이후 보류. **사용자가 item 8 포함을 원하면 §5.4를 되돌린다.**
+→ index_history만 C 패턴 적용. fundamentals_rank dataset_id는 §10 open question으로 v1.x 이후 재검토.
 
 ---
 
