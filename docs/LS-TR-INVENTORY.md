@@ -4,7 +4,7 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 
 **Source:** [openapi.ls-sec.co.kr/apiservice](https://openapi.ls-sec.co.kr/apiservice) listing (captured 2026-05-13).
 
-**Implementation status last refreshed:** 2026-05-16 for v0.6.0 (added `t1485` / `t1511` / `t1514` / `t1516` / `t1537` / `t8424`; promoted `t1532` from catalog-only to wrapper; t1102/krx_sector enrichment deferred to v0.7 after confirming t1102 has no industry classification field).
+**Implementation status last refreshed:** 2026-05-20 for v0.8.0 — catalog **45 TRs**, **48 MCP tools**. v0.7–v0.8 wrapped `t1404`/`t1405` (`ls_get_market_warnings`), `t1514` (`ls_get_index_history`), `t1601`/`t1702` (`ls_get_investor_flow`), `t3202` (`ls_get_stock_events`), `t3341` (`ls_get_fundamentals_rank`), `t1442` (`ls_get_high_low_stocks`), `t1927` (`ls_get_short_selling_trend`), `t3401` (`ls_get_analyst_opinions`), `t3521` (`ls_get_global_market_quote`), `t8428` (`ls_get_market_funds_trend`). `t3320` (FICS industry) wired into the portfolio `industry` filter.
 
 **Use this doc when:** deciding what to add to the catalog next, mapping a user request to an underlying TR, or scoping the next release.
 
@@ -37,8 +37,8 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 | `t1305` | 기간별 주가 | 🔵 💎 | In catalog (`ls_call_tr` only). 일/주/월 OHLC + 외인·기관·개인 순매수 + 체결강도/소진율/회전율 per bar. `ls_get_chart`(t8410)·`ls_get_investor_flow`(t1702)와 겹쳐 wrapper화는 설계 보류. |
 | `t1308` | 주식 시간대별 체결조회 차트 | ⚪ | |
 | `t1310` | 주식 당일/전일 분틱 조회 | ⚪ | |
-| `t1404` | 관리/불성실/투자유의 조회 | ⚪ | Pair with t8436's `bu12gubun` flag for screening |
-| `t1405` | 투자경고/매매정지/정리매매 조회 | ⚪ | |
+| `t1404` | 관리/불성실/투자유의 조회 | 🟢 | `ls_get_market_warnings` — 관리/불성실/투자유의 (with `t1405`). dedup + default 1종 + cap 3. |
+| `t1405` | 투자경고/매매정지/정리매매 조회 | 🟢 | `ls_get_market_warnings` — 투자경고/매매정지/정리매매 (with `t1404`). |
 | `t1410` | 초저유동성 조회 | ⚪ | |
 | `t1422` | 상/하한 | ⚪ | |
 | `t1427` | 상/하한가 직전 | ⚪ | |
@@ -93,7 +93,7 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 
 | TR | 이름 | Status | Tool / Notes |
 | --- | --- | --- | --- |
-| `t1601` | 투자자별 종합 | ⚪ 💎 | Net buy/sell by investor type — high-signal for daily commentary |
+| `t1601` | 투자자별 종합 | 🟢 | `ls_get_investor_flow` — 시장 전체 투자자별 순매수 동향. |
 | `t1602` | 시간대별 투자자매매 추이 | ⚪ | |
 | `t1603` | 시간대별 투자자매매 추이 상세 | ⚪ | |
 | `t1615` | 투자자매매 종합1 | ⚪ | |
@@ -105,7 +105,7 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 
 | TR | 이름 | Status | Tool / Notes |
 | --- | --- | --- | --- |
-| `t1702` | 외인기관 종목별 동향 | ⚪ 💎 | |
+| `t1702` | 외인기관 종목별 동향 | 🟢 | `ls_get_investor_flow` — 종목별 외인·기관 순매수 동향. |
 | `t1716` | 외인기관 종목별 동향 | ⚪ | |
 | `t1717` | 외인기관 종목별 동향 | ⚪ | |
 
@@ -126,9 +126,9 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 | TR | 이름 | Status | Tool / Notes |
 | --- | --- | --- | --- |
 | `t3102` | 뉴스 본문 | 🔵 💎 | In catalog (`ls_call_tr` only). Body fetch by sNewsno. Discovery: NWS WebSocket push (`tr_cd=NWS`, `tr_key=NWS001` for all-news, or a 6/8-char shcode for per-stock filtering) — push payload's `realkey` (24 chars) is the sNewsno. WebSocket transport not yet implemented; pairs with NWS in v2.0. |
-| `t3202` | 종목별 증시일정 | ⚪ | Earnings/event calendar |
-| `t3320` | FNG 요약 | ⚪ | F&G index? |
-| `t3341` | 재무순위 종합 | ⚪ 💎 | Fundamentals: PER/PBR/ROE — anchors fundamental analysis tooling |
+| `t3202` | 종목별 증시일정 | 🟢 | `ls_get_stock_events` — 종목별 증시일정 / 이벤트 캘린더. |
+| `t3320` | FNG_요약 | 🔵 | Internal: per-stock **FICS** industry name (`upgubunnm`, "FICS " prefix). Live-verified — feeds the portfolio `industry` filter via `LsQuoteService`. 6-char shcode only; ETF/SPAC return empty. Not a Fear & Greed index. |
+| `t3341` | 재무순위 종합 | 🟢 | `ls_get_fundamentals_rank` — cross-stock 재무 스크리너 (PER/PBR/ROE 등). |
 | `t3401` | 투자의견 | 🟢 | `ls_get_analyst_opinions` — 종목별 증권사 투자의견 변경 이력 (의견·목표가 before/after, 회원사, 의견일 종가) + 현재가 스냅샷. |
 | `t3518` | 해외 실시간 지수 | 🔵 | In catalog (`ls_call_tr` only). Overseas index / FX / futures series (day/week/month/min/tick) with body continuation (`cts_date`, `cts_time`). |
 | `t3521` | 해외지수 조회 (API용) | 🟢 💡 | `ls_get_global_market_quote` — one-shot overseas index / FX / futures snapshot. Covers major US indices (`nasdaq`, `sp500`, `dow`, `soxx`) and FX (`usdkrw`) aliases. |
@@ -148,13 +148,13 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 
 ## [업종] 시세 — KRX industry indices (path `/indtp/market-data`)
 
-> v0.6 added category. **KRX industry classification** (전기전자 / 화학 / 금융 등 ~30) is distinct from LS themes above. None of these TRs return a stock→industry mapping; the v0.6 `stocks.krx_sector` enrichment is **deferred to v0.7** while a source is identified (LS 마스터 TR / t8424+t1516 reverse-lookup / static KRX table).
+> v0.6 added category. The KRX-style industry indices below are distinct from LS themes above. None of *these* TRs return a stock→industry mapping; that gap was resolved in v0.7 via **`t3320` (FNG_요약)** — see [주식] 투자정보. Note `t3320` uses **FICS** classification, not KRX 표준 산업분류; the portfolio `industry` filter is built on it.
 
 | TR | 이름 | Status | Tool / Notes |
 | --- | --- | --- | --- |
 | `t1485` | 예상지수 | 🔵 | In catalog (`ls_call_tr` only). Pre-market expected index. |
 | `t1511` | 업종현재가 | 🟢 | `ls_get_index_quote` — single index snapshot with aliases (kospi→001, kosdaq→301, kospi200→101, krx100→501). 52-week + YTD range, market breadth, 4 related indices. `rate_limit_per_sec=10` (confirmed via LS guide). |
-| `t1514` | 업종기간별추이 | 🔵 | In catalog (`ls_call_tr` only). Industry daily/weekly/monthly time series. v0.7 candidate for `ls_get_index_history` wrapper. |
+| `t1514` | 업종기간별추이 | 🟢 | `ls_get_index_history` — 업종/지수 일·주·월 시계열. v0.9 B-패턴 refactor 대상 (summary 블록 + verbosity, → SPEC-v0.9). |
 | `t1516` | 업종별종목시세 | 🟢 | `ls_get_industry_stocks` — stocks inside one industry + the industry's index summary. Body-based continuation paging (last shcode echo). Keyword resolution via cached t8424. |
 | `t8424` | 전체업종 | 🔵 | In catalog. Internal: feeds the `ls_get_industry_indices` fanout. Also exposed as the catalog source for `industry_keyword` resolution in `ls_get_industry_stocks`. |
 
@@ -163,8 +163,8 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 | TR | 이름 | Status | Tool / Notes |
 | --- | --- | --- | --- |
 | `t1901` | ETF 현재가 (시세) 조회 | 🟢 | `ls_get_etf_info` — NAV, 추적기준지수, 괴리율, AUM, LP 5개, 52주/연중 범위, 관련 선물 |
-| `t1902` | ETF 시간별 추이 | ⚪ | |
-| `t1903` | ETF 일별 추이 | ⚪ | |
+| `t1902` | ETF 시간별 추이 | 🔵 | In catalog (`ls_call_tr` only). |
+| `t1903` | ETF 일별 추이 | 🔵 | In catalog (`ls_call_tr` only). |
 | `t1904` | ETF 구성종목 조회 | 🟢 | `ls_get_etf_holdings` — PDF(구성종목) 리스트 + 비중 + 평가/시가총액 + ETF 요약(NAV/AUM/현금) |
 | `t1906` | ETFLP 호가 | ⚪ | |
 
@@ -245,43 +245,38 @@ WebSocket-based stream identifiers, not REST TRs. ~50 channels including:
 
 ---
 
-## Implementation status summary (v0.6)
+## Implementation status summary (v0.8.0)
 
-- **24 TRs in catalog** — `t1101`, `t1102`, `t1301`, `t1441`, `t1444`, `t1452`, `t1463`, `t1466`, `t1485`, `t1511`, `t1514`, `t1516`, `t1531`, `t1532`, `t1537`, `t1901`, `t1904`, `t8407`, `t8410`, `t8412`, `t8424`, `t8430`, `t8436`, `t9945`.
-- **39 MCP tools** (37 v0.5 + 7 v0.6 new − 5 v0.6 Tier 1 compression):
+- **45 TRs in catalog** — `t1101`, `t1102`, `t1105`, `t1301`, `t1305`, `t1403`, `t1404`, `t1405`, `t1441`, `t1442`, `t1444`, `t1452`, `t1463`, `t1466`, `t1475`, `t1485`, `t1511`, `t1514`, `t1516`, `t1531`, `t1532`, `t1537`, `t1601`, `t1702`, `t1901`, `t1902`, `t1903`, `t1904`, `t1927`, `t3102`, `t3202`, `t3320`, `t3341`, `t3401`, `t3518`, `t3521`, `t8407`, `t8410`, `t8412`, `t8424`, `t8425`, `t8428`, `t8430`, `t8436`, `t9945`.
+- **48 MCP tools**:
   - Meta (3) — `ls_search_tr`, `ls_describe_tr`, `ls_call_tr`.
-  - Market data (10) — `ls_get_quote`, `ls_get_multi_quote`, `ls_get_top_stocks`, `ls_get_stock_info`, `ls_get_chart`, `ls_add_indicator`, `ls_reframe_chart`, `ls_search_stock`, `ls_get_etf_info`, `ls_get_etf_holdings`.
-  - **Index + industry (3, v0.6 new)** — `ls_get_index_quote`, `ls_get_industry_indices`, `ls_get_industry_stocks`.
-  - **LS themes (2, v0.6 new)** — `ls_get_theme_stocks`, `ls_get_stock_themes`.
-  - Portfolio (21, v0.5 + v0.6, local-only) — accounts: `ls_accounts_list`, `ls_account_upsert`, `ls_account_remove`, `ls_broker_rename`; holdings: `ls_holdings_list`, `ls_holdings_set`, `ls_holdings_buy`, `ls_holdings_sell`, `ls_holdings_remove`, `ls_holdings_corporate_action`; watchlists: `ls_watchlist_groups_list`, `ls_watchlist_group_create`, `ls_watchlist_group_delete`, `ls_watchlist_group_rename`, `ls_watchlist_add`, `ls_watchlist_remove`, `ls_watchlist_list`; watched themes: `ls_watched_themes_add`, `ls_watched_themes_remove`, `ls_watched_themes_list`; I/O: `ls_portfolio_export`, `ls_portfolio_import`.
+  - Quotes / rankings (5) — `ls_get_quote`, `ls_get_multi_quote`, `ls_get_stock_info`, `ls_get_top_stocks`, `ls_get_high_low_stocks`.
+  - Charts (3) — `ls_get_chart`, `ls_add_indicator`, `ls_reframe_chart`.
+  - Stock search (1) — `ls_search_stock`.
+  - ETF (2) — `ls_get_etf_info`, `ls_get_etf_holdings`.
+  - Index / industry (4) — `ls_get_index_quote`, `ls_get_index_history`, `ls_get_industry_indices`, `ls_get_industry_stocks`.
+  - LS themes (2) — `ls_get_theme_stocks`, `ls_get_stock_themes`.
+  - Investor / flow / events (5) — `ls_get_investor_flow`, `ls_get_market_warnings`, `ls_get_stock_events`, `ls_get_analyst_opinions`, `ls_get_short_selling_trend`.
+  - Fundamentals (1) — `ls_get_fundamentals_rank`.
+  - Global market / 자금 (2) — `ls_get_global_market_quote`, `ls_get_market_funds_trend`.
+  - Portfolio (20, local-only) — accounts: `ls_accounts_list`, `ls_account_upsert`, `ls_account_remove`; holdings: `ls_holdings_list`, `ls_holdings_set`, `ls_holdings_buy`, `ls_holdings_sell`, `ls_holdings_remove`, `ls_holdings_corporate_action`; metadata: `ls_stocks_refresh_metadata`; watchlists: `ls_watchlist_group_create`, `ls_watchlist_group_delete`, `ls_watchlist_add`, `ls_watchlist_remove`, `ls_watchlist_list`; watched themes: `ls_watched_themes_add`, `ls_watched_themes_remove`, `ls_watched_themes_list`; I/O: `ls_portfolio_export`, `ls_portfolio_import`.
 
-> The portfolio module is local-only (SQLite at `%LOCALAPPDATA%\RedoxNet\LsOpenApi\portfolio.db`). v0.6 adds fire-and-forget `t1532` enrichment of the new `stock_themes` cache on write paths, plus an export/import JSON round-trip (schema_version=1) for backup and machine migration.
+> The portfolio module is local-only (SQLite at `%LOCALAPPDATA%\RedoxNet\LsOpenApi\portfolio.db`), with fire-and-forget `t1532` theme enrichment + `t3320` FICS-industry enrichment on write paths, and an export/import JSON round-trip.
 
-### v0.6 Tier 1 compression (BREAKING, −5 tools)
+### Tool-surface budget
 
-Goal: keep total tool count under ~45 by v1.0 so the LLM has less to route across. Service+repository layers stayed; only the MCP surface contracted.
+Total reached **48** against a soft **~45** target (kept low so the LLM has less to route across). v0.6's Tier 1 compression removed 5 tools by folding variants into open enums — e.g. `ls_holdings_corporate_action(type=...)` absorbed the former `ls_holdings_split` / `_reverse_split` / `_bonus`. Further tool-surface compression is a v0.9 candidate — see [SPEC-v0.9-response-shapes.md](./SPEC-v0.9-response-shapes.md).
 
-| Removed v0.5 tool | Equivalent v0.6 path |
-| --- | --- |
-| `ls_account_get` | `ls_accounts_list[].is_default` flag |
-| `ls_account_set_default(account)` | `ls_account_upsert(set_default=true)` |
-| `ls_holdings_split(ratio)` | `ls_holdings_corporate_action(type="split", ratio)` |
-| `ls_holdings_reverse_split(ratio)` | `ls_holdings_corporate_action(type="reverse_split", ratio)` |
-| `ls_holdings_bonus(ratio)` | `ls_holdings_corporate_action(type="bonus", ratio)` |
+## Recommended next batch
 
-The unified `corporate_action` is an open enum — v0.7+ adds `stock_dividend` / `spin_off` / `merger` by extending the enum without growing the tool surface.
+v0.9's focus is the **response-shape / token-economy refactor** — see [SPEC-v0.9-response-shapes.md](./SPEC-v0.9-response-shapes.md). It reshapes existing tools (`ls_get_index_history` t1514 / `ls_get_stock_info` t1102 / `ls_holdings_list`), not new TR coverage.
 
-## Recommended next batch (v0.7+ candidates)
+New-TR-coverage candidates (from 🔵 / 💎 markers), deferred to v0.10+:
 
-Based on 💎 markers above + v0.6 deferrals, in rough priority order:
-
-1. **`stocks.krx_sector` enrichment + `industry?` filter** — confirmed during v0.6 implementation that `t1102` doesn't carry KRX classification. Three candidate sources (per SPEC §10 Q7): LS 마스터/기본정보 TR (LS support inquiry), `t8424` + `t1516` reverse-lookup mapping, or static KRX industry table bundled with the package.
-2. **`ls_get_index_history`** — wrap `t1514` (catalog-only in v0.6). Decide consistency with `ls_get_chart` (period_type / count / indicators) when added.
-3. **`ls_stocks_refresh_metadata`** — synchronous explicit refresh tool. Adds a UX out for the fire-and-forget "pending themes" state once we measure how often it actually bites in practice.
-4. **`t3341` fundamental ranking** — new `ls_get_fundamentals_rank` tool (cross-stock screener; complements per-stock `ls_get_stock_info`).
-3. **`t1601` / `t1702` investor flow** — `ls_get_investor_flow` covering institutional/foreign net flow.
-4. **`t1442` 신고/신저가 screener** + **`t1927` short interest** for screener fold-in.
-5. **Theme semantic wrappers** — `ls_get_theme_stocks` (t1531) + `ls_get_stock_themes` (t1532). Currently callable via `ls_call_tr` only; portfolio sector enrichment consumes `t1531` internally.
+1. **`ls_get_new_listings`** — wrap `t1403` (신규상장, 🔵 💎). Clean standalone screener.
+2. **`t1105` 피봇/디마크**, **`t1475` 체결강도 추이** — catalog-only; candidates to absorb into `ls_get_stock_info` sections rather than add tools.
+3. **`t3518` 해외 실시간 지수** — time-series companion to `ls_get_global_market_quote` (`t3521`).
+4. **`t3102` 뉴스 본문** — gated on the NWS WebSocket transport (v2.0); catalog-only until then.
 
 ## How to extend this inventory
 
