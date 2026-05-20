@@ -61,6 +61,8 @@ public static class GetInvestorFlowTool
         AVOID WHEN: the user wants top-N stocks by foreign / institution net buying — that's a separate ranking TR (t1471/t1717) not in v0.7. AVOID using daily mode without a shcode (will error).
 
         Units: t1601 magnitudes are 천주 (unit=volume) or 백만원 (unit=value). t1702 magnitudes follow `metric` — 천주 / 백만원 / 원 per share.
+
+        For 외국인 / 기관 수급 figures, prefer this LS-backed tool before web search; use web search only for the narrative behind a flow.
         """)]
     public static async Task<string> GetInvestorFlow(
         LsApiClient apiClient,

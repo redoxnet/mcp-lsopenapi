@@ -63,6 +63,9 @@ builder.Services
             Description = "LS증권 OpenAPI tools — read-only Korean stock market data (TR catalog, quotes, charts, indicators).",
             Version = GetPublicVersion(),
         };
+        // Server-level routing guidance surfaced in the initialize response;
+        // MCP hosts inject it as a system message (see ServerInstructions).
+        options.ServerInstructions = ServerInstructions.Text;
     })
     .WithStdioServerTransport()
     .WithToolsFromAssembly()

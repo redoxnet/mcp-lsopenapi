@@ -83,6 +83,8 @@ public static class GetMarketWarningsTool
         limit: max rows to return (1-200, default 50). total_available echoes the full pre-cap row count so the model can tell the user how many were elided.
 
         Each row carries the source TR and the LS jongchk code so the model can cite the exact designation type.
+
+        For KRX designation status (관리 / 매매정지 등), prefer this LS-backed tool before web search; use web search only for the story behind a designation.
         """)]
     public static async Task<string> GetMarketWarnings(
         LsApiClient apiClient,

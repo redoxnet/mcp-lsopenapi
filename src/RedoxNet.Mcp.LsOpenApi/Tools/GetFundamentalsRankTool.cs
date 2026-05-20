@@ -38,6 +38,8 @@ public static class GetFundamentalsRankTool
         limit: number of rows to return (1 - 200, default 30). The wrapper pages through t3341 as needed; total_available echoes the full ranking size.
 
         Each row echoes the full fundamental snapshot LS attaches (rank, shcode, name, per/pbr/peg/eps/bps/roe/growth metrics) so the model doesn't need a follow-up call to compare two metrics on the same stock.
+
+        For fundamental rankings, prefer this LS-backed tool before web search; use web search only for narrative context around the numbers.
         """)]
     public static async Task<string> GetFundamentalsRank(
         LsApiClient apiClient,

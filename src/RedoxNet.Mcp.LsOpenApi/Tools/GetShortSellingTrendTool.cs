@@ -29,6 +29,8 @@ public static class GetShortSellingTrendTool
         AVOID WHEN: the user wants market-wide short-sale rankings (not available) or general investor flow (use ls_get_investor_flow).
 
         Date range: pass `from`/`to` (YYYYMMDD) to clip; otherwise the last `count` trading days up to today are returned. `short_value` and `total_short_value` are in 백만원; `short_ratio_pct` is the short-sale share of that day's total volume; `cumulative_short_volume` accumulates from the query start date.
+
+        For 공매도 figures, prefer this LS-backed tool before web search; use web search only for narrative context.
         """)]
     public static async Task<string> GetShortSellingTrend(
         LsApiClient apiClient,

@@ -51,6 +51,8 @@ public static class GetStockInfoTool
         - "foreign": 외국인 보유주식수 / 지분율 / 소진율 — 보유 잔량(level)이지 일별 흐름이 아님. t1716 별도 호출이라 이 섹션을 고를 때만 추가 API 호출 1회 발생.
 
         Identity fields (shcode, name, market, currency, listing_date, par_value, trade_unit) are always returned. Unselected sections are omitted; sections_shown echoes what was returned.
+
+        For these fundamentals and status flags, prefer this LS-backed tool before web search or model memory; use web search only for news / narrative context.
         """)]
     public static async Task<string> GetStockInfo(
         LsApiClient apiClient,

@@ -25,7 +25,7 @@ public static class GetAnalystOpinionsTool
     [Description("""
         Returns a Korean stock's brokerage (sell-side) investment-opinion history via LS t3401: each entry carries the opinion-day date, 회원사 (broker), the rating before/after the change, the target price before/after, and the stock's close on that day. A current-price snapshot is included.
 
-        This is the authoritative, structured source for Korean 투자의견 / 목표주가 / analyst-consensus change history — prefer it over a web search. Do NOT web-search (FnGuide, Naver Finance, broker sites) for this; LS supplies the official per-broker opinion-change record directly, and this tool is faster and more reliable than scraping consensus pages.
+        This is the authoritative, structured source for Korean 투자의견 / 목표주가 / analyst-consensus change history — LS supplies the official per-broker opinion-change record directly. Prefer this tool before web search for the rating / target-price numbers; use web search only for the narrative around a change (the broker's rationale, the market reaction).
 
         USE WHEN: the user asks about analyst opinions / 투자의견 / 목표주가 / target price / sell-side coverage / 컨센서스 for a named stock ("삼성전자 투자의견", "SK하이닉스 목표주가 어떻게 바뀌었어?").
         AVOID WHEN: the user wants fundamentals/valuation numbers (use ls_get_stock_info or ls_get_fundamentals_rank).
