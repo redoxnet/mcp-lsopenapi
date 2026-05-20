@@ -234,7 +234,8 @@ FICS 산업 분류 기반 보유종목 필터(`ls_holdings_list(industry?)`), �
 - [x] **v0.6.0** — 시장 컨텍스트(지수/업종/테마) + 포트폴리오 JSON 백업/복원 + 테마 자동 enrich + Tier 1 도구 압축. 37 → 39 도구.
 - [x] **v0.7.0** — 스크리너 4종 (펀더멘털/투자자 수급/이벤트 일정/관리·매매정지) + 지수 시계열 + 동기 메타데이터 refresh + FICS 업종 enrichment(`ls_holdings_list(industry?)`) + holdings.avg_price 정수 저장 + ETF themes_pending 수정 + Tier 2 도구 압축. 40 → 43 도구.
 - [x] **v0.8.0** — 해외 지수·환율·선물 단건 조회 + 투자의견·공매도·신고저가·증시 주변자금 래퍼 5종 + TR 카탈로그 12종 추가. 43 → 48 도구.
-- [ ] **v0.9+** — 응답 shape·토큰 이코노미 (SPEC v0.8), 실적 발표 wrapper, 차트 dataset에 ls_get_index_history 연동, FICS → KRX 표준 산업분류 매핑.
+- [x] **v0.9.0** — 응답 shape·토큰 이코노미 리팩터 (SPEC v0.9). `ls_get_index_history` / `ls_get_stock_info` / `ls_holdings_list` 3종 재구성 — 기본 호출 토큰 66~97% 절감. MCP SDK 1.3.0 + net10.0.
+- [ ] **v0.10.0** — 도구 표면 압축 (SPEC v0.10). `LS_TOOL_PROFILE` 프로파일 + 도메인 dispatcher 5종으로 48 → 약 32 도구.
 - [ ] **v2.0.0** — 실시간 시세 + 실시간 뉴스 헤더(NWS) → 본문(t3102) 페어 wrapper, 실 계좌 조회·잔고, 주문 발주 (WebSocket 전반).
 
 상세 변경 내역은 [RELEASENOTES.Mcp.md](RELEASENOTES.Mcp.md) · [RELEASENOTES.Core.md](RELEASENOTES.Core.md) 참고.
