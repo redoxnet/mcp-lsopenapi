@@ -230,76 +230,97 @@ internal static class PortfolioTools
 
     // ---------------------- Holdings ----------------------
 
-    [McpServerTool(Name = "ls_holdings_set")]
+    /// <summary>
+    /// v0.10 domain dispatcher (SPEC-v0.10 §2.6.5 — F1 conservative split).
+    /// Folds the five holding-write tools (ls_holdings_set / _buy / _sell /
+    /// _remove / _corporate_action) into one action-routed tool. The read
+    /// path stays a dedicated tool — <c>ls_holdings_list</c> — since "show my
+    /// holdings" is the single most common portfolio intent.
+    /// </summary>
+    [McpServerTool(Name = "ls_holding")]
     [Description("""
-        Replaces a holding with the supplied state. USE FOR "현재 보유 수량은 N주, 평단 M원이야" or initial registration.
-        AVOID WHEN: the user said "추가로 N주 더 샀어" — that's ls_holdings_buy and merges weighted average.
-        quantity must be positive; to delete a holding call ls_holdings_remove.
+        Records a change to one of the user's locally registered holdings — the write path. To VIEW holdings use ls_holdings_list instead. Does not require LS credentials. `shcode` is required for every action. Pick the operation with `action`:
+
+        - action="set" — replaces the holding with the supplied state. Requires `quantity` (≥1) and `avg_price`. USE FOR "현재 보유 수량은 N주, 평단 M원이야" or initial registration.
+        - action="buy" — records an incremental buy, merging with any existing lot at weighted-average cost. Requires `quantity` and `price`. USE FOR "삼성전자 N주 더 샀어. 단가 P원".
+        - action="sell" — records a sell. Requires `quantity`. Subtracts shares; the row is auto-removed at zero; returns InsufficientQuantity when quantity exceeds the position.
+        - action="remove" — removes the holding row outright regardless of quantity (returns removed=false when the symbol is not held).
+        - action="corporate_action" — applies a corporate action that preserves cost basis. Requires `type` ('split' 액면분할, 'reverse_split' 액면병합, 'bonus' 무상증자) and `ratio` (split/reverse_split: integer ≥2; bonus: positive fraction, 0.1 = 10%).
+
+        `account` is optional — auto-resolved when the symbol is held in exactly one account, AmbiguousAccount otherwise. For corporate_action, omitting `account` applies the event to every account holding the symbol.
+
+        USE WHEN: the user reports buying / selling / setting / removing one of their own positions, or a corporate action on a stock they hold.
+
+        v0.10 BREAKING: replaces ls_holdings_set / ls_holdings_buy / ls_holdings_sell / ls_holdings_remove / ls_holdings_corporate_action. The read tool ls_holdings_list is unchanged.
         """)]
-    public static async Task<string> HoldingSet(
+    public static async Task<string> Holding(
         IPortfolioService portfolio,
-        [Description("6-character Korean short code (usually 6 digits, some ETFs include an uppercase letter, e.g. '005930' or '0117V0').")]
+        [Description("Operation to perform: 'set', 'buy', 'sell', 'remove', or 'corporate_action'.")]
+        string action,
+        [Description("6-character Korean short code (e.g. '005930' or '0117V0'). Required for every action.")]
         string shcode,
-        [Description("Held quantity. Must be positive (>= 1).")]
-        int quantity,
-        [Description("Average purchase price. Must be zero or positive.")]
-        double avg_price,
-        [Description("Optional user notes for this holding.")]
+        [Description("Share quantity. Required for 'set' (≥1), 'buy', and 'sell'. Unused by 'remove' / 'corporate_action'.")]
+        int? quantity = null,
+        [Description("Average purchase price (≥0). Required for action='set'.")]
+        double? avg_price = null,
+        [Description("Price per share for this transaction. Required for action='buy'.")]
+        double? price = null,
+        [Description("set: optional user note for the holding.")]
         string? note = null,
-        [Description("Optional account identifier (account_number or nickname). When omitted: auto if exactly 1 account exists, error otherwise.")]
+        [Description("Optional account identifier (account_number or nickname). Auto-resolved when unambiguous; for corporate_action, omit to apply across every account holding the symbol.")]
         string? account = null,
-        CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.SetHoldingAsync(shcode, quantity, avg_price, note, account, cancellationToken)).ConfigureAwait(false);
-
-    [McpServerTool(Name = "ls_holdings_buy")]
-    [Description("""
-        Records an incremental buy. The tool merges the new lot with any existing position using weighted average cost basis.
-        USE FOR "삼성전자 N주 더 샀어. 단가 P원" or recording additional purchases.
-        """)]
-    public static async Task<string> HoldingBuy(
-        IPortfolioService portfolio,
-        [Description("6-character Korean short code (usually 6 digits, some ETFs include an uppercase letter, e.g. '005930' or '0117V0').")]
-        string shcode,
-        [Description("Number of shares bought in this transaction.")]
-        int quantity,
-        [Description("Price per share for this transaction.")]
-        double price,
-        [Description("Optional account identifier (account_number or nickname).")]
-        string? account = null,
-        CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.BuyHoldingAsync(shcode, quantity, price, account, cancellationToken)).ConfigureAwait(false);
-
-    [McpServerTool(Name = "ls_holdings_sell")]
-    [Description("""
-        Records a sell. Quantity is subtracted; the holding row is auto-removed when the remaining quantity reaches zero. Returns InsufficientQuantity when quantity exceeds the current position.
-        """)]
-    public static async Task<string> HoldingSell(
-        IPortfolioService portfolio,
-        [Description("6-character Korean short code (usually 6 digits, some ETFs include an uppercase letter, e.g. '005930' or '0117V0').")]
-        string shcode,
-        [Description("Number of shares sold. Must be positive and no greater than the current holding quantity.")]
-        int quantity,
-        [Description("Optional account identifier. Auto when the symbol is held in exactly one account; AmbiguousAccount otherwise.")]
-        string? account = null,
-        CancellationToken cancellationToken = default) =>
-        await SerializeAsync(() => portfolio.SellHoldingAsync(shcode, quantity, account, cancellationToken)).ConfigureAwait(false);
-
-    [McpServerTool(Name = "ls_holdings_remove")]
-    [Description("Removes a holding row outright (regardless of quantity). When the symbol is not held in any account, returns removed=false without raising.")]
-    public static async Task<string> HoldingRemove(
-        IPortfolioService portfolio,
-        [Description("6-character Korean short code (usually 6 digits, some ETFs include an uppercase letter, e.g. '005930' or '0117V0').")]
-        string shcode,
-        [Description("Optional account identifier. Auto when the symbol is held in exactly one account; AmbiguousAccount otherwise.")]
-        string? account = null,
-        CancellationToken cancellationToken = default) =>
-        await SerializeAsync(async () =>
+        [Description("corporate_action: type — 'split', 'reverse_split', or 'bonus'.")]
+        string? type = null,
+        [Description("corporate_action: ratio. split/reverse_split require an integer ≥2; bonus is a positive fraction (0.1 = 10%).")]
+        double? ratio = null,
+        CancellationToken cancellationToken = default)
+    {
+        const string tool = "ls_holding";
+        switch (NormalizeAction(action))
         {
-            HoldingWriteResult? removed = await portfolio.RemoveHoldingAsync(shcode, account, cancellationToken).ConfigureAwait(false);
-            return removed is null
-                ? (object)new { removed = false }
-                : new { removed = true, shcode = removed.Shcode, applied_to = removed.AppliedTo };
-        }).ConfigureAwait(false);
+            case "set":
+            {
+                List<string> missing = new();
+                if (quantity is null) missing.Add("quantity");
+                if (avg_price is null) missing.Add("avg_price");
+                if (missing.Count > 0)
+                    return MissingArgs(tool, "set", missing.ToArray());
+                return await SerializeAsync(() => portfolio.SetHoldingAsync(shcode, quantity!.Value, avg_price!.Value, note, account, cancellationToken)).ConfigureAwait(false);
+            }
+            case "buy":
+            {
+                List<string> missing = new();
+                if (quantity is null) missing.Add("quantity");
+                if (price is null) missing.Add("price");
+                if (missing.Count > 0)
+                    return MissingArgs(tool, "buy", missing.ToArray());
+                return await SerializeAsync(() => portfolio.BuyHoldingAsync(shcode, quantity!.Value, price!.Value, account, cancellationToken)).ConfigureAwait(false);
+            }
+            case "sell":
+                if (quantity is null)
+                    return MissingArgs(tool, "sell", "quantity");
+                return await SerializeAsync(() => portfolio.SellHoldingAsync(shcode, quantity.Value, account, cancellationToken)).ConfigureAwait(false);
+            case "remove":
+                return await SerializeAsync<object>(async () =>
+                {
+                    HoldingWriteResult? removed = await portfolio.RemoveHoldingAsync(shcode, account, cancellationToken).ConfigureAwait(false);
+                    return removed is null
+                        ? (object)new { removed = false }
+                        : new { removed = true, shcode = removed.Shcode, applied_to = removed.AppliedTo };
+                }).ConfigureAwait(false);
+            case "corporate_action":
+            {
+                List<string> missing = new();
+                if (string.IsNullOrWhiteSpace(type)) missing.Add("type");
+                if (ratio is null) missing.Add("ratio");
+                if (missing.Count > 0)
+                    return MissingArgs(tool, "corporate_action", missing.ToArray());
+                return await SerializeAsync<object>(() => DispatchCorporateActionAsync(portfolio, shcode, type, ratio!.Value, account, cancellationToken)).ConfigureAwait(false);
+            }
+            default:
+                return UnknownAction(tool, action, "set", "buy", "sell", "remove", "corporate_action");
+        }
+    }
 
     [McpServerTool(Name = "ls_holdings_list")]
     [Description("""
@@ -367,41 +388,15 @@ internal static class PortfolioTools
         CancellationToken cancellationToken = default) =>
         await SerializeAsync(() => portfolio.RefreshStockMetadataAsync(shcodes, kinds, cancellationToken)).ConfigureAwait(false);
 
-    // ---------------------- Corporate actions ----------------------
+    // ---------------------- Corporate-action helpers ----------------------
 
     /// <summary>
-    /// v0.6 Tier 1 compression. The three v0.5 tools (ls_holdings_split,
-    /// ls_holdings_reverse_split, ls_holdings_bonus) collapsed into one
-    /// open-enum dispatcher so the v0.7 additions
-    /// (stock_dividend / spin_off / merger) can land without expanding
-    /// the tool surface. See SPEC §4.5.
+    /// Routes <c>ls_holding action="corporate_action"</c> by <paramref name="type"/>
+    /// (액면분할 / 액면병합 / 무상증자) to the cost-basis-preserving service math.
+    /// Unknown types raise a <see cref="PortfolioValidationException"/> — an open
+    /// enum so v0.7+ types (stock_dividend / spin_off / merger) can land without
+    /// touching the tool surface.
     /// </summary>
-    [McpServerTool(Name = "ls_holdings_corporate_action")]
-    [Description("""
-        Applies a corporate action (액면분할 / 액면병합 / 무상증자) to a holding by adjusting quantity and average price so the cost basis is preserved. v0.6 replaces the three v0.5 tools (ls_holdings_split / _reverse_split / _bonus) with this single dispatcher.
-
-        type values (v0.6, open enum):
-        - "split"          — 액면분할. ratio must be an integer ≥ 2 (e.g. 10 for 1:10). qty *= ratio, avg /= ratio.
-        - "reverse_split"  — 액면병합. ratio must be an integer ≥ 2; rejects when qty is not divisible. qty /= ratio, avg *= ratio.
-        - "bonus"          — 무상증자. ratio is a positive fraction (e.g. 0.1 for 10%). qty *= (1+ratio), avg /= (1+ratio).
-        Unknown types return a ValidationError envelope listing the v0.6 set; v0.7+ extends the enum (stock_dividend / spin_off / merger) without adding new tools.
-
-        Account omitted → applied to every account holding the symbol (one corporate event affects all owners).
-        USE FOR phrases like "삼성전자 10:1 분할했대" (type=split, ratio=10), "삼성전자 10:1 액면병합" (type=reverse_split, ratio=10), "무상증자 1주당 0.1주" (type=bonus, ratio=0.1).
-        """)]
-    public static async Task<string> HoldingCorporateAction(
-        IPortfolioService portfolio,
-        [Description("6-character Korean short code.")]
-        string shcode,
-        [Description("Corporate action type: 'split', 'reverse_split', or 'bonus'. Other values planned for v0.7+ (stock_dividend / spin_off / merger).")]
-        string type,
-        [Description("Ratio. For split / reverse_split: integer ≥ 2. For bonus: positive double (0.1 = 10%).")]
-        double ratio,
-        [Description("Optional account identifier. Omit to apply across every account holding the symbol.")]
-        string? account = null,
-        CancellationToken cancellationToken = default) =>
-        await SerializeAsync<object>(() => DispatchCorporateActionAsync(portfolio, shcode, type, ratio, account, cancellationToken)).ConfigureAwait(false);
-
     static async Task<object> DispatchCorporateActionAsync(
         IPortfolioService portfolio,
         string shcode,
