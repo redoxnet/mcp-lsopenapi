@@ -104,4 +104,64 @@ public class NewApiTrCatalogTests
         meta.OutBlocks[1].IsArray.Should().BeTrue();
         meta.OutBlocks[2].Fields.Select(f => f.Name).Should().Contain("sTitle");
     }
+
+    [Theory]
+    [InlineData("t1105", "/stock/market-data", false)]
+    [InlineData("t1305", "/stock/market-data", true)]
+    [InlineData("t1403", "/stock/etc", true)]
+    [InlineData("t1442", "/stock/market-data", true)]
+    [InlineData("t1475", "/stock/market-data", true)]
+    [InlineData("t1927", "/stock/etc", true)]
+    [InlineData("t3401", "/stock/investinfo", true)]
+    [InlineData("t8425", "/stock/sector", false)]
+    [InlineData("t8428", "/stock/investinfo", true)]
+    public void G1StagedTrs_HaveExpectedPathAndContinuation(string code, string path, bool paginated)
+    {
+        TrMeta meta = TrCatalog.Default.Get(code);
+        meta.Path.Should().Be(path);
+        meta.Continuation.Supported.Should().Be(paginated);
+    }
+
+    [Fact]
+    public void T1442_NewHighLow_ModelsScreenerFiltersAndIdxPaging()
+    {
+        TrMeta meta = TrCatalog.Default.Get("t1442");
+
+        meta.InBlocks.Should().ContainSingle()
+            .Which.Fields.Select(f => f.Name).Should().Equal(
+                "gubun", "type1", "type2", "type3", "jc_num",
+                "sprice", "eprice", "volume", "idx", "jc_num2");
+
+        meta.OutBlocks.Select(b => b.Name).Should().Equal("t1442OutBlock", "t1442OutBlock1");
+        meta.OutBlocks[1].IsArray.Should().BeTrue();
+        meta.OutBlocks[1].Fields.Select(f => f.Name).Should().Contain(
+            new[] { "shcode", "hname", "price", "pastprice", "pastdiff" });
+        meta.Continuation.KeyFields.Should().Equal("idx");
+    }
+
+    [Fact]
+    public void T3401_AnalystOpinions_ModelsBeforeAfterColumns()
+    {
+        TrMeta meta = TrCatalog.Default.Get("t3401");
+
+        meta.OutBlocks.Select(b => b.Name).Should().Equal("t3401OutBlock", "t3401OutBlock1");
+        TrBlock opinions = meta.OutBlocks[1];
+        opinions.IsArray.Should().BeTrue();
+        opinions.Fields.Select(f => f.Name).Should().Contain(
+            new[] { "tradname", "bopn", "nopn", "boga", "noga" });
+        meta.Continuation.KeyFields.Should().Equal("cts_date");
+    }
+
+    [Fact]
+    public void T1305_PeriodPrices_CarryInvestorFlowPerBar()
+    {
+        TrMeta meta = TrCatalog.Default.Get("t1305");
+
+        meta.OutBlocks.Select(b => b.Name).Should().Equal("t1305OutBlock", "t1305OutBlock1");
+        TrBlock bars = meta.OutBlocks[1];
+        bars.IsArray.Should().BeTrue();
+        bars.Fields.Select(f => f.Name).Should().Contain(
+            new[] { "open", "high", "low", "close", "fpvolume", "covolume", "ppvolume", "chdegree" });
+        meta.Continuation.KeyFields.Should().Equal("date");
+    }
 }

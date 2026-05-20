@@ -2121,6 +2121,452 @@
       ],
       "continuation": { "supported": true, "in_key_fields": ["cts_shcode"], "out_key_field_hint": "OutBlock.cts_shcode" },
       "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t1105",
+      "name": "주식피봇디마크조회",
+      "category": "주식시세",
+      "path": "/stock/market-data",
+      "description": "지정 종목의 피봇 포인트와 1/2차 지지·저항선, 디마크(D) 지지·저항을 단건으로 조회합니다.",
+      "in_blocks": [
+        {
+          "name": "t1105InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "shcode", "type": "char", "description": "단축종목코드", "required": true, "length": 6, "example": "005930" },
+            { "name": "exchgubun", "type": "char", "description": "거래소구분코드. K=KRX, N=NXT, U=통합 (그외 입력은 KRX 처리)", "required": true, "length": 1, "example": "K" }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t1105OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "shcode", "type": "char", "description": "단축코드", "length": 6 },
+            { "name": "pbot", "type": "int", "description": "피봇" },
+            { "name": "offer1", "type": "int", "description": "1차저항" },
+            { "name": "supp1", "type": "int", "description": "1차지지" },
+            { "name": "offer2", "type": "int", "description": "2차저항" },
+            { "name": "supp2", "type": "int", "description": "2차지지" },
+            { "name": "stdprc", "type": "int", "description": "기준가격" },
+            { "name": "offerd", "type": "int", "description": "D저항" },
+            { "name": "suppd", "type": "int", "description": "D지지" }
+          ]
+        }
+      ],
+      "continuation": { "supported": false },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t1305",
+      "name": "기간별주가",
+      "category": "주식시세",
+      "path": "/stock/market-data",
+      "description": "지정 종목의 일/주/월 단위 기간별 시세를 조회합니다. 바별 OHLC·거래량 외에 외인·기관·개인 순매수, 체결강도, 소진율, 회전율, 시가총액을 함께 반환합니다. dwmcode로 일(1)/주(2)/월(3)을 선택하고, 연속 조회는 OutBlock1의 마지막 date를 InBlock.date로 넘겨 페이징합니다.",
+      "in_blocks": [
+        {
+          "name": "t1305InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "shcode", "type": "char", "description": "단축코드", "required": true, "length": 6, "example": "005930" },
+            { "name": "dwmcode", "type": "int", "description": "일주월구분. 1=일, 2=주, 3=월", "required": true, "length": 1, "example": "1" },
+            { "name": "date", "type": "char", "description": "날짜. 처음 조회시 빈 값, 연속 조회시 직전 OutBlock의 date", "required": true, "length": 8 },
+            { "name": "idx", "type": "int", "description": "IDX. 사용 안 함 (빈 값)", "required": true, "length": 4 },
+            { "name": "cnt", "type": "int", "description": "조회 건수 (1 이상)", "required": true, "length": 4, "example": "20" },
+            { "name": "exchgubun", "type": "char", "description": "거래소구분코드. K=KRX, N=NXT, U=통합", "required": false, "length": 1, "example": "K" }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t1305OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "cnt", "type": "int", "description": "건수" },
+            { "name": "date", "type": "char", "description": "날짜", "length": 8 },
+            { "name": "idx", "type": "int", "description": "IDX" },
+            { "name": "ex_shcode", "type": "char", "description": "거래소별단축코드", "length": 10 }
+          ]
+        },
+        {
+          "name": "t1305OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "date", "type": "char", "description": "날짜", "length": 8 },
+            { "name": "open", "type": "int", "description": "시가" },
+            { "name": "high", "type": "int", "description": "고가" },
+            { "name": "low", "type": "int", "description": "저가" },
+            { "name": "close", "type": "int", "description": "종가" },
+            { "name": "sign", "type": "char", "description": "전일대비구분", "length": 1 },
+            { "name": "change", "type": "int", "description": "전일대비" },
+            { "name": "diff", "type": "double", "description": "등락율" },
+            { "name": "volume", "type": "long", "description": "누적거래량" },
+            { "name": "diff_vol", "type": "double", "description": "거래증가율" },
+            { "name": "chdegree", "type": "double", "description": "체결강도" },
+            { "name": "sojinrate", "type": "double", "description": "소진율" },
+            { "name": "changerate", "type": "double", "description": "회전율" },
+            { "name": "fpvolume", "type": "long", "description": "외인순매수" },
+            { "name": "covolume", "type": "long", "description": "기관순매수" },
+            { "name": "shcode", "type": "char", "description": "종목코드", "length": 6 },
+            { "name": "value", "type": "long", "description": "누적거래대금 (단위: 백만)" },
+            { "name": "ppvolume", "type": "long", "description": "개인순매수" },
+            { "name": "o_sign", "type": "char", "description": "시가대비구분", "length": 1 },
+            { "name": "o_change", "type": "int", "description": "시가대비" },
+            { "name": "o_diff", "type": "double", "description": "시가기준등락율" },
+            { "name": "h_sign", "type": "char", "description": "고가대비구분", "length": 1 },
+            { "name": "h_change", "type": "int", "description": "고가대비" },
+            { "name": "h_diff", "type": "double", "description": "고가기준등락율" },
+            { "name": "l_sign", "type": "char", "description": "저가대비구분", "length": 1 },
+            { "name": "l_change", "type": "int", "description": "저가대비" },
+            { "name": "l_diff", "type": "double", "description": "저가기준등락율" },
+            { "name": "marketcap", "type": "long", "description": "시가총액 (단위: 백만)" }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "key_fields": ["date"] },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t1403",
+      "name": "신규상장종목조회",
+      "category": "주식기타",
+      "path": "/stock/etc",
+      "description": "지정 상장월 범위(YYYYMM) 안에 신규 상장된 종목 목록을 조회합니다. 공모가, 등록일, 등록일 기준가/종가와 각 등락율을 반환합니다. 연속 조회는 OutBlock의 idx를 InBlock.idx로 넘겨 페이징합니다.",
+      "in_blocks": [
+        {
+          "name": "t1403InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "gubun", "type": "char", "description": "구분. 0=전체, 1=코스피, 2=코스닥", "required": true, "length": 1, "example": "0" },
+            { "name": "styymm", "type": "char", "description": "시작상장월 YYYYMM", "required": true, "length": 6, "example": "202601" },
+            { "name": "enyymm", "type": "char", "description": "종료상장월 YYYYMM", "required": true, "length": 6, "example": "202605" },
+            { "name": "idx", "type": "int", "description": "IDX. 연속 조회시 직전 OutBlock의 idx", "required": true, "length": 4 }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t1403OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "idx", "type": "int", "description": "IDX" }
+          ]
+        },
+        {
+          "name": "t1403OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "hname", "type": "char", "description": "한글명", "length": 20 },
+            { "name": "price", "type": "int", "description": "현재가" },
+            { "name": "sign", "type": "char", "description": "전일대비구분", "length": 1 },
+            { "name": "change", "type": "int", "description": "전일대비" },
+            { "name": "diff", "type": "double", "description": "등락율" },
+            { "name": "volume", "type": "long", "description": "누적거래량" },
+            { "name": "kmprice", "type": "int", "description": "공모가" },
+            { "name": "date", "type": "char", "description": "등록일", "length": 8 },
+            { "name": "recprice", "type": "int", "description": "등록일기준가" },
+            { "name": "kmdiff", "type": "double", "description": "기준가등락율" },
+            { "name": "close", "type": "int", "description": "등록일종가" },
+            { "name": "recdiff", "type": "double", "description": "등록일등락율" },
+            { "name": "shcode", "type": "char", "description": "종목코드", "length": 6 }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "key_fields": ["idx"] },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t1442",
+      "name": "신고저가",
+      "category": "주식시세",
+      "path": "/stock/market-data",
+      "description": "신고가 또는 신저가 종목을 조회합니다. type1로 신고(0)/신저(1), type2로 기간(전일·5·10·20·60·90일·52주·년중), type3로 일시돌파(0)/돌파유지(1)를 선택합니다. 가격·거래량 필터와 제외 비트마스크(jc_num/jc_num2)를 지원하며, 연속 조회는 OutBlock의 idx를 InBlock.idx로 넘겨 페이징합니다.",
+      "in_blocks": [
+        {
+          "name": "t1442InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "gubun", "type": "char", "description": "구분. 0=전체, 1=코스피, 2=코스닥", "required": true, "length": 1, "example": "0" },
+            { "name": "type1", "type": "char", "description": "신고신저. 0=신고, 1=신저", "required": true, "length": 1, "example": "0" },
+            { "name": "type2", "type": "char", "description": "기간. 0=전일, 1=5일, 2=10일, 3=20일, 4=60일, 5=90일, 6=52주, 7=년중", "required": true, "length": 1, "example": "0" },
+            { "name": "type3", "type": "char", "description": "유지여부. 0=일시돌파, 1=돌파유지", "required": true, "length": 1, "example": "0" },
+            { "name": "jc_num", "type": "int", "description": "대상제외 비트마스크 (관리종목·시장경보·거래정지·우선주 등)", "required": true, "length": 12 },
+            { "name": "sprice", "type": "int", "description": "시작가격. 현재가 >= sprice", "required": true, "length": 8 },
+            { "name": "eprice", "type": "int", "description": "종료가격. 현재가 <= eprice", "required": true, "length": 8 },
+            { "name": "volume", "type": "long", "description": "거래량 필터. 거래량 >= volume", "required": true, "length": 12 },
+            { "name": "idx", "type": "int", "description": "IDX. 처음 조회시 빈 값, 연속 조회시 직전 OutBlock의 idx", "required": true, "length": 4 },
+            { "name": "jc_num2", "type": "int", "description": "대상제외2 비트마스크 (ETF·SPAC·ETN·투자주의/위험 등)", "required": true, "length": 12 }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t1442OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "idx", "type": "int", "description": "IDX" }
+          ]
+        },
+        {
+          "name": "t1442OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "shcode", "type": "char", "description": "종목코드", "length": 6 },
+            { "name": "hname", "type": "char", "description": "종목명", "length": 20 },
+            { "name": "price", "type": "int", "description": "현재가" },
+            { "name": "sign", "type": "char", "description": "전일대비구분", "length": 1 },
+            { "name": "change", "type": "int", "description": "전일대비" },
+            { "name": "diff", "type": "double", "description": "등락율" },
+            { "name": "volume", "type": "long", "description": "거래량" },
+            { "name": "pastprice", "type": "int", "description": "이전가" },
+            { "name": "pastsign", "type": "char", "description": "이전가대비구분", "length": 1 },
+            { "name": "pastchange", "type": "int", "description": "이전가대비" },
+            { "name": "pastdiff", "type": "double", "description": "이전가대비율" }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "key_fields": ["idx"] },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t1475",
+      "name": "체결강도추이",
+      "category": "주식시세",
+      "path": "/stock/market-data",
+      "description": "지정 종목의 체결강도(VP) 추이를 시간별 또는 일별로 조회합니다. 바별 당일 체결강도와 5/20/60 이동평균을 반환합니다. vptype로 시간별(0)/일별(1)을 선택하고, 연속 조회는 OutBlock의 date/time을 InBlock으로 넘겨 페이징합니다.",
+      "in_blocks": [
+        {
+          "name": "t1475InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "shcode", "type": "char", "description": "종목코드", "required": true, "length": 6, "example": "005930" },
+            { "name": "vptype", "type": "char", "description": "시간별/일별 구분. 0=시간별, 1=일별", "required": true, "length": 1, "example": "0" },
+            { "name": "datacnt", "type": "int", "description": "데이터 개수. 빈 값 입력시 최대 20개", "required": true, "length": 4 },
+            { "name": "date", "type": "int", "description": "기준일자. 연속 조회시 직전 OutBlock.date", "required": true, "length": 8 },
+            { "name": "time", "type": "int", "description": "기준시간. 연속 조회시 직전 OutBlock.time", "required": true, "length": 6 },
+            { "name": "rankcnt", "type": "int", "description": "랭크카운터. 미사용 필드", "required": true, "length": 3 },
+            { "name": "gubun", "type": "char", "description": "조회구분. 0=일반(누적거래량), 1=차트(체결량)", "required": true, "length": 1, "example": "0" }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t1475OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "date", "type": "int", "description": "기준일자" },
+            { "name": "time", "type": "int", "description": "기준시간" },
+            { "name": "rankcnt", "type": "int", "description": "랭크카운터" }
+          ]
+        },
+        {
+          "name": "t1475OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "datetime", "type": "char", "description": "일자/시간", "length": 10 },
+            { "name": "price", "type": "int", "description": "현재가" },
+            { "name": "sign", "type": "char", "description": "전일대비구분", "length": 1 },
+            { "name": "change", "type": "int", "description": "전일대비" },
+            { "name": "diff", "type": "double", "description": "등락율" },
+            { "name": "volume", "type": "long", "description": "거래량" },
+            { "name": "todayvp", "type": "double", "description": "당일 체결강도(VP)" },
+            { "name": "ma5vp", "type": "double", "description": "5일 체결강도 이동평균" },
+            { "name": "ma20vp", "type": "double", "description": "20일 체결강도 이동평균" },
+            { "name": "ma60vp", "type": "double", "description": "60일 체결강도 이동평균" }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "key_fields": ["date", "time"] },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t1927",
+      "name": "공매도일별추이",
+      "category": "주식기타",
+      "path": "/stock/etc",
+      "description": "지정 종목의 일별 공매도 추이를 조회합니다. 공매도 수량·대금·거래비중·평균단가·누적수량과 업틱룰 적용/예외 수량·대금을 반환합니다. 연속 조회는 OutBlock의 date를 InBlock.date로 넘겨 페이징합니다.",
+      "in_blocks": [
+        {
+          "name": "t1927InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "shcode", "type": "char", "description": "종목코드", "required": true, "length": 6, "example": "005930" },
+            { "name": "date", "type": "char", "description": "일자. 연속 조회시 직전 OutBlock의 date", "required": true, "length": 8 },
+            { "name": "sdate", "type": "char", "description": "시작일자 YYYYMMDD", "required": true, "length": 8, "example": "20260501" },
+            { "name": "edate", "type": "char", "description": "종료일자 YYYYMMDD", "required": true, "length": 8, "example": "20260531" }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t1927OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "date", "type": "char", "description": "일자CTS (다음 조회 키)", "length": 8 }
+          ]
+        },
+        {
+          "name": "t1927OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "date", "type": "char", "description": "일자", "length": 8 },
+            { "name": "price", "type": "int", "description": "현재가" },
+            { "name": "sign", "type": "char", "description": "전일대비구분", "length": 1 },
+            { "name": "change", "type": "int", "description": "전일대비" },
+            { "name": "diff", "type": "double", "description": "등락율" },
+            { "name": "volume", "type": "long", "description": "거래량" },
+            { "name": "value", "type": "long", "description": "거래대금" },
+            { "name": "gm_vo", "type": "long", "description": "공매도수량" },
+            { "name": "gm_va", "type": "long", "description": "공매도대금" },
+            { "name": "gm_per", "type": "double", "description": "공매도 거래비중" },
+            { "name": "gm_avg", "type": "long", "description": "평균 공매도단가" },
+            { "name": "gm_vo_sum", "type": "long", "description": "누적공매도수량" },
+            { "name": "gm_vo1", "type": "long", "description": "업틱룰 적용 공매도수량" },
+            { "name": "gm_va1", "type": "long", "description": "업틱룰 적용 공매도대금" },
+            { "name": "gm_vo2", "type": "long", "description": "업틱룰 예외 공매도수량" },
+            { "name": "gm_va2", "type": "long", "description": "업틱룰 예외 공매도대금" }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "key_fields": ["date"] },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t3401",
+      "name": "투자의견",
+      "category": "투자정보",
+      "path": "/stock/investinfo",
+      "description": "지정 종목에 대한 증권사(회원사) 투자의견 변경 이력을 조회합니다. 의견일자, 회원사명, 투자의견 변경 전/후, 목표가 변경 전/후, 의견일 종가를 반환합니다. 연속 조회는 OutBlock의 cts_date를 InBlock.cts_date로 넘겨 페이징합니다.",
+      "in_blocks": [
+        {
+          "name": "t3401InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "shcode", "type": "char", "description": "종목코드", "required": true, "length": 9, "example": "005930" },
+            { "name": "gubun1", "type": "char", "description": "구분", "required": false, "length": 1 },
+            { "name": "tradno", "type": "char", "description": "회원사코드 (빈 값=전체)", "required": false, "length": 3 },
+            { "name": "cts_date", "type": "char", "description": "IDXDATE. 연속 조회시 직전 OutBlock의 cts_date", "required": false, "length": 8 }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t3401OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "cts_date", "type": "char", "description": "IDXDATE (다음 조회 키)", "length": 8 },
+            { "name": "price", "type": "int", "description": "현재가" },
+            { "name": "sign", "type": "char", "description": "대비속성", "length": 1 },
+            { "name": "change", "type": "int", "description": "대비" },
+            { "name": "diff", "type": "double", "description": "등락율" },
+            { "name": "volume", "type": "long", "description": "거래량" },
+            { "name": "value", "type": "long", "description": "거래대금" }
+          ]
+        },
+        {
+          "name": "t3401OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "shcode", "type": "char", "description": "종목코드", "length": 9 },
+            { "name": "tradno", "type": "char", "description": "회원사코드", "length": 3 },
+            { "name": "date", "type": "char", "description": "의견일자", "length": 8 },
+            { "name": "tradname", "type": "char", "description": "회원사명", "length": 30 },
+            { "name": "bopn", "type": "char", "description": "투자의견 변경후", "length": 30 },
+            { "name": "nopn", "type": "char", "description": "투자의견 변경전", "length": 30 },
+            { "name": "boga", "type": "long", "description": "목표가 변경전" },
+            { "name": "noga", "type": "long", "description": "목표가 변경후" },
+            { "name": "close", "type": "int", "description": "의견일 종가" }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "key_fields": ["cts_date"] },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t8425",
+      "name": "전체테마",
+      "category": "주식시세",
+      "path": "/stock/sector",
+      "description": "LS 큐레이션 테마 전체 목록을 테마명/테마코드만 담아 조회합니다. 평균등락률·종목 수가 빠진 t1531의 경량 버전으로, 시세 enrich가 필요 없는 테마 키워드 해석에 적합합니다.",
+      "in_blocks": [
+        {
+          "name": "t8425InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "dummy", "type": "char", "description": "Dummy (빈 값)", "required": false, "length": 1 }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t8425OutBlock",
+          "is_array": true,
+          "fields": [
+            { "name": "tmname", "type": "char", "description": "테마명", "length": 36 },
+            { "name": "tmcode", "type": "char", "description": "테마코드", "length": 4 }
+          ]
+        }
+      ],
+      "continuation": { "supported": false },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t8428",
+      "name": "증시주변자금추이",
+      "category": "투자정보",
+      "path": "/stock/investinfo",
+      "description": "증시 주변 자금 추이를 일별로 조회합니다. 지수와 함께 고객예탁금·예탁증감·미수금·신용잔고·선물예수금과 주식형/혼합형/채권형/MMF 펀드 자금을 반환합니다(단위: 억원). gubun으로 예탁금(1)/수익증권(2), upcode로 코스피(001)/코스닥(301)을 선택하고, 연속 조회는 OutBlock의 date를 InBlock.key_date로 넘겨 페이징합니다.",
+      "in_blocks": [
+        {
+          "name": "t8428InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "fdate", "type": "char", "description": "from일자. 출력 기간 시작일", "required": true, "length": 8 },
+            { "name": "tdate", "type": "char", "description": "to일자. 출력 기간 종료일", "required": true, "length": 8 },
+            { "name": "gubun", "type": "char", "description": "구분. 1=예탁금, 2=수익증권", "required": true, "length": 1, "example": "1" },
+            { "name": "key_date", "type": "char", "description": "날짜. 연속 조회시 직전 OutBlock의 date, 처음 조회시 빈 값", "required": true, "length": 8 },
+            { "name": "upcode", "type": "char", "description": "업종코드. 001=코스피, 301=코스닥", "required": true, "length": 3, "example": "001" },
+            { "name": "cnt", "type": "int", "description": "조회건수", "required": true, "length": 3, "example": "20" }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t8428OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "date", "type": "char", "description": "날짜CTS (다음 조회 키)", "length": 8 },
+            { "name": "idx", "type": "int", "description": "IDX" }
+          ]
+        },
+        {
+          "name": "t8428OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "date", "type": "char", "description": "일자", "length": 8 },
+            { "name": "jisu", "type": "double", "description": "지수" },
+            { "name": "sign", "type": "char", "description": "대비구분", "length": 1 },
+            { "name": "change", "type": "double", "description": "대비" },
+            { "name": "diff", "type": "double", "description": "등락율" },
+            { "name": "volume", "type": "long", "description": "거래량" },
+            { "name": "custmoney", "type": "long", "description": "고객예탁금 (억원)" },
+            { "name": "yecha", "type": "long", "description": "예탁증감 (억원)" },
+            { "name": "vol", "type": "double", "description": "회전율" },
+            { "name": "outmoney", "type": "long", "description": "미수금 (억원)" },
+            { "name": "trjango", "type": "long", "description": "신용잔고 (억원)" },
+            { "name": "futymoney", "type": "long", "description": "선물예수금 (억원)" },
+            { "name": "stkmoney", "type": "long", "description": "주식형 (억원)" },
+            { "name": "mstkmoney", "type": "long", "description": "혼합형 주식 (억원)" },
+            { "name": "mbndmoney", "type": "long", "description": "혼합형 채권 (억원)" },
+            { "name": "bndmoney", "type": "long", "description": "채권형 (억원)" },
+            { "name": "bndsmoney", "type": "long", "description": "필러 (구 단기채권)" },
+            { "name": "mmfmoney", "type": "long", "description": "MMF (억원)" }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "key_fields": ["date"] },
+      "rate_limit_per_sec": 1
     }
   ]
 }

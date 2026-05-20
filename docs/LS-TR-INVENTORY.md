@@ -30,11 +30,11 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 | `t1101` | 주식 현재가 호가조회 | 🟢 | `ls_get_quote` — 10단계 호가 + per-level 직전대비 |
 | `t1102` | 주식 현재가(시세)조회 | 🟢 | `ls_get_stock_info` — PER/PBR/EPS + 분기 재무 + 52주/연중 범위 + 거래원 상위 5 + 외인 동향 |
 | `t1104` | 주식 현재가 시세메모 | ⚪ | |
-| `t1105` | 주식 피봇/디마크 조회 | ⚪ 💎 | Pivot points and DeMark levels — TA analysis candidate |
+| `t1105` | 주식 피봇/디마크 조회 | 🔵 💎 | In catalog (`ls_call_tr` only). Pivot + 1/2차 지지·저항 + DeMark levels, single snapshot. `ls_get_stock_info` section 흡수 후보. |
 | `t1109` | 시간외 체결량 | ⚪ | |
 | `t1301` | 주식 시간대별 체결조회 | 🟢 | `ls_get_chart period_type="tick"` — multi-field continuation |
 | `t1302` | 주식 분별주가 조회 | ⚪ | Possibly overlap with t8412 |
-| `t1305` | 기간별 주가 | ⚪ 💎 | N-day price summary in one call — useful for divergence analysis |
+| `t1305` | 기간별 주가 | 🔵 💎 | In catalog (`ls_call_tr` only). 일/주/월 OHLC + 외인·기관·개인 순매수 + 체결강도/소진율/회전율 per bar. `ls_get_chart`(t8410)·`ls_get_investor_flow`(t1702)와 겹쳐 wrapper화는 설계 보류. |
 | `t1308` | 주식 시간대별 체결조회 차트 | ⚪ | |
 | `t1310` | 주식 당일/전일 분틱 조회 | ⚪ | |
 | `t1404` | 관리/불성실/투자유의 조회 | ⚪ | Pair with t8436's `bu12gubun` flag for screening |
@@ -42,10 +42,10 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 | `t1410` | 초저유동성 조회 | ⚪ | |
 | `t1422` | 상/하한 | ⚪ | |
 | `t1427` | 상/하한가 직전 | ⚪ | |
-| `t1442` | 신고/신저가 | ⚪ 💎 | Common screener target |
+| `t1442` | 신고/신저가 | 🔵 💎 | In catalog (`ls_call_tr` only). 신고/신저 스크리너 — 기간(전일~년중)·유지여부·가격/거래량 필터·제외 비트마스크. `ls_get_top_stocks` kind 확장 후보. |
 | `t1449` | 가격대별 매매비중 조회 | ⚪ | |
 | `t1471` | 시간대별 호가잔량 추이 | ⚪ | |
-| `t1475` | 체결강도 추이 | ⚪ 💎 | Time series of `chdegree` (today we only return latest from t8407) |
+| `t1475` | 체결강도 추이 | 🔵 💎 | In catalog (`ls_call_tr` only). 체결강도(VP) 추이 + 5/20/60 이평, 시간별/일별. t8407은 latest만 — 이건 시계열. `ls_get_stock_info` section 흡수 후보. |
 | `t1486` | 시간별 예상체결가 | ⚪ | |
 | `t1488` | 예상체결가 등락율 상위 조회 | ⚪ | |
 | `t8407` | 주식 멀티 현재가 조회 API용 | 🟢 💡 | `ls_get_multi_quote` — up to 50 codes in one call |
@@ -129,10 +129,10 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 | `t3202` | 종목별 증시일정 | ⚪ | Earnings/event calendar |
 | `t3320` | FNG 요약 | ⚪ | F&G index? |
 | `t3341` | 재무순위 종합 | ⚪ 💎 | Fundamentals: PER/PBR/ROE — anchors fundamental analysis tooling |
-| `t3401` | 투자의견 | ⚪ | Sell-side coverage |
+| `t3401` | 투자의견 | 🔵 | In catalog (`ls_call_tr` only). 증권사 투자의견 변경 이력 — 의견·목표가 before/after. `ls_get_analyst_opinions` wrapper 후보. |
 | `t3518` | 해외 실시간 지수 | 🔵 | In catalog (`ls_call_tr` only). Overseas index / FX / futures series (day/week/month/min/tick) with body continuation (`cts_date`, `cts_time`). |
 | `t3521` | 해외지수 조회 (API용) | 🟢 💡 | `ls_get_global_market_quote` — one-shot overseas index / FX / futures snapshot. Covers major US indices (`nasdaq`, `sp500`, `dow`, `soxx`) and FX (`usdkrw`) aliases. |
-| `t8428` | 증시주변자금 추이 | ⚪ | Macro liquidity |
+| `t8428` | 증시주변자금 추이 | 🔵 | In catalog (`ls_call_tr` only). 일별 고객예탁금·신용잔고·미수금 + 펀드 자금(주식/혼합/채권/MMF). 매크로 유동성 시계열. |
 
 ## [주식] 섹터 — LS curated themes (path `/stock/sector`)
 
@@ -144,7 +144,7 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 | `t1532` | 종목별 테마 | 🟢 | `ls_get_stock_themes` — every theme a stock belongs to. Also feeds the v0.6 fire-and-forget enrichment that populates the `stock_themes` cache on portfolio writes. |
 | `t1533` | 특이 테마 | ⚪ | |
 | `t1537` | 테마종목별 시세조회 | 🟢 | `ls_get_theme_stocks` — stocks inside one theme + summary (tmcnt/upcnt/uprate). Header-based `tr_cont` / `tr_cont_key` paging. |
-| `t8425` | 전체 테마 | ⚪ | Lighter than t1531 (tmname + tmcode only, no quote). Possible v0.7+ optimization when quote enrichment isn't needed. |
+| `t8425` | 전체 테마 | 🔵 | In catalog (`ls_call_tr` only). Lighter than t1531 (tmname + tmcode only, no quote). 시세 enrich 불필요한 테마 키워드 해석 내부 최적화 후보. |
 
 ## [업종] 시세 — KRX industry indices (path `/indtp/market-data`)
 
@@ -179,12 +179,12 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 | TR | 이름 | Status | Tool / Notes |
 | --- | --- | --- | --- |
 | `CLNAQ00100` | 예탁담보융자 가능종목 현황 조회 | ⚪ | Margin |
-| `t1403` | 신규상장 종목 조회 | ⚪ 💎 | IPO list — common analyst query |
+| `t1403` | 신규상장 종목 조회 | 🔵 💎 | In catalog (`ls_call_tr` only). 상장월 범위별 IPO 목록 — 공모가·등록일 기준가/종가. `ls_get_new_listings` wrapper 후보. |
 | `t1411` | 증거금율별 종목 조회 | ⚪ | |
 | `t1638` | 종목별 잔량/사전공시 | ⚪ | |
 | `t1921` | 신용거래 동향 | ⚪ | |
 | `t1926` | 종목별 신용정보 | ⚪ | |
-| `t1927` | 공매도 일별 추이 | ⚪ 💎 | Short interest |
+| `t1927` | 공매도 일별 추이 | 🔵 💎 | In catalog (`ls_call_tr` only). 일별 공매도 수량·대금·비중·평균단가 + 업틱룰 적용/예외. `ls_get_stock_info` section 흡수 후보. |
 | `t1941` | 종목별 대차거래 일간 추이 | ⚪ | |
 | `t8430` | 주식 종목조회 (legacy) | 🔵 | Catalog only; superseded by t8436 |
 | `t8436` | 주식 종목조회 API용 | 🟢 💡 | `ls_search_stock` — includes SPAC + 관리종목 flags |
