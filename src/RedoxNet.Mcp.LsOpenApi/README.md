@@ -1,3 +1,5 @@
+<!-- mcp-name: io.github.redoxnet/lsopenapi -->
+
 # RedoxNet.Mcp.LsOpenApi
 
 MCP server for the **LS증권 OpenAPI** — exposes Korean stock market data as MCP tools so AI assistants can query quotes, charts, and ETF data in natural language. **v0.6 adds market context (index + industry indices + LS themes), portfolio export/import, and a freshness-tracked theme cache**, on top of v0.5's local-only multi-account portfolio module.

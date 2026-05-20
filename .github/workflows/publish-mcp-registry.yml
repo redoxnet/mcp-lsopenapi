@@ -1,0 +1,49 @@
+name: Publish to MCP Registry
+
+# Manual trigger. Run this AFTER the matching RedoxNet.Mcp.LsOpenApi version is
+# live on nuget.org: the MCP Registry validates the `mcp-name` line in the
+# published NuGet package's README, so NuGet must be indexed first.
+#
+# dry_run defaults to true — the first run only validates. Re-run with
+# dry_run=false to actually publish.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Validate only — do not publish to the registry"
+        type: boolean
+        default: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # GitHub OIDC — lets mcp-publisher authenticate without a PAT
+
+    steps:
+      - uses: actions/checkout@v5
+
+      # mcp-publisher is the official CLI from modelcontextprotocol/registry.
+      # If `go install` fails, confirm the module path against the current
+      # mcp-publisher release docs and adjust.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Install mcp-publisher
+        run: go install github.com/modelcontextprotocol/registry/cmd/mcp-publisher@latest
+
+      # GitHub Actions OIDC login. The workflow's repository owner must own the
+      # io.github.redoxnet namespace declared in .mcp/server.json.
+      - name: Authenticate (GitHub OIDC)
+        run: mcp-publisher login github-oidc
+
+      - name: Publish server.json
+        working-directory: src/RedoxNet.Mcp.LsOpenApi/.mcp
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            mcp-publisher publish --dry-run
+          else
+            mcp-publisher publish
+          fi
