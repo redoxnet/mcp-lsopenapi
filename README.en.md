@@ -20,7 +20,7 @@ MCP server for **LS Securities OpenAPI** — ask an AI assistant for quotes, cha
 - **A smaller routing surface.** The default `standard` profile exposes 32 semantic tools, while the 3 catalog escape-hatch tools stay hidden unless `LS_TOOL_PROFILE=all`.
 - **Local portfolio memory.** Track holdings, watchlists, watched themes, corporate actions, and JSON backup / restore without sending portfolio notes anywhere except your local SQLite database.
 
-Token-efficiency case study: [Same question, less context](docs/case-studies/v0.4.0-token-efficiency.md)
+Token-efficiency case study: [Same question, less context](docs/case-studies/v0.4.0-token-efficiency.en.md)
 
 ## Disclaimer
 
