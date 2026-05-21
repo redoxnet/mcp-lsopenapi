@@ -23,7 +23,7 @@ public sealed class LsApiOptions
     public const string TokenEndpointPath = "/oauth2/token";
 
     /// <summary>Target market. Determines the default <see cref="BaseUrl"/> when not set explicitly.</summary>
-    public LsMarket Market { get; set; } = LsMarket.Virtual;
+    public LsMarket Market { get; set; } = LsMarket.Real;
 
     /// <summary>
     /// REST base URL. When <see langword="null"/>, the default for the current

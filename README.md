@@ -105,7 +105,7 @@ LS증권 OpenAPI 키 한 쌍(`AppKey` + `AppSecretKey`)이 필요합니다 — [
       "env": {
         "LS_APPKEY": "...",
         "LS_APPSECRETKEY": "...",
-        "LS_MARKET": "virtual"  // "virtual" 모의투자 / "real" 실거래
+        "LS_MARKET": "real"  // 생략해도 real. 모의투자는 "virtual"
       }
     }
   }

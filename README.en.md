@@ -57,7 +57,7 @@ Wire it into your MCP host:
       "env": {
         "LS_APPKEY": "...",
         "LS_APPSECRETKEY": "...",
-        "LS_MARKET": "virtual"  // "virtual" (paper) or "real" (live)
+        "LS_MARKET": "real"  // default if omitted; use "virtual" only for LS mock accounts
       }
     }
   }
@@ -76,7 +76,7 @@ args = ["RedoxNet.Mcp.LsOpenApi", "--yes"]
 [mcp_servers.lsopenapi.env]
 LS_APPKEY = "..."
 LS_APPSECRETKEY = "..."
-LS_MARKET = "virtual"  # "virtual" (paper) or "real" (live)
+LS_MARKET = "real"  # default if omitted; use "virtual" only for LS mock accounts
 ```
 
 ### VS Code (`mcp.json`)
@@ -93,7 +93,7 @@ Workspace `.vscode/mcp.json`:
       "env": {
         "LS_APPKEY": "...",
         "LS_APPSECRETKEY": "...",
-        "LS_MARKET": "virtual"  // "virtual" (paper) or "real" (live)
+        "LS_MARKET": "real"  // default if omitted; use "virtual" only for LS mock accounts
       }
     }
   }
@@ -115,7 +115,7 @@ You need an **AppKey** and **AppSecretKey** pair issued by LS Securities to use 
 2. Navigate to **OpenAPI Application** → agree to the terms → submit application.
 3. After approval, find your **AppKey** and **AppSecretKey** under **MY > API Key Management**.
    - The **AppSecretKey is shown only once** at issuance — store it in a password manager (1Password, Bitwarden, etc.) immediately.
-4. New users are encouraged to start with the **paper trading environment** (`LS_MARKET=virtual`). Live trading (`real`) may require additional registration.
+4. Use `LS_MARKET=real` for normal read-only market data. The server still accepts `LS_MARKET=virtual` for LS mock-account workflows, but quote/chart/screener data is served from the same LS OpenAPI host and `real` is the default.
 
 ### Security Notes
 
@@ -131,7 +131,7 @@ For more details from LS, see the [official usage guide](https://openapi.ls-sec.
 | --- | --- | --- |
 | `LS_APPKEY` | yes | LS OpenAPI app key. |
 | `LS_APPSECRETKEY` | yes | LS OpenAPI app secret key. |
-| `LS_MARKET` | no | `real` or `virtual` (default `virtual`). |
+| `LS_MARKET` | no | `real` or `virtual` (default `real`). |
 | `LS_TOOL_PROFILE` | no | `standard` (default — hides the 3 catalog tools from `tools/list`) or `all` (exposes them). |
 | `LS_TOOL_PROFILE_STRICT` | no | `true` rejects a `tools/call` for a profile-hidden tool instead of honoring it (default `false`). |
 | `LS_BASEURL` | no | Override REST base URL (rarely needed). |

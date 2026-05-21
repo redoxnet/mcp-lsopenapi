@@ -28,7 +28,7 @@ public class EnvironmentLsCredentialsResolverTests
     }
 
     [Fact]
-    public async Task ResolveAsync_MarketMissing_DefaultsToVirtual()
+    public async Task ResolveAsync_MarketMissing_DefaultsToReal()
     {
         var resolver = Build(new()
         {
@@ -39,7 +39,7 @@ public class EnvironmentLsCredentialsResolverTests
         LsCredentials? creds = await resolver.ResolveAsync();
 
         creds.Should().NotBeNull();
-        creds!.Market.Should().Be(LsMarket.Virtual);
+        creds!.Market.Should().Be(LsMarket.Real);
     }
 
     [Fact]

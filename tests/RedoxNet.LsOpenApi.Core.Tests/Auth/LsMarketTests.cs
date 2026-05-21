@@ -1,5 +1,6 @@
 using FluentAssertions;
 using RedoxNet.LsOpenApi.Core.Auth;
+using RedoxNet.LsOpenApi.Core.Http;
 using Xunit;
 
 namespace RedoxNet.LsOpenApi.Core.Tests.Auth;
@@ -27,9 +28,9 @@ public class LsMarketTests
     [InlineData("")]
     [InlineData("   ")]
     [InlineData("unknown-value")]
-    public void Parse_MissingOrUnknown_DefaultsToVirtual(string? input)
+    public void Parse_MissingOrUnknown_DefaultsToReal(string? input)
     {
-        LsMarketExtensions.Parse(input).Should().Be(LsMarket.Virtual);
+        LsMarketExtensions.Parse(input).Should().Be(LsMarket.Real);
     }
 
     [Fact]
@@ -42,5 +43,11 @@ public class LsMarketTests
     public void ToCanonical_Virtual_ReturnsLowercase()
     {
         LsMarket.Virtual.ToCanonical().Should().Be("virtual");
+    }
+
+    [Fact]
+    public void LsApiOptions_DefaultMarket_IsReal()
+    {
+        new LsApiOptions().Market.Should().Be(LsMarket.Real);
     }
 }

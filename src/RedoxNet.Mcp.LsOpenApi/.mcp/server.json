@@ -45,12 +45,12 @@
           "value": "{ls_market}",
           "variables": {
             "ls_market": {
-              "description": "LS OpenAPI environment: virtual or real",
+              "description": "LS OpenAPI environment: real or virtual",
               "isRequired": false,
-              "default": "virtual",
+              "default": "real",
               "choices": [
-                "virtual",
-                "real"
+                "real",
+                "virtual"
               ]
             }
           }

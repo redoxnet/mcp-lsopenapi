@@ -134,7 +134,7 @@ static int PrintUsage()
     Console.Error.WriteLine("Environment variables:");
     Console.Error.WriteLine("  LS_APPKEY          LS OpenAPI app key (required).");
     Console.Error.WriteLine("  LS_APPSECRETKEY    LS OpenAPI app secret key (required).");
-    Console.Error.WriteLine("  LS_MARKET          'real' or 'virtual' (default: virtual).");
+    Console.Error.WriteLine("  LS_MARKET          'real' or 'virtual' (default: real).");
     Console.Error.WriteLine("  LS_BASEURL         Override REST base URL (optional).");
     Console.Error.WriteLine("  LS_LOG_LEVEL       Minimum log level: Trace|Debug|Information|Warning|Error|Critical|None (default: Information).");
     Console.Error.WriteLine("  LS_TOOL_PROFILE    'standard' (default — catalog tools hidden) or 'all'.");

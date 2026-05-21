@@ -25,7 +25,7 @@ MCP server for the **LS증권 OpenAPI** — exposes Korean stock market data as 
       "env": {
         "LS_APPKEY": "...",
         "LS_APPSECRETKEY": "...",
-        "LS_MARKET": "virtual"  // "virtual" (paper) or "real" (live)
+        "LS_MARKET": "real"  // default if omitted; use "virtual" only for LS mock accounts
       }
     }
   }
@@ -44,7 +44,7 @@ args = ["RedoxNet.Mcp.LsOpenApi", "--yes"]
 [mcp_servers.lsopenapi.env]
 LS_APPKEY = "..."
 LS_APPSECRETKEY = "..."
-LS_MARKET = "virtual"  # "virtual" (paper) or "real" (live)
+LS_MARKET = "real"  # default if omitted; use "virtual" only for LS mock accounts
 ```
 
 ### VS Code
@@ -61,7 +61,7 @@ Workspace `.vscode/mcp.json`:
       "env": {
         "LS_APPKEY": "...",
         "LS_APPSECRETKEY": "...",
-        "LS_MARKET": "virtual"  // "virtual" (paper) or "real" (live)
+        "LS_MARKET": "real"  // default if omitted; use "virtual" only for LS mock accounts
       }
     }
   }
@@ -84,7 +84,7 @@ Workspace `.vscode/mcp.json`:
 ```
 LS_APPKEY=...
 LS_APPSECRETKEY=...
-LS_MARKET=virtual
+LS_MARKET=real
 ```
 
 AssistStudio renders the optional Plotly chart spec from `ls_get_chart` inline in the
@@ -97,7 +97,7 @@ directly in the conversation.
 |---|---|---|
 | `LS_APPKEY` | yes | LS OpenAPI app key. |
 | `LS_APPSECRETKEY` | yes | LS OpenAPI app secret key. |
-| `LS_MARKET` | no | `real` or `virtual` (default `virtual`). |
+| `LS_MARKET` | no | `real` or `virtual` (default `real`). |
 | `LS_TOOL_PROFILE` | no | `standard` (default — hides the 3 catalog tools from `tools/list`) or `all` (exposes them). |
 | `LS_TOOL_PROFILE_STRICT` | no | `true` rejects a `tools/call` for a profile-hidden tool instead of honoring it (default `false`). |
 | `LS_BASEURL` | no | Override REST base URL (rarely needed). |
