@@ -6,6 +6,8 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 
 **Implementation status last refreshed:** 2026-05-20 for v0.8.0 — catalog **45 TRs**, **48 MCP tools**. v0.7–v0.8 wrapped `t1404`/`t1405` (`ls_get_market_warnings`), `t1514` (`ls_get_index_history`), `t1601`/`t1702` (`ls_get_investor_flow`), `t3202` (`ls_get_stock_events`), `t3341` (`ls_get_fundamentals_rank`), `t1442` (`ls_get_high_low_stocks`), `t1927` (`ls_get_short_selling_trend`), `t3401` (`ls_get_analyst_opinions`), `t3521` (`ls_get_global_market_quote`), `t8428` (`ls_get_market_funds_trend`). `t3320` (FICS industry) wired into the portfolio `industry` filter.
 
+**2026-05-21 patch:** 프로그램매매 7종 (`t1631` `t1632` `t1633` `t1636` `t1637` `t1640` `t1662`) 카탈로그 등록 — 🔵 `ls_call_tr` 호출 가능, 전용 wrapper는 미정. 7종 모두 라이브 검증 완료. 카탈로그 총 **53 TRs**.
+
 **Use this doc when:** deciding what to add to the catalog next, mapping a user request to an underlying TR, or scoping the next release.
 
 **LS-side data quirks:** see [LS-API-QUIRKS.md](LS-API-QUIRKS.md) for undocumented, inconsistent, or wrong LS API behaviors and this project's workarounds.
@@ -115,13 +117,13 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 
 | TR | 이름 | Status | Tool / Notes |
 | --- | --- | --- | --- |
-| `t1631` | 프로그램매매 종합조회 | ⚪ | |
-| `t1632` | 시간대별 프로그램매매 추이 | ⚪ | |
-| `t1633` | 기간별 프로그램매매 추이 | ⚪ | |
-| `t1636` | 종목별 프로그램매매 동향 | ⚪ | |
-| `t1637` | 종목별 프로그램매매 추이 | ⚪ | |
-| `t1640` | 프로그램매매 종합조회 (미니) | ⚪ | |
-| `t1662` | 시간대별 프로그램매매 추이 (차트) | ⚪ | |
+| `t1631` | 프로그램매매 종합조회 | 🔵 | 시장 전체 종합 + 차익/비차익 미체결잔량 백로그 |
+| `t1632` | 시간대별 프로그램매매 추이 | 🔵 | 시장 장중 추이 (차익/비차익, ~1분 누적), date/time 연속조회 |
+| `t1633` | 기간별 프로그램매매 추이 | 🔵 | 시장 일/주/월 추이, date 연속조회 |
+| `t1636` | 종목별 프로그램매매 동향 | 🔵 | 종목별 순매수 랭킹 스크리너 + 시총대비 순매수비중 |
+| `t1637` | 종목별 프로그램매매 추이 | 🔵 | 단일 종목 시계열 (장중 ~1분 누적 / 일별), 차익분리 없음 |
+| `t1640` | 프로그램매매 종합조회 (미니) | 🔵 | 경량 스냅샷 + 직전대비 증감, 폴링용 |
+| `t1662` | 시간대별 프로그램매매 추이 (차트) | 🔵 | 시장 장중 추이 차트본 (페이징 없는 1회 일괄) |
 
 ## [주식] 투자정보 — Fundamentals / news
 

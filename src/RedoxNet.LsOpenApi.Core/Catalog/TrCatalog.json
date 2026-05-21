@@ -2616,6 +2616,362 @@
       ],
       "continuation": { "supported": true, "key_fields": ["date"] },
       "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t1631",
+      "name": "프로그램매매 종합조회",
+      "category": "프로그램매매",
+      "path": "/stock/program",
+      "description": "시장 전체(거래소/코스닥) 프로그램매매 종합. t1631OutBlock = 차익/비차익 × 매수/매도의 미체결잔량·주문수량 백로그. t1631OutBlock1 = 시간대 누적 행(매수/매도/순매수 수량·금액), 마지막 행이 당일 합계. dgubun=1:당일 / 2:기간(sdate~edate). 라이브 확인 2026-05-21.",
+      "in_blocks": [
+        {
+          "name": "t1631InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "gubun", "type": "char", "description": "시장구분 (1:거래소 2:코스닥)", "required": true, "length": 1, "example": "1" },
+            { "name": "dgubun", "type": "char", "description": "일자구분 (1:당일조회 2:기간조회)", "required": true, "length": 1, "example": "1" },
+            { "name": "sdate", "type": "char", "description": "시작일자 YYYYMMDD (당일조회시 빈 값)", "required": false, "length": 8 },
+            { "name": "edate", "type": "char", "description": "종료일자 YYYYMMDD (당일조회시 빈 값)", "required": false, "length": 8 },
+            { "name": "exchgubun", "type": "char", "description": "거래소구분 (K:KRX N:NXT U:통합, 생략 시 KRX)", "required": false, "length": 1 }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t1631OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "cdhrem", "type": "int", "description": "매도차익 미체결잔량" },
+            { "name": "bdhrem", "type": "int", "description": "매도비차익 미체결잔량" },
+            { "name": "tcdrem", "type": "int", "description": "매도차익 주문수량" },
+            { "name": "tbdrem", "type": "int", "description": "매도비차익 주문수량" },
+            { "name": "cshrem", "type": "int", "description": "매수차익 미체결잔량" },
+            { "name": "bshrem", "type": "int", "description": "매수비차익 미체결잔량" },
+            { "name": "tcsrem", "type": "int", "description": "매수차익 주문수량" },
+            { "name": "tbsrem", "type": "int", "description": "매수비차익 주문수량" }
+          ]
+        },
+        {
+          "name": "t1631OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "offervolume", "type": "int", "description": "매도수량" },
+            { "name": "offervalue", "type": "long", "description": "매도금액" },
+            { "name": "bidvolume", "type": "int", "description": "매수수량" },
+            { "name": "bidvalue", "type": "long", "description": "매수금액" },
+            { "name": "volume", "type": "int", "description": "순매수수량" },
+            { "name": "value", "type": "long", "description": "순매수금액" }
+          ]
+        }
+      ],
+      "continuation": { "supported": false },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t1632",
+      "name": "시간대별 프로그램매매 추이",
+      "category": "프로그램매매",
+      "path": "/stock/program",
+      "description": "시장 전체 장중 시간대별 프로그램매매 추이. t1632OutBlock1 각 행 = 차익(cha)/비차익(bcha)/전체(tot) × 매수(1)/매도(2)/순매수(3) + KOSPI200 지수·BASIS. 값은 장 시작부터의 누적 — 분당 흐름은 인접 행 diff. ~1분 event-sparse 그리드. 연속조회: t1632OutBlock의 date/time을 다음 InBlock에 echo. 페이징 없는 1회 일괄본은 t1662(차트).",
+      "in_blocks": [
+        {
+          "name": "t1632InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "gubun", "type": "char", "description": "시장구분 (0:거래소 1:코스닥)", "required": true, "length": 1, "example": "0" },
+            { "name": "gubun1", "type": "char", "description": "금액수량구분 (0:금액 1:수량)", "required": true, "length": 1, "example": "0" },
+            { "name": "gubun2", "type": "char", "description": "직전대비증감 (1:직전대비증감)", "required": true, "length": 1, "example": "1" },
+            { "name": "gubun3", "type": "char", "description": "전일구분 (1:전일분 포함)", "required": true, "length": 1, "example": "1" },
+            { "name": "date", "type": "char", "description": "일자 연속키 (처음은 빈 값, 이후 t1632OutBlock.date echo)", "required": false, "length": 8 },
+            { "name": "time", "type": "char", "description": "시간 연속키 (처음은 빈 값, 이후 t1632OutBlock.time echo)", "required": false, "length": 6 },
+            { "name": "exchgubun", "type": "char", "description": "거래소구분 (K:KRX N:NXT U:통합, 생략 시 KRX)", "required": false, "length": 1 }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t1632OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "date", "type": "char", "description": "날짜 연속키 (CTS)", "length": 8 },
+            { "name": "time", "type": "char", "description": "시간 연속키 (CTS)", "length": 6 },
+            { "name": "idx", "type": "int", "description": "IDX" },
+            { "name": "ex_gubun", "type": "char", "description": "거래소별 구분코드", "length": 2 }
+          ]
+        },
+        {
+          "name": "t1632OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "time", "type": "char", "description": "시간 HHMMSS", "length": 6 },
+            { "name": "k200jisu", "type": "double", "description": "KOSPI200 지수" },
+            { "name": "sign", "type": "char", "description": "대비구분", "length": 1 },
+            { "name": "change", "type": "double", "description": "전일대비" },
+            { "name": "k200basis", "type": "double", "description": "KOSPI200 베이시스" },
+            { "name": "tot3", "type": "long", "description": "전체 순매수 (장 시작부터 누적)" },
+            { "name": "tot1", "type": "long", "description": "전체 매수 (누적)" },
+            { "name": "tot2", "type": "long", "description": "전체 매도 (누적)" },
+            { "name": "cha3", "type": "long", "description": "차익 순매수 (누적)" },
+            { "name": "cha1", "type": "long", "description": "차익 매수 (누적)" },
+            { "name": "cha2", "type": "long", "description": "차익 매도 (누적)" },
+            { "name": "bcha3", "type": "long", "description": "비차익 순매수 (누적) — 기관 바스켓 신호" },
+            { "name": "bcha1", "type": "long", "description": "비차익 매수 (누적)" },
+            { "name": "bcha2", "type": "long", "description": "비차익 매도 (누적)" }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "key_fields": ["date", "time"] },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t1633",
+      "name": "기간별 프로그램매매 추이",
+      "category": "프로그램매매",
+      "path": "/stock/program",
+      "description": "시장 전체 일/주/월별 프로그램매매 추이 (fdate~tdate). 각 행 = 차익(cha)/비차익(bcha)/전체(tot) × 매수(1)/매도(2)/순매수(3) + 지수·거래량. gubun2=0:수치 / 1:누적, gubun3=1:일 2:주 3:월. 연속조회: t1633OutBlock.date를 다음 InBlock.date에 echo.",
+      "in_blocks": [
+        {
+          "name": "t1633InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "gubun", "type": "char", "description": "시장구분 (0:거래소 1:코스닥)", "required": true, "length": 1, "example": "0" },
+            { "name": "gubun1", "type": "char", "description": "금액수량구분 (0:금액 1:수량)", "required": true, "length": 1, "example": "0" },
+            { "name": "gubun2", "type": "char", "description": "수치누적구분 (0:수치 1:누적)", "required": true, "length": 1, "example": "0" },
+            { "name": "gubun3", "type": "char", "description": "일주월구분 (1:일 2:주 3:월)", "required": true, "length": 1, "example": "1" },
+            { "name": "fdate", "type": "char", "description": "시작일자 YYYYMMDD", "required": true, "length": 8 },
+            { "name": "tdate", "type": "char", "description": "종료일자 YYYYMMDD", "required": true, "length": 8 },
+            { "name": "gubun4", "type": "char", "description": "직전대비증감구분 (0:기본 1:직전대비증감)", "required": true, "length": 1, "example": "0" },
+            { "name": "date", "type": "char", "description": "날짜 연속키 (처음은 빈 값, 이후 t1633OutBlock.date echo)", "required": false, "length": 8 },
+            { "name": "exchgubun", "type": "char", "description": "거래소구분 (K:KRX N:NXT U:통합, 생략 시 KRX)", "required": false, "length": 1 }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t1633OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "date", "type": "char", "description": "날짜 연속키 (CTS)", "length": 8 },
+            { "name": "idx", "type": "int", "description": "IDX" }
+          ]
+        },
+        {
+          "name": "t1633OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "date", "type": "char", "description": "일자 YYYYMMDD", "length": 8 },
+            { "name": "jisu", "type": "double", "description": "KOSPI200 지수" },
+            { "name": "sign", "type": "char", "description": "대비구분", "length": 1 },
+            { "name": "change", "type": "double", "description": "전일대비" },
+            { "name": "tot3", "type": "long", "description": "전체 순매수" },
+            { "name": "tot1", "type": "long", "description": "전체 매수" },
+            { "name": "tot2", "type": "long", "description": "전체 매도" },
+            { "name": "cha3", "type": "long", "description": "차익 순매수" },
+            { "name": "cha1", "type": "long", "description": "차익 매수" },
+            { "name": "cha2", "type": "long", "description": "차익 매도" },
+            { "name": "bcha3", "type": "long", "description": "비차익 순매수 — 기관 바스켓 신호" },
+            { "name": "bcha1", "type": "long", "description": "비차익 매수" },
+            { "name": "bcha2", "type": "long", "description": "비차익 매도" },
+            { "name": "volume", "type": "long", "description": "거래량" }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "key_fields": ["date"] },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t1636",
+      "name": "종목별 프로그램매매 동향",
+      "category": "프로그램매매",
+      "path": "/stock/program",
+      "description": "종목별 프로그램매매 순매수 랭킹 (스크리너). shcode를 비우면 시장 전체를 gubun2 기준으로 정렬해 반환. mkcap_cmpr_val = 시가총액 대비 순매수 비중(정규화된 footprint 메트릭). 연속조회: t1636OutBlock.cts_idx를 다음 InBlock에 echo.",
+      "in_blocks": [
+        {
+          "name": "t1636InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "gubun", "type": "char", "description": "시장구분 (0:코스피 1:코스닥)", "required": true, "length": 1, "example": "0" },
+            { "name": "gubun1", "type": "char", "description": "금액수량구분 (0:수량 1:금액) — 정렬 기준 메트릭", "required": true, "length": 1, "example": "0" },
+            { "name": "gubun2", "type": "char", "description": "정렬기준 (0:시가총액비중 1:순매수상위 2:순매도상위 3:매도상위 4:매수상위)", "required": true, "length": 1, "example": "1" },
+            { "name": "shcode", "type": "char", "description": "종목코드 (전체 랭킹 조회시 빈 값)", "required": false, "length": 6 },
+            { "name": "cts_idx", "type": "int", "description": "연속조회 키 (처음은 0, 이후 t1636OutBlock.cts_idx echo)", "required": false, "length": 4, "example": "0" },
+            { "name": "exchgubun", "type": "char", "description": "거래소구분 (K:KRX N:NXT U:통합, 생략 시 KRX)", "required": false, "length": 1 }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t1636OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "cts_idx", "type": "int", "description": "연속조회 키 (다음 페이지)" }
+          ]
+        },
+        {
+          "name": "t1636OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "rank", "type": "int", "description": "순위" },
+            { "name": "hname", "type": "char", "description": "종목명", "length": 20 },
+            { "name": "price", "type": "int", "description": "현재가" },
+            { "name": "sign", "type": "char", "description": "대비구분", "length": 1 },
+            { "name": "change", "type": "int", "description": "전일대비" },
+            { "name": "diff", "type": "double", "description": "등락율 (%)" },
+            { "name": "volume", "type": "long", "description": "거래량" },
+            { "name": "svalue", "type": "long", "description": "프로그램 순매수금액" },
+            { "name": "offervalue", "type": "long", "description": "프로그램 매도금액" },
+            { "name": "stksvalue", "type": "long", "description": "프로그램 매수금액" },
+            { "name": "svolume", "type": "long", "description": "프로그램 순매수수량" },
+            { "name": "offervolume", "type": "long", "description": "프로그램 매도수량" },
+            { "name": "stksvolume", "type": "long", "description": "프로그램 매수수량" },
+            { "name": "sgta", "type": "long", "description": "시가총액" },
+            { "name": "rate", "type": "double", "description": "비중 (%)" },
+            { "name": "shcode", "type": "char", "description": "종목코드", "length": 6 },
+            { "name": "ex_shcode", "type": "char", "description": "거래소별 단축코드", "length": 10 },
+            { "name": "mkcap_cmpr_val", "type": "double", "description": "시총대비 순매수비중 (%) — 정규화된 footprint" }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "key_fields": ["cts_idx"] },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t1637",
+      "name": "종목별 프로그램매매 추이",
+      "category": "프로그램매매",
+      "path": "/stock/program",
+      "description": "단일 종목의 프로그램매매 시계열. gubun2=0:시간(장중 ~1분 그리드) / 1:일자. 값은 누적 — 분당 흐름은 인접 행 diff. cts_idx=9999 입력 시 차트 1회 일괄조회. 시간 모드에서는 svalue/svolume(순매수)만 채워지고 offervalue/stksvalue·volume·change는 0. 차익/비차익 분리 없음(종목 단위는 프로그램 합계만). 라이브 확인 2026-05-21: 005930 시간모드 381행 09:01~15:30.",
+      "in_blocks": [
+        {
+          "name": "t1637InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "gubun1", "type": "char", "description": "수량금액구분 (0:수량 1:금액)", "required": true, "length": 1, "example": "0" },
+            { "name": "gubun2", "type": "char", "description": "시간일별구분 (0:시간 1:일자)", "required": true, "length": 1, "example": "0" },
+            { "name": "shcode", "type": "char", "description": "종목코드", "required": true, "length": 6 },
+            { "name": "date", "type": "char", "description": "일자 연속키 (일별 모드, 이전 OutBlock1 마지막 행의 date)", "required": false, "length": 8 },
+            { "name": "time", "type": "char", "description": "시간 연속키 (시간 모드, 이전 OutBlock1 마지막 행의 time)", "required": false, "length": 6 },
+            { "name": "cts_idx", "type": "int", "description": "IDXCTS (9999 입력 시 차트 1회 일괄조회)", "required": true, "length": 4, "example": "9999" },
+            { "name": "exchgubun", "type": "char", "description": "거래소구분 (K:KRX N:NXT U:통합, 생략 시 KRX)", "required": false, "length": 1 }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t1637OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "cts_idx", "type": "int", "description": "연속조회 키" }
+          ]
+        },
+        {
+          "name": "t1637OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "date", "type": "char", "description": "일자 YYYYMMDD", "length": 8 },
+            { "name": "time", "type": "char", "description": "시간 HHMMSS", "length": 6 },
+            { "name": "price", "type": "int", "description": "현재가" },
+            { "name": "sign", "type": "char", "description": "대비구분", "length": 1 },
+            { "name": "change", "type": "int", "description": "전일대비 (시간 모드는 0)" },
+            { "name": "diff", "type": "double", "description": "등락율 (%) (시간 모드는 0)" },
+            { "name": "volume", "type": "long", "description": "거래량 (시간 모드는 0)" },
+            { "name": "svalue", "type": "long", "description": "프로그램 순매수금액 (누적)" },
+            { "name": "offervalue", "type": "long", "description": "프로그램 매도금액 (시간 모드는 0)" },
+            { "name": "stksvalue", "type": "long", "description": "프로그램 매수금액 (시간 모드는 0)" },
+            { "name": "svolume", "type": "long", "description": "프로그램 순매수수량 (누적)" },
+            { "name": "offervolume", "type": "long", "description": "프로그램 매도수량 (시간 모드는 0)" },
+            { "name": "stksvolume", "type": "long", "description": "프로그램 매수수량 (시간 모드는 0)" },
+            { "name": "shcode", "type": "char", "description": "종목코드", "length": 6 },
+            { "name": "ex_shcode", "type": "char", "description": "거래소별 단축코드", "length": 10 }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "key_fields": ["cts_idx"] },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t1640",
+      "name": "프로그램매매 종합조회 (미니)",
+      "category": "프로그램매매",
+      "path": "/stock/program",
+      "description": "프로그램매매 현재 스냅샷 (경량). gubun으로 시장×차익/비차익 구획을 선택 (11:거래소전체 12:거래소차익 13:거래소비차익 21~23:코스닥). 매수/매도/순매수 + 직전 조회 대비 증감(diff 필드) + 베이시스. 폴링용.",
+      "in_blocks": [
+        {
+          "name": "t1640InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "gubun", "type": "char", "description": "구분 (11:거래소전체 12:거래소차익 13:거래소비차익 21:코스닥전체 22:코스닥차익 23:코스닥비차익)", "required": true, "length": 2, "example": "11" },
+            { "name": "exchgubun", "type": "char", "description": "거래소구분 (K:KRX N:NXT U:통합, 생략 시 KRX)", "required": false, "length": 1 }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t1640OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "offervolume", "type": "int", "description": "매도수량" },
+            { "name": "bidvolume", "type": "int", "description": "매수수량" },
+            { "name": "volume", "type": "int", "description": "순매수수량" },
+            { "name": "offerdiff", "type": "int", "description": "매도수량 직전대비 증감" },
+            { "name": "biddiff", "type": "int", "description": "매수수량 직전대비 증감" },
+            { "name": "sundiff", "type": "int", "description": "순매수수량 직전대비 증감" },
+            { "name": "basis", "type": "double", "description": "베이시스" },
+            { "name": "offervalue", "type": "long", "description": "매도금액" },
+            { "name": "bidvalue", "type": "long", "description": "매수금액" },
+            { "name": "value", "type": "long", "description": "순매수금액" },
+            { "name": "offervaldiff", "type": "long", "description": "매도금액 직전대비 증감" },
+            { "name": "bidvaldiff", "type": "long", "description": "매수금액 직전대비 증감" },
+            { "name": "sunvaldiff", "type": "long", "description": "순매수금액 직전대비 증감" }
+          ]
+        }
+      ],
+      "continuation": { "supported": false },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t1662",
+      "name": "시간대별 프로그램매매 추이 (차트)",
+      "category": "프로그램매매",
+      "path": "/stock/program",
+      "description": "시장 전체 장중 프로그램매매 추이 차트본 — t1632의 페이징 없는 1회 일괄 변형. t1662OutBlock 자체가 시계열 배열(별도 헤더 블록 없음). 각 행 = 차익(cha)/비차익(bcha)/전체(tot) × 매수(1)/매도(2)/순매수(3) + KOSPI200 지수·BASIS. 값은 장 시작부터의 누적 — 분당 흐름은 인접 행 diff. ~1분 event-sparse 그리드. 라이브 확인 2026-05-21: 코스피 당일 357행 09:01~16:05.",
+      "in_blocks": [
+        {
+          "name": "t1662InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "gubun", "type": "char", "description": "시장구분 (0:코스피 1:코스닥)", "required": true, "length": 1, "example": "0" },
+            { "name": "gubun1", "type": "char", "description": "금액수량구분 (0:금액 1:수량)", "required": true, "length": 1, "example": "0" },
+            { "name": "gubun3", "type": "char", "description": "전일구분 (0:당일 1:전일)", "required": true, "length": 1, "example": "0" },
+            { "name": "exchgubun", "type": "char", "description": "거래소구분 (K:KRX N:NXT U:통합, 생략 시 KRX)", "required": false, "length": 1 }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t1662OutBlock",
+          "is_array": true,
+          "fields": [
+            { "name": "time", "type": "char", "description": "시간 HHMMSS", "length": 6 },
+            { "name": "k200jisu", "type": "double", "description": "KOSPI200 지수" },
+            { "name": "sign", "type": "char", "description": "대비구분", "length": 1 },
+            { "name": "change", "type": "double", "description": "전일대비" },
+            { "name": "k200basis", "type": "double", "description": "KOSPI200 베이시스" },
+            { "name": "tot3", "type": "long", "description": "전체 순매수 (장 시작부터 누적)" },
+            { "name": "tot1", "type": "long", "description": "전체 매수 (누적)" },
+            { "name": "tot2", "type": "long", "description": "전체 매도 (누적)" },
+            { "name": "cha3", "type": "long", "description": "차익 순매수 (누적)" },
+            { "name": "cha1", "type": "long", "description": "차익 매수 (누적)" },
+            { "name": "cha2", "type": "long", "description": "차익 매도 (누적)" },
+            { "name": "bcha3", "type": "long", "description": "비차익 순매수 (누적) — 기관 바스켓 신호" },
+            { "name": "bcha1", "type": "long", "description": "비차익 매수 (누적)" },
+            { "name": "bcha2", "type": "long", "description": "비차익 매도 (누적)" },
+            { "name": "volume", "type": "long", "description": "거래량" }
+          ]
+        }
+      ],
+      "continuation": { "supported": false },
+      "rate_limit_per_sec": 1
     }
   ]
 }
