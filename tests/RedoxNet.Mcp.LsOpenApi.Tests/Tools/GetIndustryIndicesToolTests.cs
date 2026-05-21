@@ -78,7 +78,7 @@ public sealed class GetIndustryIndicesToolTests
         });
         var cache = new IndustryDataCache(client);
 
-        string result = await GetIndustryIndicesTool.GetIndustryIndices(cache, market: "kospi", top_n: 30);
+        string result = await GetIndustryIndicesTool.GetIndustryIndices(cache, market: "kospi", limit: 30);
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         root.GetProperty("market").GetString().Should().Be("kospi");
@@ -99,7 +99,7 @@ public sealed class GetIndustryIndicesToolTests
     }
 
     [Fact]
-    public async Task GetIndustryIndices_TopN_SlicesWithoutRefetching()
+    public async Task GetIndustryIndices_Limit_SlicesWithoutRefetching()
     {
         var (client, handler) = TestClientFactory.Create((request, _) =>
         {
@@ -118,9 +118,9 @@ public sealed class GetIndustryIndicesToolTests
         });
         var cache = new IndustryDataCache(client);
 
-        string first = await GetIndustryIndicesTool.GetIndustryIndices(cache, market: "kospi", top_n: 1);
+        string first = await GetIndustryIndicesTool.GetIndustryIndices(cache, market: "kospi", limit: 1);
         int reqsAfterFirst = handler.Requests.Count;
-        string second = await GetIndustryIndicesTool.GetIndustryIndices(cache, market: "kospi", top_n: 3);
+        string second = await GetIndustryIndicesTool.GetIndustryIndices(cache, market: "kospi", limit: 3);
 
         JsonElement firstRoot = JsonDocument.Parse(first).RootElement;
         firstRoot.GetProperty("count").GetInt32().Should().Be(1);
@@ -130,19 +130,19 @@ public sealed class GetIndustryIndicesToolTests
         JsonElement secondRoot = JsonDocument.Parse(second).RootElement;
         secondRoot.GetProperty("count").GetInt32().Should().Be(3);
 
-        handler.Requests.Count.Should().Be(reqsAfterFirst, "60s cache means top_n=3 reuses the fanout from top_n=1");
+        handler.Requests.Count.Should().Be(reqsAfterFirst, "60s cache means limit=3 reuses the fanout from limit=1");
     }
 
     [Fact]
-    public async Task GetIndustryIndices_TopNOutOfRange_ReturnsValidationError()
+    public async Task GetIndustryIndices_LimitOutOfRange_ReturnsValidationError()
     {
         var (client, _) = TestClientFactory.Create((_, _) => Ok(T8424ThreeCodes));
         var cache = new IndustryDataCache(client);
 
-        string result = await GetIndustryIndicesTool.GetIndustryIndices(cache, market: "kospi", top_n: 0);
+        string result = await GetIndustryIndicesTool.GetIndustryIndices(cache, market: "kospi", limit: 0);
 
         JsonElement root = JsonDocument.Parse(result).RootElement;
-        root.GetProperty("error").GetString().Should().Contain("top_n");
+        root.GetProperty("error").GetString().Should().Contain("limit");
     }
 
     static string ExtractUpcodeFromBody(string body)

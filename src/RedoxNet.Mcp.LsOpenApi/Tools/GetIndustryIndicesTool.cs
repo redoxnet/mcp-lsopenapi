@@ -12,7 +12,7 @@ namespace RedoxNet.Mcp.LsOpenApi.Tools;
 [McpServerToolType]
 internal static class GetIndustryIndicesTool
 {
-    /// <summary>Catalog default rate limit for t1511 is 1/sec; keep top_n bounded.</summary>
+    /// <summary>Catalog default rate limit for t1511 is 1/sec; keep limit bounded.</summary>
     public const int MaxTopN = 200;
 
     /// <summary>
@@ -26,18 +26,18 @@ internal static class GetIndustryIndicesTool
         AVOID WHEN: the user names a single index (KOSPI/KOSDAQ) — use ls_get_index_quote. For per-stock ranking inside one industry use ls_get_industry_stocks.
 
         market: kospi (default), kosdaq, or all. Cold-cache cost scales with N upcodes returned by t8424 — usually a few seconds for kospi.
-        top_n: number of rows to return. The same 60s cache is reused for different top_n requests, so 'top 5' then 'top 30' is two cheap lookups.
+        limit: number of rows to return. The same 60s cache is reused for different limit requests, so 'top 5' then 'top 30' is two cheap lookups.
         """)]
     public static async Task<string> GetIndustryIndices(
         IndustryDataCache cache,
         [Description("Market filter: kospi, kosdaq, or all. Default kospi.")]
         string market = "kospi",
         [Description("Max rows returned (1-200). Default 30.")]
-        int top_n = 30,
+        int limit = 30,
         CancellationToken cancellationToken = default)
     {
-        if (top_n < 1 || top_n > MaxTopN)
-            return McpJson.Error($"top_n must be between 1 and {MaxTopN}.");
+        if (limit < 1 || limit > MaxTopN)
+            return McpJson.Error($"limit must be between 1 and {MaxTopN}.");
 
         string normalizedMarket = (market ?? "").Trim().ToLowerInvariant() switch
         {
@@ -51,7 +51,7 @@ internal static class GetIndustryIndicesTool
 
         IndustryIndicesResult result = await cache.GetIndicesAsync(normalizedMarket, cancellationToken).ConfigureAwait(false);
 
-        var slice = result.Rows.Take(top_n).Select((row, idx) => new
+        var slice = result.Rows.Take(limit).Select((row, idx) => new
         {
             rank = idx + 1,
             upcode = row.Upcode,
@@ -64,7 +64,7 @@ internal static class GetIndustryIndicesTool
         var payload = new
         {
             market = normalizedMarket,
-            top_n,
+            limit,
             count = slice.Count,
             total_available = result.Rows.Count,
             rows = slice,

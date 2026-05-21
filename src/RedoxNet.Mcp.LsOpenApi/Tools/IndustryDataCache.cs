@@ -17,7 +17,7 @@ namespace RedoxNet.Mcp.LsOpenApi.Tools;
 /// (<c>industry_keyword</c>) stay cheap (one t8424 call), while the
 /// fanout (N × t1511) only runs when the user actually asks for indices.
 /// Both caches key on the normalized <c>market</c> string
-/// (kospi / kosdaq / all) so users switching <c>top_n</c> don't pay the
+/// (kospi / kosdaq / all) so users switching <c>limit</c> don't pay the
 /// fanout twice within the TTL window.
 /// </remarks>
 internal sealed class IndustryDataCache

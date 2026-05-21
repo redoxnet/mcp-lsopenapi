@@ -110,6 +110,7 @@ public sealed class ToolSurfaceFreezeTests
             "ls_get_etf_holdings",
             "ls_get_top_stocks",
             "ls_get_high_low_stocks",
+            "ls_get_industry_indices",
             "ls_get_industry_stocks",
             "ls_get_theme_stocks",
             "ls_get_fundamentals_rank",
