@@ -9,9 +9,18 @@
 [![CI](https://github.com/redoxnet/mcp-lsopenapi/actions/workflows/ci.yml/badge.svg)](https://github.com/redoxnet/mcp-lsopenapi/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-MCP server for **LS Securities OpenAPI** — exposes Korean stock market data as MCP tools so AI assistants can query quotes, charts, and indicators in natural language. **v0.5 added a local-only portfolio module** for tracking holdings across multiple brokerage accounts, watchlists, and themed sectors. **v0.6 adds market context** (index + industry indices + LS themes), **portfolio export/import**, and theme-membership enrichment — all through conversation.
+MCP server for **LS Securities OpenAPI** — ask an AI assistant for quotes, charts, screeners, ETF holdings, index / industry / theme context, and your local portfolio in natural language.
 
-> v0.x.x is **read-only Korean market data + local portfolio notes**. The portfolio tools persist user-supplied entries to a local SQLite store; they do not sync with brokerage accounts or place orders. Realtime feeds (WebSocket), live account queries, and trade execution are scheduled for later releases.
+> **v1.0 scope:** read-only market data + local portfolio notes. Portfolio tools persist user-supplied entries to a local SQLite store; they do not sync with brokerage accounts, fetch live balances, or place orders.
+
+## Why it works well in chat
+
+- **Market context in one place.** Quotes, order books, OHLCV charts, indicators, fundamentals, analyst opinions, investor / foreign flows, short-selling, market warnings, ETF data, and index / industry / theme screens.
+- **Token-efficient by default.** Heavy responses are shaped for LLM conversations: charts return summary-first payloads and dataset handles; list tools cap rows with `limit`; reshaped defaults cut common responses by 66-97% compared with the pre-v0.9 shapes.
+- **A smaller routing surface.** The default `standard` profile exposes 32 semantic tools, while the 3 catalog escape-hatch tools stay hidden unless `LS_TOOL_PROFILE=all`.
+- **Local portfolio memory.** Track holdings, watchlists, watched themes, corporate actions, and JSON backup / restore without sending portfolio notes anywhere except your local SQLite database.
+
+Token-efficiency case study: [Same question, less context](docs/case-studies/v0.4.0-token-efficiency.md)
 
 ## Disclaimer
 
@@ -28,49 +37,6 @@ When using the API, please review the [LS OpenAPI usage guide](https://openapi.l
 | `RedoxNet.LsOpenApi.Core` | Library | SDK: auth (OAuth2 client_credentials), HTTP client, TR catalog, indicators. |
 | `RedoxNet.Mcp.LsOpenApi` | dotnet tool | MCP server over stdio. |
 | `RedoxNet.LsOpenApi.Core.Catalog.Builder` | Dev tool | Scrapes the LS docs site to (re)generate the embedded TR catalog. Not shipped. |
-
-## v0.6 — Market context + portfolio I/O
-
-The market-context layer that v0.5's portfolio module needed to make queries like *"how did KOSPI do today vs my holdings?"* actually answerable. Three TR families landed:
-
-- **Index quote** (`ls_get_index_quote`) — single index snapshot via t1511. Aliases `kospi` / `kosdaq` / `kospi200` / `krx100`. Envelope nests value, change %, OHLC with timestamps, 52-week + YTD range, market breadth (up/down/limit), and 4 related auxiliary indices (e.g. KOSPI 종합 returns 대형주/중형주/소형주 alongside).
-- **Industry indices** (`ls_get_industry_indices`) — top-N by change %, via `t8424` + `t1511` fanout. 60s cache; cold-cache cost ≈2.5s for KOSPI's ~25 codes (t1511 rate-limit confirmed at 10/sec).
-- **Industry stocks** (`ls_get_industry_stocks`) + **LS themes** (`ls_get_theme_stocks` + `ls_get_stock_themes`) — stocks inside one industry/theme with summary, with keyword resolution against the cached catalog (0/1/N branches return typed `IndustryNotFound` / `AmbiguousIndustry` / `resolved` echo).
-
-**Portfolio I/O** (`ls_portfolio_export` + `ls_portfolio_import`) — versioned JSON snapshot (schema v1) covering accounts/holdings/watchlists/watched themes. `mode=merge` skips duplicates with reason codes; `mode=replace` writes a `before-import-*.json` auto-backup and requires `confirm=true`. Stocks + theme caches are intentionally excluded — quote enrichment rebuilds them.
-
-**Theme enrichment** — fire-and-forget t1532 fetch on every portfolio write populates a new `stock_themes` cache; `ls_holdings_list` now emits per-row `themes` + a top-level `metadata_freshness` block and accepts optional `theme_code` / `theme_keyword` filters.
-
-**Naming correction (BREAKING).** v0.5 mis-labeled LS theme membership as "sector"; v0.6 renames `ls_watched_sectors_{add,remove,list}` → `ls_watched_themes_*`, with a schema v3 migration that preserves user data (e.g. tmcode `0064`).
-
-**Tier 1 compression (BREAKING, −5 tools).** LLM routing burden mitigation: `ls_account_get` removed (use `accounts_list[].is_default` filter), `ls_account_set_default` removed (use `upsert(set_default=true)`), `ls_holdings_{split,reverse_split,bonus}` collapsed into `ls_holdings_corporate_action(type, ratio)` — open enum, future types extend the enum without growing the tool surface.
-
-**Deferred to v0.7.** `stocks.krx_sector` enrichment and the dependent `industry?` filter — confirmed during v0.6 implementation that `t1102` doesn't carry KRX industry classification. Three candidate sources tracked in SPEC §10 Q7.
-
-Net surface: 37 v0.5 + 7 v0.6 new − 5 compression = **39 tools**.
-
-## v0.5 — Portfolio tracking, multi-account
-
-Record holdings across multiple brokerage accounts, manage watchlists and themed sectors, and apply corporate actions — all through natural language. Stored locally only (`portfolio.db` next to `token.db`); no broker sync, no data leaves your machine.
-
-> *"한투에 LG전자 64주 평단 115,801원, 카카오페이엔 10주 98,450원"* — register across two accounts in one go
-> *"5 more shares at 80,000"* — weighted-average cost basis merge
-> *"민테크 10:1 분할됐대. 두 계좌 다 반영"* — split applied to every account holding the symbol
-> *"내 포트폴리오 평가손익 보여줘"* — grouped per-account holdings + total summary
-
-The grouped-list response carries `accounts[]` (each with `holdings`, per-account `summary`, `is_default`) plus a `total_summary`. When the same symbol exists in two accounts, sell / remove require an explicit `account`; ambiguity is surfaced as a structured error envelope with the candidate accounts so the model can re-call without prompting the user. Sells that exceed the current position raise `InsufficientQuantity`; account removal requires a two-step confirm when holdings would cascade.
-
-Full surface and policy details in [Tools › Portfolio](#portfolio-local-only-no-broker-sync) below.
-
----
-
-## ⚡ v0.4 — Same question, 16× less context
-
-Asking the same model (`claude-sonnet-4-6`) *"Samsung Electronics daily chart for 2024 Jan~Jun, plus MA60 trend within that range"*, v0.3 needed two tool calls to populate MA60 in the narrow window — first a 3-month padding attempt, then a retry with `count=190` after the model noticed the padding wasn't enough.
-
-v0.4 finishes in a single call: the model picks `with_warmup=true` on its first try. Display window (60 bars) and analytical window (300 bars) are separated so long-period indicators all populate, and the summary-first response shape keeps 60 raw OHLCV rows out of the model's context entirely.
-
-Full 7-turn analysis → [docs/case-studies/v0.4.0-token-efficiency.md](docs/case-studies/v0.4.0-token-efficiency.md)
 
 ## Quick start
 

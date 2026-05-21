@@ -9,7 +9,7 @@
 [![CI](https://github.com/redoxnet/mcp-lsopenapi/actions/workflows/ci.yml/badge.svg)](https://github.com/redoxnet/mcp-lsopenapi/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-## AI 에이전트에게 내가 가진 종목을 물어보세요.
+## AI에게 시세·차트·내 포트폴리오를 물어보세요.
 
 Claude·ChatGPT·Copilot 같은 AI 비서에 **LS증권 OpenAPI**를 붙입니다. 시세·차트·기업정보·ETF·시장 스크리너·지수/업종/테마 컨텍스트, 그리고 내 보유 종목·관심종목까지 — 평소 쓰던 대화창에서 자연어로 묻고 받습니다.
 
@@ -20,6 +20,8 @@ Claude·ChatGPT·Copilot 같은 AI 비서에 **LS증권 OpenAPI**를 붙입니�
 > *"포트폴리오 백업해줘"*
 
 설정 한 번이면 됩니다. 종목 코드를 외울 필요도, HTS를 따로 띄울 필요도 없습니다.
+
+대화창에 맞게 가볍게 답합니다. 차트·지수 시계열·보유종목처럼 커지기 쉬운 응답은 요약 우선 형태로 보내고, 필요한 경우에만 원본 데이터로 이어가도록 설계했습니다. 그래서 긴 차트 분석이나 스크리닝 대화도 불필요한 토큰을 덜 쓰고 이어갈 수 있습니다.
 
 > 개발자용 기술 문서(환경 변수, 자격증명 정책, 도구 시그니처, 상세 스키마, SDK·빌드)는 [영문 README](README.en.md)에 있습니다.
 
