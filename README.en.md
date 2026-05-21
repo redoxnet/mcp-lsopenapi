@@ -475,17 +475,19 @@ dotnet run --project src/RedoxNet.Mcp.LsOpenApi --framework net8.0
 
 ## Status
 
-- [x] **v0.1.0** — Initial public release. MCP server scaffold + OAuth2 auth + 10 market-data tools.
-- [x] **v0.2.0** — MCP host interoperability fixes. No tool surface changes; reshaped JSON schemas and UI-resource metadata so hosts accept and render them correctly.
-- [x] **v0.3.0** — Market screener tool, search-parameter rename, Naver-style chart polish.
-- [x] **v0.4.0** — Token-efficient chart payloads, two dataset-handle follow-up tools, ZigZag-based swing detector, `IndicatorCoverage` block explaining null indicators.
-- [x] **v0.5.0** — Local portfolio module (24 new tools, 13 → 37 total): multi-account holdings with `set`/`buy`/`sell` semantics, watchlists, watched sectors, corporate actions, structured error envelopes with candidate accounts. SQLite-backed; no broker sync.
-- [x] **v0.6.0** — Market context (index `t1511` + industry fanout `t8424`+`t1511` + industry stocks `t1516`) + LS themes (`t1537` + `t1532`) + portfolio JSON export/import with auto-backup + fire-and-forget theme enrichment with `metadata_freshness` hint + Tier 1 tool compression (39 tools total). `watched_sectors → watched_themes` rename + schema v3 migration preserves v0.5 data.
-- [x] **v0.7.0** — Screeners (fundamentals_rank via `t3341`, investor_flow via `t1601`+`t1702`, stock_events via `t3202`, market_warnings via `t1404`+`t1405`) + index time-series wrapper (`t1514`) + synchronous metadata refresh + FICS industry enrichment from `t3320` powering a new `industry?` filter on `ls_holdings_list`. Storage: `holdings.avg_price` migrated to integer fractional won (×10000, schema v4) so split↔reverse-split round-trips are exact; ETFs stop reporting perpetual `themes_pending` via stock_themes sentinel row. **BREAKING — Tier 2 (−3):** `ls_watchlist_group_rename` → `ls_watchlist_group_create(rename_from?)`, `ls_watchlist_groups_list` → `ls_watchlist_list(scope="groups")`, `ls_broker_rename` → `ls_account_upsert(rename_broker_from?)`. 43 tools total.
-- [x] **v0.8.0** — Overseas index / FX / futures snapshot + analyst-opinion / short-selling / new-high-low / market-funds wrappers (5 tools) + 12 new catalog TRs. 43 → 48 tools.
-- [x] **v0.9.0** — Response-shape / token-economy refactor (SPEC v0.9). Reshaped `ls_get_index_history` / `ls_get_stock_info` / `ls_holdings_list` — 66–97% fewer tokens on the default call. MCP SDK 1.3.0 + net10.0.
-- [x] **v0.10.0** — Tool-surface compression (SPEC v0.10) — the last 0.x minor. 20 portfolio tools fold into 5 action-routed dispatchers; `LS_TOOL_PROFILE` hides the 3 catalog tools in the default `standard` profile. 48 → 32 (`standard`) / 35 (`all`). Additive in the same release: `ls_get_stock_info` `foreign` section (t1716), `limit` / `total_available` on list tools, `ls_get_index_history` `output_mode=export` + dataset-handle drill.
-- [ ] **v2.0.0** — Realtime quotes + realtime news header (NWS) paired with body fetch (`t3102`), live accounts/balances, orders (WebSocket end-to-end).
+Current release line:
+
+- [x] **v0.10.1** — Functional v1.0 release candidate. Published to NuGet and the MCP Registry; includes the compressed 32-tool `standard` surface, token-budget fixes, and the MCP registry manifest fix.
+- [ ] **v1.0.0** — Stabilization release. Freeze MCP tool names, model-facing parameter names, and default response shapes; add surface / token-budget pins; refresh docs and version metadata. No new breaking changes planned.
+
+Major milestones:
+
+- [x] **v0.4.0** — Token-efficient chart payloads, dataset-handle follow-up tools, ZigZag swing detection, and `IndicatorCoverage`.
+- [x] **v0.5.0-v0.7.0** — Local portfolio notes, multi-account holdings, watchlists, watched themes, JSON backup / restore, index / industry / theme context, screeners, stock events, market warnings, and FICS industry enrichment.
+- [x] **v0.8.0** — Overseas index / FX / futures snapshots, analyst opinions, short-selling, new-high / new-low, and market-funds wrappers.
+- [x] **v0.9.0** — Response-shape / token-economy refactor: `ls_get_index_history`, `ls_get_stock_info`, and `ls_holdings_list` defaults cut common payloads by 66-97%.
+- [x] **v0.10.0** — Tool-surface compression: 48 tools collapsed to 32 in the default `standard` profile / 35 in `all`; portfolio writes moved to action-routed dispatchers; list/screener caps standardized on `limit`.
+- [ ] **v2.x** — Deferred by design: realtime WebSocket feeds, live brokerage balances/accounts, and order placement.
 
 Full changelog: [RELEASENOTES.Mcp.md](RELEASENOTES.Mcp.md) · [RELEASENOTES.Core.md](RELEASENOTES.Core.md).
 
