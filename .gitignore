@@ -6,6 +6,9 @@ artifacts/
 nupkg/
 TestResults/
 
+# Local dev MCP server (scripts/deploy-dev.ps1 mirrors build output here)
+deploy/
+
 # IDE
 .vs/
 .vscode/
