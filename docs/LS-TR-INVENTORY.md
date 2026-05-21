@@ -8,6 +8,8 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 
 **Use this doc when:** deciding what to add to the catalog next, mapping a user request to an underlying TR, or scoping the next release.
 
+**LS-side data quirks:** see [LS-API-QUIRKS.md](LS-API-QUIRKS.md) for undocumented, inconsistent, or wrong LS API behaviors and this project's workarounds.
+
 ---
 
 ## Status legend

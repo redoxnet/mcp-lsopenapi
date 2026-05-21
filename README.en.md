@@ -387,7 +387,7 @@ The write path is the `ls_holding` dispatcher; `shcode` is required for every ac
 | `ls_get_index_quote(index_code)` | Single Korean index snapshot via `t1511`. Aliases `kospi`/`kosdaq`/`kospi200`/`krx100`. Envelope includes value, change %, OHLC with timestamps, 52-week + YTD range, market breadth, 4 related auxiliary indices. |
 | `ls_get_global_market_quote(kind?, symbol?)` | Overseas index / FX / futures snapshot via `t3521`. Aliases include `nasdaq`, `sp500`, `dow`, `soxx`, `usdkrw`, `wti`, `gold`; raw LS symbols like `NAS@IXIC` are accepted. |
 | `ls_get_index_history(index_code, period_type?, count?, cts_date?, verbosity?, output_mode?, dataset_id?, from?, to?, recent_n?)` | Daily/weekly/monthly index time series via `t1514` — per-bar OHLC, volume, breadth, foreign/institutional net flow. `verbosity` (summary/compact/full) shapes the inline payload; `output_mode=export` caches the whole series under a `dataset_id` and a follow-up call with that id slices it (`from`/`to`/`recent_n`) with no further API call. |
-| `ls_get_industry_indices(market, top_n)` | Top-N industry indices sorted by change %. `t8424` + `t1511` fanout, 60s in-process cache (cold-cost ≈2.5s for KOSPI's ~25 codes; `top_n=5` and `top_n=30` reuse one fanout). |
+| `ls_get_industry_indices(market, limit)` | Top-N industry indices sorted by change %. `t8424` + `t1511` fanout, 60s in-process cache (cold-cost ≈2.5s for KOSPI's ~25 codes; `limit=5` and `limit=30` reuse one fanout). |
 | `ls_get_industry_stocks(upcode \| industry_keyword, market, limit)` | Stocks inside one industry + the industry's index summary. `t1516` body-based continuation paging. Keyword resolution against cached t8424: 0/1/N matches → `IndustryNotFound` / `resolved` echo / `AmbiguousIndustry` with candidates. |
 | `ls_get_market_funds_trend(market?, count?)` | Market-liquidity time series via `t8428`. Per day the index plus 고객예탁금 / 신용잔고 / 미수금 / 선물예수금 and equity / mixed / bond / MMF fund money. All monetary fields in 억원. |
 
@@ -478,7 +478,7 @@ dotnet run --project src/RedoxNet.Mcp.LsOpenApi --framework net8.0
 Current release line:
 
 - [x] **v0.10.1** — Functional v1.0 release candidate. Published to NuGet and the MCP Registry; includes the compressed 32-tool `standard` surface, token-budget fixes, and the MCP registry manifest fix.
-- [ ] **v1.0.0** — Stabilization release. Freeze MCP tool names, model-facing parameter names, and default response shapes; add surface / token-budget pins; refresh docs and version metadata. No new breaking changes planned.
+- [x] **v1.0.0** — First stable release. Freezes the MCP tool surface, model-facing parameter names, and default response shapes, with reflection-based pin tests guarding them. Completes the row-cap `limit` normalization (`ls_get_etf_holdings` + `ls_get_industry_indices`), adds MCP server-instructions routing guidance, and ships NuGet credential metadata.
 
 Major milestones:
 

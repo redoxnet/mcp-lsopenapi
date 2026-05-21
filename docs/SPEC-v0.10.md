@@ -1,6 +1,6 @@
 # SPEC: v0.10.0 — 마지막 0.x 마이너 (compression + foreign data + pagination + dataset cache)
 
-- **상태**: Draft — 사용자 리뷰 대기
+- **상태**: Final — v0.10.0 출시 완료, v1.0.0에서 도구 표면 동결
 - **작성일**: 2026-05-20 (`todo/SPEC-v0.9-tool-surface-compression.md` 초안 → compression SPEC → 본 종합 SPEC으로 확장)
 - **대상 버전**: v0.10.0 — **마지막 0.x minor**, 이후 [v1.0.0](#10-v100-로드맵--open-questions)
 - **작성자**: Jong Hyun + Claude
@@ -339,7 +339,7 @@ v0.10.0는 의도적 BREAKING minor. breaking은 **묶음 A뿐** — B/C/D는 ad
 
 v0.10.0가 **마지막 0.x 마이너**다. v1.0.0은:
 
-- **새 breaking 없음** — 도구 표면·응답 shape를 v0.10.0에서 동결.
+- **표면 동결** — 도구 표면·모델 노출 파라미터 이름·응답 shape를 v1.0.0에서 동결하고, reflection 기반 핀 테스트(`ToolSurfaceFreezeTests`)로 가드. 단, v0.10.0 `limit` 정규화가 누락한 `ls_get_etf_holdings`·`ls_get_industry_indices` 2개를 `top_n` → `limit`로 rename해 정규화를 완성 — 이 2건이 v1.0.0의 유일한 breaking.
 - 안정화·문서·테스트 커버리지·E2E 정합에 집중.
 - profile은 `standard`/`all` **2개로 영구 고정** — `core`/`portfolio`/`catalog` subset 프로파일은 도입하지 않음(수요 근거 없음, 안정성 우선).
 

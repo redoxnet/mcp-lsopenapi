@@ -11,7 +11,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 
-    <Version>0.10.1</Version>
+    <Version>1.0.0</Version>
     <PackageId>RedoxNet.Mcp.LsOpenApi</PackageId>
 	<Authors>Jong Hyun Kim</Authors>
     <Company>RedoxNet</Company>
@@ -24,7 +24,7 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>icon.png</PackageIcon>
     <Copyright>Copyright (c) 2026 RedoxNet</Copyright>
-    <PackageReleaseNotes>v0.10.1 (patch over 0.10.0): Fixes the MCP Registry publish — .mcp/server.json's description exceeded the registry's 100-character limit (HTTP 422). Also caps ls_get_etf_holdings' default top_n at 20 (was unbounded) so an un-capped call on a large ETF no longer dumps 20k+ tokens into context. v0.10.0 (BREAKING) folded 20 portfolio tools into 5 action-routed dispatchers + added the LS_TOOL_PROFILE env var. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Mcp.md.</PackageReleaseNotes>
+    <PackageReleaseNotes>v1.0.0 — first stable release. The MCP tool surface (32 standard / 35 all), model-facing parameter names, and default response shapes are now frozen, with reflection-based pin tests guarding them. BREAKING: completes the row-cap normalization — ls_get_etf_holdings and ls_get_industry_indices rename top_n to limit, so every list/screener tool now uses limit. Also ships MCP server-instructions tool-routing guidance, routes personal-holdings questions to the local portfolio instead of refusing, and adds NuGet MCP environment metadata for LS credentials. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Mcp.md.</PackageReleaseNotes>
 
     <PackageType>McpServer</PackageType>
     <PackAsTool>true</PackAsTool>

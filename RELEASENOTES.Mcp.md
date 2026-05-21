@@ -1,5 +1,81 @@
 # Release Notes — RedoxNet.Mcp.LsOpenApi
 
+## v1.0.0 (2026-05-21)
+
+The first **stable** release. v0.10.1 was the functional v1.0 release
+candidate; v1.0.0 freezes the public contract and closes the few surface
+warts the v0.10.0 normalization missed.
+
+### Frozen contract
+
+From v1.0.0 on, these will not change without a major version bump:
+
+- the model-facing MCP tool surface — **32** tools in the default
+  `standard` profile, **35** in `all`;
+- model-facing parameter names;
+- default response shapes.
+
+`ToolSurfaceFreezeTests` pins all three from the live `[McpServerTool]`
+metadata — the tool names per profile, the row-cap parameter name on
+every list/screener tool, and a `cl100k_base` token budget on the
+serialized surface — so the frozen surface cannot silently drift or
+bloat.
+
+### Changed — row-cap normalization (BREAKING)
+
+v0.10.0 unified list/screener row caps on `limit` but missed two tools.
+v1.0.0 finishes the job:
+
+- **`ls_get_etf_holdings`** — `top_n` → `limit`.
+- **`ls_get_industry_indices`** — `top_n` → `limit` (the parameter and
+  the field echoed back in the response payload).
+
+All eight list/screener tools now take `limit`; behavior is unchanged.
+As with the v0.10.0 renames the practical breakage is small — the model
+reads the live tool schema on every call.
+
+### Added
+
+- **Server-level routing guidance.** The server now ships MCP
+  `ServerInstructions` — concise guidance steering structured
+  market-data questions to LS tools while leaving news / disclosure /
+  "why did it move" questions to the host's own sources.
+- **NuGet MCP environment metadata.** `.mcp/server.json` declares the
+  `LS_APPKEY` / `LS_APPSECRETKEY` / `LS_MARKET` environment variables
+  (with secret flags) so MCP hosts can prompt for credentials at
+  install time.
+
+### Fixed
+
+- **Personal-holdings questions no longer trip a refusal.** "내 보유
+  종목" / "내 포트폴리오" style questions route to `ls_holdings_list`
+  (the local portfolio store) instead of being declined as a brokerage
+  request.
+- **`ls_get_industry_indices` name corruption and non-industry
+  pollution.** Long LS index names overflow the fixed-width `hname`
+  field and were truncated mid-character, leaving a U+FFFD replacement
+  glyph — now stripped via the shared name normalizer. Separately, the
+  industry board pulled LS's full 250+ index catalog, so KP200 / F-K200
+  leveraged & inverse products dominated the change-percent ranking. It
+  now fetches the KOSPI and KOSDAQ catalogs via the trusted `gubun1`
+  paths and drops LS index *products* — leveraged/inverse indices,
+  KP200 / KP50 GICS sector indices, market-cap composites (KOSPI50/100,
+  F-KOSPI200) — so the board ranks real 업종 only. Each row's absolute
+  `change` is also recomputed from `value` and `change_pct`: t1511
+  occasionally reports `change` against a stale base, contradicting the
+  percent. A transient empty catalog leg is retried once; any remaining
+  single-market gap is surfaced in `partial_error` instead of silently
+  dropped.
+
+### Changed — defaults
+
+- **`LS_MARKET` defaults to `real`** (was `virtual`). This is a
+  read-only market-data server with no order path, and the LS virtual
+  endpoint serves real market data anyway, so `real` is the correct
+  default. Override with `LS_MARKET=virtual`.
+
+Versioned in lockstep with `RedoxNet.LsOpenApi.Core` 1.0.0.
+
 ## v0.10.1 (2026-05-20)
 
 Patch over v0.10.0 — fixes the MCP Registry publish and one token-budget gap.

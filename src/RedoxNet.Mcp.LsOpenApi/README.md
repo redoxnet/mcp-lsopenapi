@@ -1,8 +1,8 @@
-<!-- mcp-name: io.github.redoxnet/lsopenapi -->
+﻿<!-- mcp-name: io.github.redoxnet/lsopenapi -->
 
 # RedoxNet.Mcp.LsOpenApi
 
-MCP server for the **LS증권 OpenAPI** — exposes Korean stock market data as MCP tools so AI assistants can query quotes, charts, ETF data, market screeners, and index / industry / theme context in natural language, alongside a local-only portfolio module (multi-account holdings, watchlists, watched themes, JSON backup / restore).
+MCP server for the **LS 증권 OpenAPI** — exposes Korean stock market data as MCP tools so AI assistants can query quotes, charts, ETF data, market screeners, and index / industry / theme context in natural language, alongside a local-only portfolio module (multi-account holdings, watchlists, watched themes, JSON backup / restore).
 
 > Unofficial third-party MCP server. Not affiliated with or endorsed by LS Securities Co., Ltd. (LS증권). v0.x.x scope: read-only market data + local portfolio notes (manual entry; no broker sync, no order placement).
 
@@ -139,7 +139,7 @@ v0.10 (BREAKING) compresses the tool surface: the twenty v0.9 portfolio tools fo
 |---|---|---|
 | `ls_get_index_quote` | `t1511` | Single Korean index snapshot. Aliases: `kospi`/`kosdaq`/`kospi200`/`krx100`. Returns value, change %, OHLC with timestamps, 52-week + YTD range, market breadth, and 4 related auxiliary indices. |
 | `ls_get_index_history` | `t1514` | Daily/weekly/monthly index time series — per-bar OHLC, volume, breadth, foreign/institutional net flow. `verbosity` shapes the payload; `output_mode=export` caches the whole series under a `dataset_id` for no-API-call drill (`from` / `to` / `recent_n`). |
-| `ls_get_industry_indices` | `t8424` + `t1511` fanout | Top-N industry indices sorted by change %. 60s cache so repeated calls with different `top_n` reuse one fanout. |
+| `ls_get_industry_indices` | `t8424` + `t1511` fanout | Top-N industry indices sorted by change %. 60s cache so repeated calls with different `limit` reuse one fanout. |
 | `ls_get_industry_stocks` | `t1516` | Stocks inside one industry + the industry's index summary. Body-based paging. Accepts `upcode` or `industry_keyword` (LIKE on cached t8424 catalog). |
 | `ls_get_market_funds_trend` | `t8428` | Market-liquidity time series — 고객예탁금, 신용잔고, 미수금, 선물예수금, and equity/mixed/bond/MMF fund money (억원). |
 

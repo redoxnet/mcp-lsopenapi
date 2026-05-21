@@ -1,5 +1,22 @@
 # Release Notes — RedoxNet.LsOpenApi.Core
 
+## v1.0.0 (2026-05-21)
+
+The first **stable** release. The public Core API and the embedded TR
+catalog (46 TRs) are frozen at v1.0.0.
+
+### Changed — defaults
+
+- **`LsMarket` defaults to `Real`** (was `Virtual`).
+  `LsMarketExtensions.Parse(null)`, an unrecognized market string, and
+  `LsApiOptions.Market` all now default to `LsMarket.Real`. The LS
+  virtual endpoint serves real market data — only orders and balances
+  are synthetic — so for a read-only data SDK `Real` is the correct
+  default. Pass `"virtual"` / `LsMarket.Virtual` to opt back in.
+
+No other code changes; the embedded TR catalog is identical to 0.10.1.
+Versioned in lockstep with `RedoxNet.Mcp.LsOpenApi` 1.0.0.
+
 ## v0.10.1 (2026-05-20)
 
 No Core code changes — a lockstep version bump with
