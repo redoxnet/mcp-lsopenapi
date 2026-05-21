@@ -209,10 +209,12 @@ public static class GetIndexQuoteTool
 
     /// <summary>
     /// Normalizes the LS-padded index/industry name. The t1511 / t8424
-    /// <c>hname</c> column is fixed-width 20 chars with the actual name
+    /// <c>hname</c> column is fixed-width 20 bytes with the actual name
     /// padded by spacing between every character (e.g. "K R X 1 0 0",
     /// "종       합"). Strip all internal whitespace so the model sees
-    /// "KRX100" / "종합". Edge trim covers the trailing pad.
+    /// "KRX100" / "종합". A name longer than the field is truncated by LS
+    /// mid-character; the dangling byte decodes to U+FFFD, so that
+    /// replacement character is dropped too rather than shipped to the model.
     /// </summary>
     internal static string CompactName(string? raw)
     {
@@ -220,8 +222,11 @@ public static class GetIndexQuoteTool
             return "";
         // string.Concat over a filtering enumerable avoids regex and any
         // allocation in the (rare) already-compact case.
-        return string.Concat(raw.Where(c => !char.IsWhiteSpace(c)));
+        return string.Concat(raw.Where(c => !char.IsWhiteSpace(c) && c != ReplacementChar));
     }
+
+    /// <summary>U+FFFD — what a byte-truncated multibyte name decodes to.</summary>
+    const char ReplacementChar = (char)0xFFFD;
 
     internal static string SeoulNowIsoString()
     {
