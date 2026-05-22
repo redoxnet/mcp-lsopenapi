@@ -33,8 +33,8 @@ namespace RedoxNet.Mcp.LsOpenApi.Tools;
 [McpServerToolType]
 public static class GetProgramTradingTool
 {
-    /// <summary>t1662 amounts are LS amount-basis 백만원; ÷100 puts the chart on the 억원 scale.</summary>
-    const double AmountToEokwon = 0.01;
+    /// <summary>t1662 / t1633 amounts are LS amount-basis 백만원; ÷100 → 억원.</summary>
+    const double MillionWonPerEokwon = 100.0;
 
     /// <summary>t1636 program amounts are LS amount-basis 천원; ÷100,000 puts them on the 억원 scale.</summary>
     const double ThousandWonPerEokwon = 100_000.0;
@@ -75,7 +75,7 @@ public static class GetProgramTradingTool
         - ranking scope: a horizontal bar chart of the top stocks by net buying (chart_view is ignored).
         - stock scope: an intraday cumulative line (price vs program net buying) or a per-day coloured bar chart (chart_view is ignored).
 
-        Amounts are LS amount-basis values; the charts are in 억원.
+        All program amounts — in the text and the charts alike — are reported in 억원.
         """)]
     public static async Task<CallToolResult> GetProgramTrading(
         LsApiClient apiClient,
@@ -258,10 +258,10 @@ public static class GetProgramTradingTool
             {
                 market = marketNorm,
                 day = dayNorm,
-                value_basis = "amount",
-                net = last.Net,
-                arbitrage = last.Arbitrage,
-                non_arbitrage = last.NonArbitrage,
+                value_unit = "억원",
+                net = last.Net / MillionWonPerEokwon,
+                arbitrage = last.Arbitrage / MillionWonPerEokwon,
+                non_arbitrage = last.NonArbitrage / MillionWonPerEokwon,
                 kospi200 = last.Kospi200,
                 kospi200_change = last.Kospi200Change,
                 basis = last.Basis,
@@ -280,7 +280,7 @@ public static class GetProgramTradingTool
                 key_points = BuildKeyPoints(minutes),
                 chart_available = includeChart,
                 chart_view = includeChart ? chartViewName : null,
-                note = "Values are cumulative from the session open (amount-basis). minute_net is the per-minute delta. The full minute series is cached under dataset_id; non-arbitrage (비차익) is the institutional-basket signal, arbitrage (차익) tracks basis.",
+                note = "net / arbitrage / non_arbitrage are program net buying in 억원, cumulative from the session open; minute_net is the per-minute delta. The full minute series is cached under dataset_id. Non-arbitrage (비차익) is the institutional-basket signal; arbitrage (차익) tracks the basis.",
             };
 
             JsonObject? structured = includeChart
@@ -352,9 +352,9 @@ public static class GetProgramTradingTool
                     rows.Add(new ProgramDailyRow(
                         Date: FormatDate(date),
                         Kospi200: r.ReadDouble("jisu"),
-                        Net: r.ReadLong("tot3") * AmountToEokwon,
-                        Arbitrage: r.ReadLong("cha3") * AmountToEokwon,
-                        NonArbitrage: r.ReadLong("bcha3") * AmountToEokwon));
+                        Net: r.ReadLong("tot3") / MillionWonPerEokwon,
+                        Arbitrage: r.ReadLong("cha3") / MillionWonPerEokwon,
+                        NonArbitrage: r.ReadLong("bcha3") / MillionWonPerEokwon));
                 }
             }
 
@@ -911,14 +911,14 @@ public static class GetProgramTradingTool
                 Time: FormatTime(m.Time),
                 Kospi200: m.Kospi200,
                 Basis: m.Basis,
-                Net: m.Net * AmountToEokwon,
-                Arbitrage: m.Arbitrage * AmountToEokwon,
-                NonArbitrage: m.NonArbitrage * AmountToEokwon,
-                MinuteNet: m.MinuteNet * AmountToEokwon,
-                ArbitrageBuy: m.ArbitrageBuy * AmountToEokwon,
-                ArbitrageSell: m.ArbitrageSell * AmountToEokwon,
-                NonArbitrageBuy: m.NonArbitrageBuy * AmountToEokwon,
-                NonArbitrageSell: m.NonArbitrageSell * AmountToEokwon));
+                Net: m.Net / MillionWonPerEokwon,
+                Arbitrage: m.Arbitrage / MillionWonPerEokwon,
+                NonArbitrage: m.NonArbitrage / MillionWonPerEokwon,
+                MinuteNet: m.MinuteNet / MillionWonPerEokwon,
+                ArbitrageBuy: m.ArbitrageBuy / MillionWonPerEokwon,
+                ArbitrageSell: m.ArbitrageSell / MillionWonPerEokwon,
+                NonArbitrageBuy: m.NonArbitrageBuy / MillionWonPerEokwon,
+                NonArbitrageSell: m.NonArbitrageSell / MillionWonPerEokwon));
         }
 
         return ProgramTradeChartBuilder.Build(view, meta, points);
@@ -985,10 +985,10 @@ public static class GetProgramTradingTool
             {
                 label = string.Join("+", list),
                 time = FormatTime(m.Time),
-                net = m.Net,
-                arbitrage = m.Arbitrage,
-                non_arbitrage = m.NonArbitrage,
-                minute_net = m.MinuteNet,
+                net = m.Net / MillionWonPerEokwon,
+                arbitrage = m.Arbitrage / MillionWonPerEokwon,
+                non_arbitrage = m.NonArbitrage / MillionWonPerEokwon,
+                minute_net = m.MinuteNet / MillionWonPerEokwon,
             });
         }
         return points;

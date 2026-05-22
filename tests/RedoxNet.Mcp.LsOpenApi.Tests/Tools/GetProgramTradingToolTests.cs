@@ -77,7 +77,9 @@ public class GetProgramTradingToolTests
         text.GetProperty("dataset_id").GetString().Should().StartWith("ds_");
         text.GetProperty("total_minutes").GetInt32().Should().Be(8);
         text.GetProperty("key_points").GetArrayLength().Should().BeGreaterThan(0);
-        text.GetProperty("summary").GetProperty("net").GetInt64().Should().Be(2120000);
+        // Market-scope amounts are reported in 억원 (t1662 백만원 ÷ 100).
+        text.GetProperty("summary").GetProperty("value_unit").GetString().Should().Be("억원");
+        text.GetProperty("summary").GetProperty("net").GetDouble().Should().Be(21200.0);
     }
 
     [Fact]
