@@ -117,7 +117,9 @@ LS증권 OpenAPI 키 한 쌍(`AppKey` + `AppSecretKey`)이 필요합니다 — [
 }
 ```
 
-Codex CLI · VS Code 등 다른 호스트의 설정 예시와 환경 변수 전체 목록은 [영문 README](README.en.md#quick-start)에 있습니다. AssistStudio에서는 차트가 대화창에 인라인으로 렌더링됩니다(v1.1 이상 필요).
+Codex CLI · VS Code 등 다른 호스트의 설정 예시와 환경 변수 전체 목록은 [영문 README](README.en.md#quick-start)에 있습니다.
+
+**차트 인라인 렌더링은 호스트별로 다릅니다.** **AssistStudio**(v1.1 이상)는 차트를 대화창에 인라인 그래프로 렌더링합니다. **Claude Desktop**은 MCP 서버로 정상 연동되며 시세·분석·포트폴리오 등 모든 도구를 쓸 수 있지만, 현재 인라인 차트 렌더링은 표시되지 않아 — 차트를 요청해도 텍스트 분석으로 답합니다. Codex CLI 등 다른 호스트도 텍스트 전용입니다. 어느 경우든 모델에는 깔끔한 분석 요약이 전달되며, 차트 스펙이 텍스트 컨텍스트를 오염시키지 않습니다(v1.2).
 
 ---
 
