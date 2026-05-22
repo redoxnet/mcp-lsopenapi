@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Text.Json;
 using FluentAssertions;
+using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using RedoxNet.Mcp.LsOpenApi.Apps;
 using Xunit;
@@ -133,5 +134,34 @@ public class ChartHostSupportTests
             Client("AssistStudio"));
 
         mode.Should().Be(ChartRenderingMode.Sep1865);
+    }
+
+    // ── Cross-repo contract: the capability AssistStudio actually advertises ──
+
+    [Fact]
+    public void Resolve_RoundTripsTheCapabilityAssistStudioAdvertises()
+    {
+        // Mirrors fieldcure-assiststudio McpServerConnection.AddMcpAppsUiCapability:
+        //   capabilities.Extensions["io.modelcontextprotocol/ui"]
+        //       = new { mimeTypes = new[] { "text/html;profile=mcp-app" } };
+        var advertised = new ClientCapabilities();
+#pragma warning disable MCPEXP001
+        advertised.Extensions = new Dictionary<string, object>(StringComparer.Ordinal)
+        {
+            [UiExtensionId] = new { mimeTypes = new[] { HtmlAppMime } },
+        };
+#pragma warning restore MCPEXP001
+
+        // Round-trip through the SDK's own wire serializer, as the initialize
+        // handshake does (client serializes, server deserializes).
+        string wire = JsonSerializer.Serialize(advertised, McpJsonUtilities.DefaultOptions);
+        var received = JsonSerializer.Deserialize<ClientCapabilities>(
+            wire, McpJsonUtilities.DefaultOptions);
+
+        wire.Should().Contain(HtmlAppMime, "the extension must survive serialization");
+        ChartHostSupport.Resolve(received, Client("AssistStudio"))
+            .Should().Be(ChartRenderingMode.Sep1865,
+                "the io.modelcontextprotocol/ui capability AssistStudio advertises must " +
+                "resolve to the SEP-1865 path end-to-end");
     }
 }
