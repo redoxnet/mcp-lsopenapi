@@ -708,7 +708,7 @@ internal static class ProgramTradeChartBuilder
             ["xaxis"] = xaxis,
             ["yaxis"] = new JsonObject
             {
-                ["title"] = new JsonObject { ["text"] = $"일별 순매수 {meta.MeasureLabel}" },
+                ["title"] = new JsonObject { ["text"] = $"순매수 {meta.MeasureLabel}" },
                 ["zeroline"] = true,
                 ["automargin"] = true,
             },
