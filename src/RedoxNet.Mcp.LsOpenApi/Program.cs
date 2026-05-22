@@ -70,8 +70,8 @@ builder.Services
     .WithStdioServerTransport()
     .WithToolsFromAssembly()
     // MCP Apps (SEP-1865): publish the generic Plotly UI template so hosts
-    // (Claude Desktop, ChatGPT, Goose, VS Code) can render inline charts
-    // returned by ls_get_chart / ls_get_etf_holdings.
+    // (Claude Desktop, ChatGPT, Goose, VS Code) can render the inline charts
+    // returned by the chart-emitting tools (see UiResources).
     .WithListResourcesHandler(UiResources.ListAsync)
     .WithReadResourceHandler(UiResources.ReadAsync)
     // Tools/list response post-processing:
