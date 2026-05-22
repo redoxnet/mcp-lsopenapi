@@ -1,5 +1,41 @@
 # Release Notes — RedoxNet.LsOpenApi.Core
 
+## v1.1.0 (2026-05-22)
+
+Program-trading support. The embedded TR catalog gains the seven
+`/stock/program` TRs, and two new internal layers — chart-spec builders
+and a footprint analyzer — back the `RedoxNet.Mcp.LsOpenApi` 1.1.0 tools.
+The public Core API is unchanged.
+
+### Added — Catalog rows (7 new TRs)
+
+- The `/stock/program` family: **`t1662`** (시간대별 프로그램매매 추이),
+  **`t1633`** (기간별 프로그램매매 추이), **`t1636`** (종목별 프로그램매매
+  동향), **`t1637`** (종목별 프로그램매매 추이), plus **`t1631`** /
+  **`t1632`** / **`t1640`** (종합조회 — `ls_call_tr`-only). Catalog count
+  **46 → 53 TRs**.
+
+### Added — Charting (internal)
+
+- `Charting/` gains the program-trading chart-spec builders —
+  `ProgramTradeChartBuilder` (market intraday flow / basis / intensity /
+  gross-flow / daily views), `ProgramRankingChartBuilder`, and
+  `ProgramStockChartBuilder` — plus a shared `ChartLayout` helper that
+  unifies title / legend / font conventions across every chart.
+  `PlotlyChartBuilder` is renamed `CandlestickChartBuilder`.
+
+### Added — Analysis layer (internal)
+
+- New `Analysis/` namespace. `ProgramFootprintAnalyzer` turns a stock's
+  raw program-trading series into a deterministic institutional-footprint
+  verdict — regime, signals, and plain-language evidence.
+
+All new types are `internal`, consumed by the MCP server via
+`InternalsVisibleTo`; the public Core surface is unchanged. The
+`/stock/program` amount-unit divergence (t1662 / t1633 백만원 vs
+t1636 / t1637 천원) is catalogued in `docs/LS-API-QUIRKS.md` §3.3.
+Versioned in lockstep with `RedoxNet.Mcp.LsOpenApi` 1.1.0.
+
 ## v1.0.0 (2026-05-21)
 
 The first **stable** release. The public Core API and the embedded TR

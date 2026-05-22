@@ -11,7 +11,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <PackageId>RedoxNet.Mcp.LsOpenApi</PackageId>
 	<Authors>Jong Hyun Kim</Authors>
     <Company>RedoxNet</Company>
@@ -24,7 +24,7 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>icon.png</PackageIcon>
     <Copyright>Copyright (c) 2026 RedoxNet</Copyright>
-    <PackageReleaseNotes>v1.0.0 — first stable release. The MCP tool surface (32 standard / 35 all), model-facing parameter names, and default response shapes are now frozen, with reflection-based pin tests guarding them. BREAKING: completes the row-cap normalization — ls_get_etf_holdings and ls_get_industry_indices rename top_n to limit, so every list/screener tool now uses limit. Also ships MCP server-instructions tool-routing guidance, routes personal-holdings questions to the local portfolio instead of refusing, and adds NuGet MCP environment metadata for LS credentials. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Mcp.md.</PackageReleaseNotes>
+    <PackageReleaseNotes>v1.1.0 — program-trading tools, additive on the v1.0 stable line. Adds ls_get_program_trading (market / ranking / stock scopes over t1662 / t1633 / t1636 / t1637, with inline Plotly charts) and ls_analyze_program_flow (deterministic institutional-footprint analysis). Tool surface grows from 32 to 34 standard / 35 to 37 all; no existing tool, parameter, or response shape changes. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Mcp.md.</PackageReleaseNotes>
 
     <PackageType>McpServer</PackageType>
     <PackAsTool>true</PackAsTool>

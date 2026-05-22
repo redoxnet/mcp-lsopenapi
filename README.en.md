@@ -9,7 +9,7 @@
 [![CI](https://github.com/redoxnet/mcp-lsopenapi/actions/workflows/ci.yml/badge.svg)](https://github.com/redoxnet/mcp-lsopenapi/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-MCP server for **LS Securities OpenAPI** — ask an AI assistant for quotes, charts, screeners, ETF holdings, index / industry / theme context, and your local portfolio in natural language.
+MCP server for **LS Securities OpenAPI** — ask an AI assistant for quotes, charts, screeners, ETF holdings, program-trading flow, index / industry / theme context, and your local portfolio in natural language.
 
 > **v1.0 scope:** read-only market data + local portfolio notes. Portfolio tools persist user-supplied entries to a local SQLite store; they do not sync with brokerage accounts, fetch live balances, or place orders.
 
@@ -17,7 +17,7 @@ MCP server for **LS Securities OpenAPI** — ask an AI assistant for quotes, cha
 
 - **Market context in one place.** Quotes, order books, OHLCV charts, indicators, fundamentals, analyst opinions, investor / foreign flows, short-selling, market warnings, ETF data, and index / industry / theme screens.
 - **Token-efficient by default.** Heavy responses are shaped for LLM conversations: charts return summary-first payloads and dataset handles; list tools cap rows with `limit`; reshaped defaults cut common responses by 66-97% compared with the pre-v0.9 shapes.
-- **A smaller routing surface.** The default `standard` profile exposes 32 semantic tools, while the 3 catalog escape-hatch tools stay hidden unless `LS_TOOL_PROFILE=all`.
+- **A smaller routing surface.** The default `standard` profile exposes 34 semantic tools, while the 3 catalog escape-hatch tools stay hidden unless `LS_TOOL_PROFILE=all`.
 - **Local portfolio memory.** Track holdings, watchlists, watched themes, corporate actions, and JSON backup / restore without sending portfolio notes anywhere except your local SQLite database.
 
 Token-efficiency case study: [Same question, less context](docs/case-studies/v0.4.0-token-efficiency.en.md)
@@ -403,6 +403,13 @@ The write path is the `ls_holding` dispatcher; `shcode` is required for every ac
 | `ls_get_short_selling_trend(shcode, from?, to?, count?)` | Per-stock daily short-selling (공매도) trend via `t1927`. Short volume / value (백만원), short ratio, average short price, cumulative short volume, and the uptick-rule applied vs. exempt split. |
 | `ls_get_high_low_stocks(direction?, period?, maintained?, market?, limit?, exclude_etf?)` | New-high / new-low (신고가 / 신저가) screener via `t1442`. `direction` high/low, `period` look-back (52w default), `maintained` 돌파유지 vs 일시돌파; ETF/ETN dropped by default. |
 
+#### Program trading
+
+| Tool | Purpose |
+| --- | --- |
+| `ls_get_program_trading(scope?, market?, period?, sort?, measure?, limit?, shcode?, name?, include_chart?, chart_view?)` | Program-trading (프로그램매매) flow over `t1662` / `t1633` / `t1636` / `t1637`. `scope=market` — market-wide intraday (t1662 — a ~1-minute 차익 / 비차익 series with the KOSPI200 index and basis) or daily (t1633); `scope=ranking` — the stocks programs are net buying / selling right now (t1636), with `mktcap_ratio` as a size-normalized footprint metric; `scope=stock` — one stock's intraday / daily flow (t1637). `include_chart=true` ships an inline Plotly v5 chart. |
+| `ls_analyze_program_flow(shcode, name?, window?)` | Analysis-Layer program-trading footprint classifier for one stock — a regime (accumulation / distribution / churn / neutral), a 0–1 direction confidence, signals (buy-day persistence and streak, churn ratio, intensity, intraday pace, price coupling), and plain-language `evidence` ready to narrate. Built on `t1637`. |
+
 #### LS themes
 
 | Tool | Purpose |
@@ -479,6 +486,7 @@ Current release line:
 
 - [x] **v0.10.1** — Functional v1.0 release candidate. Published to NuGet and the MCP Registry; includes the compressed 32-tool `standard` surface, token-budget fixes, and the MCP registry manifest fix.
 - [x] **v1.0.0** — First stable release. Freezes the MCP tool surface, model-facing parameter names, and default response shapes, with reflection-based pin tests guarding them. Completes the row-cap `limit` normalization (`ls_get_etf_holdings` + `ls_get_industry_indices`), adds MCP server-instructions routing guidance, and ships NuGet credential metadata.
+- [x] **v1.1.0** — Program-trading support, additive on the v1.0 stable line. Adds `ls_get_program_trading` (market / ranking / stock scopes over t1662 / t1633 / t1636 / t1637, with inline Plotly charts) and `ls_analyze_program_flow` (deterministic program-trading footprint analysis). Tool surface 32 → 34 (`standard`) / 35 → 37 (`all`); no existing tool, parameter, or response shape changes.
 
 Major milestones:
 

@@ -108,7 +108,7 @@ Credentials are accepted **only** through the process environment — never thro
 
 Local data lives at `%LOCALAPPDATA%\RedoxNet\LsOpenApi\` on Windows and `~/.local/share/redoxnet/lsopenapi/` on Linux/macOS: `token.db` (auth cache, SHA-256 keyed) and `portfolio.db` (user-supplied holdings/watchlists; never read or written by tools outside the portfolio family).
 
-## Tools (32 in the `standard` profile)
+## Tools (34 in the `standard` profile)
 
 v0.10 (BREAKING) compresses the tool surface: the twenty v0.9 portfolio tools fold into **five action-routed dispatchers** (`ls_account`, `ls_watchlist`, `ls_watched_themes`, `ls_portfolio_io`, `ls_holding`), and the new `LS_TOOL_PROFILE` env var hides the three catalog tools in the default `standard` profile. Surface 48 → **32** (`standard`) / 35 (`all`). Additive in the same release: `ls_get_stock_info` gains an opt-in `foreign` ownership section (t1716); list / screener tools unify their row cap to `limit` and emit `total_available`; `ls_get_index_history` gains `output_mode=export` with a `dataset_id` drill.
 
@@ -161,6 +161,13 @@ v0.10 (BREAKING) compresses the tool surface: the twenty v0.9 portfolio tools fo
 | `ls_get_analyst_opinions` | `t3401` | Per-stock brokerage (sell-side) investment-opinion history — rating + target price before/after each change, broker, opinion-day close, plus a current-price snapshot. |
 | `ls_get_short_selling_trend` | `t1927` | Per-stock daily short-selling (공매도) — short volume/value (백만원), short ratio, average short price, cumulative short volume, uptick-applied vs. exempt split. |
 | `ls_get_high_low_stocks` | `t1442` | New-high / new-low (신고가 / 신저가) screener. `direction`, `period` (52w default), `maintained` (돌파유지 vs 일시돌파); ETF/ETN excluded by default. |
+
+### Program trading (LS-backed)
+
+| Tool | TR | Purpose |
+|---|---|---|
+| `ls_get_program_trading` | `t1662` / `t1633` / `t1636` / `t1637` | Program-trading (프로그램매매) flow. `scope=market` — intraday (t1662) or daily (t1633) market-wide 차익 / 비차익 net buying with the KOSPI200 index; `scope=ranking` — per-stock net-buy ranking (t1636) with a market-cap-normalized footprint ratio; `scope=stock` — one stock's intraday / daily flow (t1637). `include_chart=true` ships an inline Plotly v5 chart. |
+| `ls_analyze_program_flow` | `t1637` | Program-trading footprint analysis for one stock — a regime (accumulation / distribution / churn / neutral), a 0–1 confidence, signals (persistence, churn ratio, intensity, intraday pace, price coupling), and plain-language evidence to narrate. |
 
 ### Portfolio (local-only, no broker sync)
 

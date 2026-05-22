@@ -1,5 +1,55 @@
 # Release Notes — RedoxNet.Mcp.LsOpenApi
 
+## v1.1.0 (2026-05-22)
+
+Program-trading support — the first feature release on the v1.0 stable
+line. Two new tools turn the catalogued `/stock/program` TRs into
+natural-language answers, with inline Plotly charts. Additive only: no
+existing tool, parameter, or response shape changes.
+
+### Added — Program-trading flow (`ls_get_program_trading`)
+
+One tool, three scopes:
+
+- **`scope=market`** — market-wide program-trading flow. `period=intraday`
+  (t1662 — a ~1-minute 차익 / 비차익 series with the KOSPI200 index and
+  futures basis) or `period=daily` (t1633 — per-day history).
+- **`scope=ranking`** — which stocks programs are net buying / selling
+  right now (t1636), with `mktcap_ratio` (net buying ÷ market cap) as a
+  size-normalized footprint metric.
+- **`scope=stock`** — one stock's program-trading flow (t1637), intraday
+  cumulative or daily.
+
+`include_chart=true` ships a Plotly v5 spec via `structuredContent.chart`
+for inline rendering on MCP Apps hosts — a flow overview, basis vs
+arbitrage, per-5-minute intensity / gross-flow twin panels, a daily
+stacked bar, a ranking horizontal bar, or a per-stock price-vs-flow chart.
+
+### Added — Footprint analysis (`ls_analyze_program_flow`)
+
+An Analysis-Layer tool. Given a stock, it classifies the
+program-trading footprint into a deterministic verdict — a regime
+(accumulation / distribution / churn / neutral), a 0–1 direction
+confidence, signals (buy-day persistence and streak, churn ratio,
+intensity, intraday pace, price coupling), and plain-language `evidence`
+ready for the model to narrate.
+
+### Changed
+
+- Tool surface **32 → 34** in the `standard` profile (**35 → 37** in
+  `all`); `ToolSurfaceFreezeTests` is updated to the new counts. The
+  addition is purely additive — the v1.0.0 frozen tools, parameter names,
+  and response shapes are unchanged.
+
+### Notes
+
+- `/stock/program` amount units differ by TR (t1662 / t1633 백만원;
+  t1636 / t1637 천원), and t1637's intraday series is current-session
+  only — both documented in `docs/LS-API-QUIRKS.md` §3.3. The tools
+  normalize all amounts to 억원.
+
+Versioned in lockstep with `RedoxNet.LsOpenApi.Core` 1.1.0.
+
 ## v1.0.0 (2026-05-21)
 
 The first **stable** release. v0.10.1 was the functional v1.0 release
