@@ -1,5 +1,62 @@
 # Release Notes — RedoxNet.Mcp.LsOpenApi
 
+## v1.2.0 (2026-05-22)
+
+MCP Apps capability negotiation — the chart surface now adapts to what
+the connected host can actually render. A correctness slice, not a
+feature add: it stops the server from handing a chart-less host a payload
+it would bury in the model's context, and from telling the model a chart
+exists when none can be shown.
+
+### Changed — Capability-gated chart surface
+
+Chart-emitting tools (`ls_get_chart`, `ls_add_indicator`,
+`ls_reframe_chart`, `ls_get_etf_holdings`, `ls_get_program_trading`) now
+shape their output by a chart-rendering mode resolved per connection from
+two signals:
+
+- the SEP-1865 `io.modelcontextprotocol/ui` capability the host
+  advertises at `initialize` (preferred), or
+- a `clientInfo` allowlist of known hosts that render
+  `structuredContent.chart` directly with their own renderer.
+
+A host that hits neither is treated as text-only:
+
+- **text-only host** — `include_chart` is dropped from the tool schema,
+  and `structuredContent.chart` is stripped from results.
+  `structuredContent` is a generic MCP field, so a host that supports
+  structured output but not MCP Apps would otherwise feed the Plotly spec
+  straight into the model's context, burying the analytical summary.
+- **chart-rendering host** — `include_chart` stays; a SEP-1865 host also
+  gets the `_meta.ui` envelope and the `ui://lsopenapi/plotly` resource,
+  while a host that renders the `structuredContent.chart` spec directly
+  gets neither — it has no use for them.
+
+### Removed — `chart_available` text marker
+
+The `chart_available` field is gone from every chart-emitting tool's text
+response. It had no SEP-1865 basis and, on a host that can't render
+charts, was a false signal — telling the model a chart existed when the
+user would see nothing. Chart visibility is the host's decision now, never
+surfaced in the model-facing text.
+
+### Fixed — `_meta.ui` on the chart follow-up tools
+
+`ls_add_indicator` and `ls_reframe_chart` emit `structuredContent.chart`
+but were absent from the `_meta.ui` set, so MCP Apps hosts could not pair
+their updated charts with the inline renderer. Both are now included.
+
+### Compatibility
+
+No existing tool, C# parameter signature, or response field — other than
+the removed `chart_available` — changes. On a host that advertises no
+chart capability, `include_chart` disappears from the published
+`tools/list` schema: schema-breaking but behaviorally transparent, since
+the model adapts to the advertised schema. A host must advertise the MCP
+Apps capability or be on the chart-renderer allowlist to see charts at
+all. Design notes:
+`docs/SPEC-v1.2-mcp-apps-capability.md`.
+
 ## v1.1.0 (2026-05-22)
 
 Program-trading support — the first feature release on the v1.0 stable

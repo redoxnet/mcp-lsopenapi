@@ -272,18 +272,23 @@ A single `period_type` keeps the flat shape (`summary`, `context`, `dataset_id` 
 
 ### Rendering charts (`include_chart: true`)
 
-Pass `include_chart: true` or `output_mode: "display"` and the response carries a Plotly v5 JSON spec under `structuredContent.chart`. The spec is a UI side-channel and is not duplicated into the model-facing text. The server emits the spec only — no server-side image rendering, no charting library dependency.
+From **v1.2** the chart surface is gated on how the connected host consumes chart payloads — the host, not the model, decides whether a chart is shown:
+
+- **MCP Apps host** — advertises the SEP-1865 `io.modelcontextprotocol/ui` capability, or is a known legacy chart renderer: `include_chart` is offered, and passing `include_chart: true` / `output_mode: "display"` ships a Plotly v5 JSON spec under `structuredContent.chart`.
+- **Text-only host** — `include_chart` is dropped from the tool schema and `structuredContent.chart` is stripped from results, so the model only ever reads the analytical summary.
+
+`structuredContent.chart` is a UI side-channel — never duplicated into the model-facing text, which carries no "a chart exists" marker. The server emits the spec only — no server-side image rendering, no charting library dependency.
 
 ```jsonc
 // ls_get_chart shcode=005930 period_type=day count=60 indicators=["ma:5","ma:20"] include_chart=true
+// model-facing text — summary only, no chart spec, no marker
 {
   "shcode": "005930",
   "period_type": "day",
   "output_mode": "display",
   "dataset_id": "ds_a8f3...",
   "summary": {...},
-  "context": {...},
-  "chart_available": true
+  "context": {...}
 }
 
 // structuredContent

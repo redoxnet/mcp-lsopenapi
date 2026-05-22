@@ -1,5 +1,12 @@
 # Release Notes — RedoxNet.LsOpenApi.Core
 
+## v1.2.0 (2026-05-22)
+
+Version-only release, kept in lockstep with `RedoxNet.Mcp.LsOpenApi`
+1.2.0. The v1.2 slice — MCP Apps capability negotiation — lives entirely
+in the MCP server project; the Core library has no functional changes and
+the public Core API is unchanged.
+
 ## v1.1.0 (2026-05-22)
 
 Program-trading support. The embedded TR catalog gains the seven

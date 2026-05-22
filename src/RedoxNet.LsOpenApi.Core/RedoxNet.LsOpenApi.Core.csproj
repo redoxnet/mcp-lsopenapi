@@ -11,7 +11,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <PackageId>RedoxNet.LsOpenApi.Core</PackageId>
     <Authors>Jong Hyun Kim</Authors>
     <Company>RedoxNet</Company>
