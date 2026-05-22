@@ -188,7 +188,7 @@ User: "Has KODEX AI Power Infrastructure ETF hit a sell signal on its 12-period 
 
 #### 4. Interactive Charts
 
-Pass `include_chart: true` to receive a Plotly v5 JSON spec in the response. Clients that embed Plotly.js (e.g. [AssistStudio](https://github.com/fieldcure/fieldcure-assiststudio)) render inline charts; other clients fall back to the structured `candles`/`indicators`/`context` payload.
+Chart-emitting tools can return a Plotly v5 JSON spec for inline rendering, gated (from v1.2) on what the connected host can render. **[AssistStudio](https://github.com/fieldcure/fieldcure-assiststudio)** renders charts inline in the chat. **Claude Desktop** connects fine and every tool works, but its MCP Apps renderer does not currently display inline charts — a chart request returns text analysis. **Codex CLI** and other text-only hosts are not offered the `include_chart` parameter at all. In every case the model receives a clean analytical summary, and the Plotly spec never enters its text context.
 
 ## Tools
 
