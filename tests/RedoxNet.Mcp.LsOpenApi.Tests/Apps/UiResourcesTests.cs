@@ -17,7 +17,6 @@ public class UiResourcesTests
     [InlineData("ls_get_chart")]
     [InlineData("ls_get_etf_holdings")]
     [InlineData("ls_get_program_trading")]
-    [InlineData("ls_analyze_program_flow")]
     public void PatchToolMeta_PairsChartEmittingToolsWithThePlotlyResource(string toolName)
     {
         var tool = new Tool { Name = toolName };

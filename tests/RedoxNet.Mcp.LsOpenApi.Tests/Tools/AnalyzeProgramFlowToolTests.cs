@@ -95,34 +95,16 @@ public class AnalyzeProgramFlowToolTests
     }
 
     [Fact]
-    public async Task AnalyzeProgramFlow_IncludeChart_ShipsIntradayFlowChart()
-    {
-        var (client, _) = Make(T1637IntradayBody(), T1637DailyBody());
-
-        CallToolResult result = await AnalyzeProgramFlowTool.AnalyzeProgramFlow(
-            client, "005930", include_chart: true);
-
-        ParseTextContent(result).GetProperty("chart_available").GetBoolean().Should().BeTrue();
-
-        JsonElement chart = result.StructuredContent!.Value.GetProperty("chart");
-        chart.GetProperty("type").GetString().Should().Be("plotly");
-        chart.GetProperty("spec").GetProperty("data")[0].GetProperty("type").GetString().Should().Be("scatter");
-    }
-
-    [Fact]
     public async Task AnalyzeProgramFlow_NoIntraday_StillAnalyzesFromDaily()
     {
         var (client, _) = Make(EmptyIntradayBody, T1637DailyBody());
 
         CallToolResult result = await AnalyzeProgramFlowTool.AnalyzeProgramFlow(
-            client, "005930", include_chart: true);
+            client, "005930");
 
         JsonElement text = ParseTextContent(result);
         text.GetProperty("regime").GetString().Should().Be("accumulation");
         text.GetProperty("signals").GetProperty("pace_regularity").GetString().Should().Be("n/a");
-        text.GetProperty("chart_available").GetBoolean().Should()
-            .BeFalse("no intraday series means no intraday chart");
-        result.StructuredContent.Should().BeNull();
     }
 
     [Fact]

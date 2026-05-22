@@ -53,8 +53,8 @@ internal static class UiResources
                     Title = "Plotly Chart Renderer",
                     Description = "Inline chart renderer for tools that emit Plotly v5 specs " +
                                   "(candlestick, treemap, scatter, bar, ...). Used by ls_get_chart, " +
-                                  "ls_get_etf_holdings, ls_get_program_trading, and " +
-                                  "ls_analyze_program_flow via MCP Apps (SEP-1865).",
+                                  "ls_get_etf_holdings, and ls_get_program_trading " +
+                                  "via MCP Apps (SEP-1865).",
                     MimeType = PlotlyMimeType,
                     Meta = BuildResourceUiMeta(),
                 },
@@ -103,7 +103,6 @@ internal static class UiResources
         "ls_get_chart",
         "ls_get_etf_holdings",
         "ls_get_program_trading",
-        "ls_analyze_program_flow",
     };
 
     /// <summary>

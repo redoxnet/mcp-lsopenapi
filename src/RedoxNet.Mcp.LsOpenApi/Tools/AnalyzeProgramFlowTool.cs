@@ -5,7 +5,6 @@ using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using RedoxNet.LsOpenApi.Core.Analysis;
 using RedoxNet.LsOpenApi.Core.Auth;
-using RedoxNet.LsOpenApi.Core.Charting;
 using RedoxNet.LsOpenApi.Core.Http;
 
 namespace RedoxNet.Mcp.LsOpenApi.Tools;
@@ -31,11 +30,10 @@ public static class AnalyzeProgramFlowTool
     /// </summary>
     /// <param name="apiClient">Injected LS API client.</param>
     /// <param name="shcode">6-digit Korean short code.</param>
-    /// <param name="name">Optional stock name for the report / chart title.</param>
+    /// <param name="name">Optional stock name for the report.</param>
     /// <param name="window">Daily look-back window in trading days (10–60).</param>
-    /// <param name="include_chart">If true, also ship the intraday flow chart.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A footprint verdict plus an optional <c>structuredContent.chart</c>.</returns>
+    /// <returns>A footprint verdict with a deterministic regime and evidence.</returns>
     [McpServerTool(Name = "ls_analyze_program_flow")]
     [Description("""
         Analysis Layer — classifies a Korean stock's institutional program-trading footprint into a deterministic verdict.
@@ -45,18 +43,16 @@ public static class AnalyzeProgramFlowTool
 
         Pulls the stock's intraday and daily program-trading flow (TR t1637) and computes a regime — accumulation / distribution / churn / neutral — with a 0–1 direction_confidence and these signals: window/today net, buy- and sell-day counts, consecutive-day streak, churn_ratio (one-directional vs two-way), intensity (today vs the window's average day), intraday pace (steady TWAP-like vs bursty), open/close loading, and price_coupling (cumulative net vs price correlation). The evidence[] array is plain-language findings ready to narrate to the user.
 
-        window sets the daily look-back (10–60 trading days, default 20). Set include_chart=true to also ship the intraday flow chart as structuredContent.
+        window sets the daily look-back (10–60 trading days, default 20).
         """)]
     public static async Task<CallToolResult> AnalyzeProgramFlow(
         LsApiClient apiClient,
         [Description("6-digit Korean short code, e.g. '005930'.")]
         string shcode,
-        [Description("Optional stock name for the report and chart title, e.g. '삼성전자'.")]
+        [Description("Optional stock name for the report, e.g. '삼성전자'.")]
         string name = "",
         [Description("Daily look-back window in trading days (10–60). Default 20.")]
         int window = 20,
-        [Description("If true, ship the intraday program-flow chart as structuredContent. Default false.")]
-        bool include_chart = false,
         CancellationToken cancellationToken = default)
     {
         string code = (shcode ?? "").Trim();
@@ -137,7 +133,6 @@ public static class AnalyzeProgramFlowTool
 
             ProgramFootprintReport report = ProgramFootprintAnalyzer.Analyze(daily, intraday);
 
-            bool chartReady = include_chart && intraday.Count > 0;
             string? displayName = string.IsNullOrWhiteSpace(name) ? null : name.Trim();
 
             var payload = new
@@ -153,23 +148,10 @@ public static class AnalyzeProgramFlowTool
                 direction_confidence = report.DirectionConfidence,
                 signals = report.Signals,
                 evidence = report.Evidence,
-                chart_available = chartReady,
                 note = "Analysis Layer — deterministic institutional-footprint classification from program-trading flow (TR t1637). Narrate the evidence for the user; regime is accumulation / distribution / churn / neutral.",
             };
 
-            JsonObject? structured = chartReady
-                ? new JsonObject
-                {
-                    ["chart"] = ProgramStockChartBuilder.Build(
-                        ProgramStockChartView.IntradayFlow,
-                        new ProgramStockChartMeta(code, displayName ?? "", sessionDate),
-                        intraday
-                            .Select(m => new ProgramStockPoint(m.Time, m.Price, m.CumulativeNet))
-                            .ToList()),
-                }
-                : null;
-
-            return McpJson.OkResult(JsonSerializer.Serialize(payload, McpJson.Tool), structured);
+            return McpJson.OkResult(JsonSerializer.Serialize(payload, McpJson.Tool));
         }
         catch (LsAuthException ex)
         {
