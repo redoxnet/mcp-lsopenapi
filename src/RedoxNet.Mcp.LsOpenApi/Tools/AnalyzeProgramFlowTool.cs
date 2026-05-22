@@ -44,7 +44,7 @@ public static class AnalyzeProgramFlowTool
         USE WHEN: the user asks what the program-trading channel is doing for a stock — whether program flows are accumulating, distributing, or churning beyond the raw numbers.
         AVOID WHEN: the user just wants the raw program-trading series or a chart — use ls_get_program_trading.
 
-        IMPORTANT — program-trading flow is a CHANNEL, not an investor class: it blends foreign baskets, index arbitrage, and institutional baskets, and misses any institution buying off-program (direct orders). Do NOT read this verdict as "are 기관 / 외국인 accumulating" — for that, cross-check ls_get_investor_flow (investors=["all"] splits 외국인 / 연기금 / 투신 / 증권). This tool answers only the program-channel layer.
+        IMPORTANT — Program-trading flow is a channel, not an investor class: it blends foreign baskets, index arbitrage, and institutional baskets, and misses off-program institutional (direct-order) buying. Do not read this verdict as whether 기관 / 외국인 are accumulating; cross-check ls_get_investor_flow (investors=["all"]) for investor-class flow.
 
         Pulls the stock's intraday and daily program-trading flow (TR t1637) and computes a regime — accumulation / distribution / churn / neutral — with a 0–1 direction_confidence and these signals: window/today net, buy- and sell-day counts, consecutive-day streak, churn_ratio (one-directional vs two-way), intensity (today vs the window's average day), intraday pace (steady TWAP-like vs bursty), open/close loading, and price_coupling (cumulative net vs price correlation). The evidence[] array is plain-language findings ready to narrate to the user.
 
@@ -153,7 +153,7 @@ public static class AnalyzeProgramFlowTool
                 direction_confidence = report.DirectionConfidence,
                 signals = report.Signals,
                 evidence = report.Evidence,
-                note = "Analysis Layer — deterministic program-trading footprint verdict from the program channel (TR t1637); regime is accumulation / distribution / churn / neutral. Narrate the evidence for the user. Program-trading flow is a channel, not an investor class — it blends foreign / arbitrage / institutional baskets and misses off-program institutional orders, so do not read this as whether 기관 / 외국인 are accumulating; cross-check ls_get_investor_flow (investors=[\"all\"]) for investor-specific flow.",
+                note = "Analysis Layer — deterministic program-trading footprint verdict from the program channel (TR t1637); regime is accumulation / distribution / churn / neutral. Narrate the evidence for the user. Program-trading flow is a channel, not an investor class: it blends foreign baskets, index arbitrage, and institutional baskets, and misses off-program institutional (direct-order) buying. Do not read this verdict as whether 기관 / 외국인 are accumulating; cross-check ls_get_investor_flow (investors=[\"all\"]) for investor-class flow.",
             };
 
             return McpJson.OkResult(JsonSerializer.Serialize(payload, McpJson.Tool));

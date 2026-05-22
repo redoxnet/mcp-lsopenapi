@@ -67,7 +67,7 @@ public static class GetProgramTradingTool
         USE WHEN: the user asks about 프로그램매매 / program trading / 차익·비차익 / basket flow, which stocks programs are accumulating, or program flow for a specific stock.
         AVOID WHEN: the user wants investor-class flow (개인/외국인/기관) — use ls_get_investor_flow.
 
-        Non-arbitrage (비차익) net buying is the directional basket signal — foreign and institutional baskets blended, not 기관-specific; arbitrage (차익) is basis-driven and mechanical. In ranking scope, mktcap_ratio (net buying ÷ market cap) is the normalized footprint — a small-cap with a high ratio is a stronger signal than a large-cap with a big absolute number. sort='mktcap_weight' ranks by that footprint directly.
+        Non-arbitrage (비차익) net buying is the directional basket signal (foreign and institutional baskets blended, not 기관-specific); arbitrage (차익) is basis-driven and mechanical. In ranking scope, mktcap_ratio (net buying ÷ market cap) is the normalized footprint — a small-cap with a high ratio is a stronger signal than a large-cap with a big absolute number. sort='mktcap_weight' ranks by that footprint directly.
 
         Set include_chart=true to ship a Plotly v5 chart as structuredContent so MCP Apps hosts render it inline at zero token cost.
         - market intraday chart_view: flow_overview (default — K200 vs cumulative 전체/비차익/차익), basis_arbitrage (basis vs 차익), intensity_bars (per-minute net bars), gross_flow (per-5-min gross 매수/매도 in 비차익/차익 panels).
@@ -280,7 +280,7 @@ public static class GetProgramTradingTool
                 key_points = BuildKeyPoints(minutes),
                 chart_available = includeChart,
                 chart_view = includeChart ? chartViewName : null,
-                note = "net / arbitrage / non_arbitrage are program net buying in 억원, cumulative from the session open; minute_net is the per-minute delta. The full minute series is cached under dataset_id. Non-arbitrage (비차익) is the directional basket signal (foreign + institutional baskets blended, not 기관-specific); arbitrage (차익) tracks the basis.",
+                note = "net / arbitrage / non_arbitrage are program net buying in 억원, cumulative from the session open; minute_net is the per-minute delta. The full minute series is cached under dataset_id. Non-arbitrage (비차익) is the directional basket signal (foreign and institutional baskets blended, not 기관-specific); arbitrage (차익) tracks the basis.",
             };
 
             JsonObject? structured = includeChart
@@ -398,7 +398,7 @@ public static class GetProgramTradingTool
                     kospi200 = x.Kospi200,
                 }),
                 chart_available = includeChart,
-                note = "Each row is one day's program net buying (net = arbitrage + non_arbitrage), in 억원. non_arbitrage (비차익) is the directional basket signal (foreign + institutional baskets blended, not 기관-specific).",
+                note = "Each row is one day's program net buying (net = arbitrage + non_arbitrage), in 억원. non_arbitrage (비차익) is the directional basket signal (foreign and institutional baskets blended, not 기관-specific).",
             };
 
             JsonObject? structured = includeChart
