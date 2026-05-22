@@ -9,7 +9,7 @@ namespace RedoxNet.LsOpenApi.Core.Charting;
 internal enum ProgramTradeChartView
 {
     /// <summary>K200 price vs cumulative total / arbitrage / non-arbitrage flow —
-    /// the default institutional accumulation / distribution narrative.</summary>
+    /// the default program-flow accumulation / distribution narrative.</summary>
     FlowOverview,
 
     /// <summary>Basis vs cumulative arbitrage flow — arbitrage timing, basis-driven flow.</summary>

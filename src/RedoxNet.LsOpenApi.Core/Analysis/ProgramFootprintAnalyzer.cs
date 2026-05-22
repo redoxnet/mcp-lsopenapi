@@ -40,7 +40,7 @@ internal sealed record ProgramFlowSignals(
     string Loading,
     double PriceCoupling);
 
-/// <summary>The institutional-footprint verdict for one stock.</summary>
+/// <summary>The program-trading footprint verdict for one stock.</summary>
 /// <param name="Regime"><c>accumulation</c> / <c>distribution</c> / <c>churn</c> / <c>neutral</c>.</param>
 /// <param name="DirectionConfidence">0–1 confidence in the regime call.</param>
 /// <param name="Signals">The computed signals behind the verdict.</param>
@@ -53,7 +53,7 @@ internal sealed record ProgramFootprintReport(
 
 /// <summary>
 /// Analysis Layer — turns a stock's raw program-trading series (TR t1637) into a
-/// deterministic institutional-footprint verdict. Pure functions, no I/O: the
+/// deterministic program-trading footprint verdict. Pure functions, no I/O: the
 /// caller fetches the data, this classifies it. The Interpretation Layer (the
 /// LLM) narrates <see cref="ProgramFootprintReport.Evidence"/>.
 /// </summary>

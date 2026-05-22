@@ -10,14 +10,17 @@ using RedoxNet.LsOpenApi.Core.Http;
 namespace RedoxNet.Mcp.LsOpenApi.Tools;
 
 /// <summary>
-/// Analysis-Layer MCP tool — classifies a stock's institutional program-trading
-/// footprint into a deterministic verdict via <see cref="ProgramFootprintAnalyzer"/>.
+/// Analysis-Layer MCP tool — classifies a stock's program-trading footprint
+/// into a deterministic verdict via <see cref="ProgramFootprintAnalyzer"/>.
 /// </summary>
 /// <remarks>
 /// Sits one tier above the Data Layer: it pulls the stock's intraday + daily
 /// program-trading flow (TR <c>t1637</c>), runs the deterministic analyzer, and
 /// returns a regime verdict plus plain-language evidence. The Interpretation
 /// Layer (the LLM) narrates that evidence — no LLM logic lives here.
+/// Program-trading flow is a channel, not an investor class — the verdict
+/// describes the program tape, not 기관 / 외국인 flow (cross-check
+/// <c>ls_get_investor_flow</c> for that).
 /// </remarks>
 [McpServerToolType]
 public static class AnalyzeProgramFlowTool
@@ -26,7 +29,7 @@ public static class AnalyzeProgramFlowTool
     const double ThousandWonPerEokwon = 100_000.0;
 
     /// <summary>
-    /// Classifies a stock's institutional program-trading footprint.
+    /// Classifies a stock's program-trading footprint.
     /// </summary>
     /// <param name="apiClient">Injected LS API client.</param>
     /// <param name="shcode">6-digit Korean short code.</param>
@@ -36,10 +39,12 @@ public static class AnalyzeProgramFlowTool
     /// <returns>A footprint verdict with a deterministic regime and evidence.</returns>
     [McpServerTool(Name = "ls_analyze_program_flow")]
     [Description("""
-        Analysis Layer — classifies a Korean stock's institutional program-trading footprint into a deterministic verdict.
+        Analysis Layer — classifies a Korean stock's program-trading footprint into a deterministic verdict.
 
-        USE WHEN: the user asks whether programs / institutions are accumulating or distributing a stock, or wants a read on the program-trading footprint beyond the raw numbers.
+        USE WHEN: the user asks what the program-trading channel is doing for a stock — whether program flows are accumulating, distributing, or churning beyond the raw numbers.
         AVOID WHEN: the user just wants the raw program-trading series or a chart — use ls_get_program_trading.
+
+        IMPORTANT — program-trading flow is a CHANNEL, not an investor class: it blends foreign baskets, index arbitrage, and institutional baskets, and misses any institution buying off-program (direct orders). Do NOT read this verdict as "are 기관 / 외국인 accumulating" — for that, cross-check ls_get_investor_flow (investors=["all"] splits 외국인 / 연기금 / 투신 / 증권). This tool answers only the program-channel layer.
 
         Pulls the stock's intraday and daily program-trading flow (TR t1637) and computes a regime — accumulation / distribution / churn / neutral — with a 0–1 direction_confidence and these signals: window/today net, buy- and sell-day counts, consecutive-day streak, churn_ratio (one-directional vs two-way), intensity (today vs the window's average day), intraday pace (steady TWAP-like vs bursty), open/close loading, and price_coupling (cumulative net vs price correlation). The evidence[] array is plain-language findings ready to narrate to the user.
 
@@ -148,7 +153,7 @@ public static class AnalyzeProgramFlowTool
                 direction_confidence = report.DirectionConfidence,
                 signals = report.Signals,
                 evidence = report.Evidence,
-                note = "Analysis Layer — deterministic institutional-footprint classification from program-trading flow (TR t1637). Narrate the evidence for the user; regime is accumulation / distribution / churn / neutral.",
+                note = "Analysis Layer — deterministic program-trading footprint verdict from the program channel (TR t1637); regime is accumulation / distribution / churn / neutral. Narrate the evidence for the user. Program-trading flow is a channel, not an investor class — it blends foreign / arbitrage / institutional baskets and misses off-program institutional orders, so do not read this as whether 기관 / 외국인 are accumulating; cross-check ls_get_investor_flow (investors=[\"all\"]) for investor-specific flow.",
             };
 
             return McpJson.OkResult(JsonSerializer.Serialize(payload, McpJson.Tool));
