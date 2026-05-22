@@ -61,18 +61,18 @@ public class UiResourcesTests
             .Should().BeTrue("include_chart stays callable on a SEP-1865 host");
     }
 
-    // ── ApplyChartSurface: LegacyStructuredContent ──────────────────────────
+    // ── ApplyChartSurface: StructuredContent ────────────────────────────────
 
     [Fact]
-    public void ApplyChartSurface_Legacy_KeepsIncludeChart_NoMetaUi()
+    public void ApplyChartSurface_StructuredContent_KeepsIncludeChart_NoMetaUi()
     {
         var tool = ChartTool();
 
-        UiResources.ApplyChartSurface(tool, ChartRenderingMode.LegacyStructuredContent);
+        UiResources.ApplyChartSurface(tool, ChartRenderingMode.StructuredContent);
 
-        tool.Meta.Should().BeNull("a legacy sniffing host ignores _meta.ui");
+        tool.Meta.Should().BeNull("a host that renders the spec directly ignores _meta.ui");
         SchemaHasProperty(tool, "include_chart").Should().BeTrue(
-            "a legacy host renders the chart, so include_chart stays callable");
+            "a structured-content host renders the chart, so include_chart stays callable");
     }
 
     // ── ApplyChartSurface: TextOnly ─────────────────────────────────────────
@@ -98,7 +98,7 @@ public class UiResourcesTests
         foreach (var mode in new[]
                  {
                      ChartRenderingMode.Sep1865,
-                     ChartRenderingMode.LegacyStructuredContent,
+                     ChartRenderingMode.StructuredContent,
                      ChartRenderingMode.TextOnly,
                  })
         {

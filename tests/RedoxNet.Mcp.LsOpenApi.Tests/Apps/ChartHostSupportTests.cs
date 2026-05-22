@@ -103,11 +103,11 @@ public class ChartHostSupportTests
     }
 
     [Fact]
-    public void Resolve_NoCapability_AssistStudioClient_ReturnsLegacy()
+    public void Resolve_NoCapability_AssistStudioClient_ReturnsStructuredContent()
     {
         var mode = ChartHostSupport.Resolve(new ClientCapabilities(), Client("AssistStudio"));
 
-        mode.Should().Be(ChartRenderingMode.LegacyStructuredContent);
+        mode.Should().Be(ChartRenderingMode.StructuredContent);
     }
 
     [Fact]

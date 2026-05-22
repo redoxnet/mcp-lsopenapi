@@ -5,46 +5,54 @@ namespace RedoxNet.Mcp.LsOpenApi.Apps;
 /// <summary>How the connected host consumes chart payloads.</summary>
 internal enum ChartRenderingMode
 {
-    /// <summary>Host does not render charts. Suppress structuredContent and hide include_chart.</summary>
+    /// <summary>
+    /// Host does not render charts. Suppress <c>structuredContent</c> and hide
+    /// <c>include_chart</c> so the model is never handed a UI-only payload.
+    /// </summary>
     TextOnly,
 
     /// <summary>
-    /// Host renders <c>structuredContent.chart</c> by direct sniffing (legacy private convention,
-    /// e.g. AssistStudio v1.0). Emit structuredContent but skip SEP-1865 metadata.
+    /// Host renders the chart from <c>structuredContent.chart</c> directly — it
+    /// consumes the Plotly spec with its own renderer rather than the SEP-1865
+    /// iframe app (e.g. AssistStudio). Emit <c>structuredContent.chart</c>, but
+    /// skip the SEP-1865 <c>_meta.ui</c> envelope and <c>ui://</c> resource it
+    /// has no use for.
     /// </summary>
-    LegacyStructuredContent,
+    StructuredContent,
 
     /// <summary>
-    /// Host advertises SEP-1865 <c>io.modelcontextprotocol/ui</c> capability.
-    /// Emit structuredContent with full <c>_meta.ui</c> and <c>ui://</c> resource registration.
+    /// Host advertises the SEP-1865 <c>io.modelcontextprotocol/ui</c> capability.
+    /// Emit <c>structuredContent.chart</c> plus the full <c>_meta.ui</c> envelope
+    /// and <c>ui://</c> resource registration.
     /// </summary>
     Sep1865,
 }
 
 /// <summary>
 /// Resolves how the connected host wants chart payloads delivered, by combining
-/// two signals: the advertised SEP-1865 UI capability (preferred) and a
-/// <c>clientInfo</c> allowlist (legacy fallback for hosts that sniff
-/// <c>structuredContent.chart</c> directly).
+/// two signals: the advertised SEP-1865 UI capability and a <c>clientInfo</c>
+/// allowlist of hosts that render <c>structuredContent.chart</c> directly.
 /// </summary>
 /// <remarks>
-/// The dual signal means v1.2 does not blank charts on AssistStudio while its
-/// SEP-1865 support is still in flight (SPEC §6): the allowlist catches
-/// AssistStudio by <c>clientInfo</c> name today, and the connection upgrades
-/// itself to <see cref="ChartRenderingMode.Sep1865"/> automatically once
-/// AssistStudio starts advertising the capability — no server change needed.
+/// The dual signal lets the server gate its chart surface on a single resolved
+/// mode regardless of which delivery a host supports. A host on the allowlist
+/// that later advertises the capability upgrades from
+/// <see cref="ChartRenderingMode.StructuredContent"/> to
+/// <see cref="ChartRenderingMode.Sep1865"/> automatically — no server change
+/// (SPEC §6).
 /// </remarks>
 internal static class ChartHostSupport
 {
     /// <summary>
-    /// Known hosts that render <c>structuredContent.chart</c> by direct
-    /// sniffing, without advertising the SEP-1865 capability. Matched against
-    /// <see cref="Implementation.Name"/> from the <c>initialize</c> handshake.
+    /// Hosts known to render <c>structuredContent.chart</c> directly with their
+    /// own renderer (e.g. a bundled Plotly), without advertising the SEP-1865
+    /// capability. Matched against <see cref="Implementation.Name"/> from the
+    /// <c>initialize</c> handshake.
     /// </summary>
-    private static readonly HashSet<string> LegacyChartRenderers = new(StringComparer.Ordinal)
+    private static readonly HashSet<string> KnownChartRenderers = new(StringComparer.Ordinal)
     {
         "AssistStudio",
-        // Add other known sniffing hosts here as they are identified.
+        // Add other known structured-chart hosts here as they are identified.
     };
 
     /// <summary>
@@ -56,23 +64,16 @@ internal static class ChartHostSupport
         ClientCapabilities? capabilities,
         Implementation? clientInfo)
     {
-        // Preferred path — the standardized SEP-1865 capability.
+        // The standardized SEP-1865 capability is the preferred signal.
         if (HasUiCapability(capabilities))
             return ChartRenderingMode.Sep1865;
 
-        // Legacy fallback — known hosts that sniff structuredContent.chart directly.
-        if (clientInfo?.Name is { Length: > 0 } name && LegacyChartRenderers.Contains(name))
-            return ChartRenderingMode.LegacyStructuredContent;
+        // Otherwise, a known host that renders structuredContent.chart directly.
+        if (clientInfo?.Name is { Length: > 0 } name && KnownChartRenderers.Contains(name))
+            return ChartRenderingMode.StructuredContent;
 
         return ChartRenderingMode.TextOnly;
     }
-
-    /// <summary>
-    /// True when the resolved <paramref name="mode"/> means the server should
-    /// emit <c>structuredContent.chart</c> at all (either rendering path).
-    /// </summary>
-    public static bool EmitsChart(ChartRenderingMode mode) =>
-        mode != ChartRenderingMode.TextOnly;
 
     /// <summary>Whether the host advertised a usable SEP-1865 UI capability.</summary>
     private static bool HasUiCapability(ClientCapabilities? capabilities) =>

@@ -146,9 +146,9 @@ internal static class UiResources
     ///   <item><description><see cref="ChartRenderingMode.Sep1865"/> — keep
     ///   <c>include_chart</c> and attach the SEP-1865 <c>_meta.ui</c> envelope
     ///   so the host pairs the tool with the Plotly resource;</description></item>
-    ///   <item><description><see cref="ChartRenderingMode.LegacyStructuredContent"/>
-    ///   — keep <c>include_chart</c> (the host sniffs the chart directly) but
-    ///   skip <c>_meta.ui</c>, which it would ignore;</description></item>
+    ///   <item><description><see cref="ChartRenderingMode.StructuredContent"/>
+    ///   — keep <c>include_chart</c> (the host renders the chart spec directly)
+    ///   but skip <c>_meta.ui</c>, which it would ignore;</description></item>
     ///   <item><description><see cref="ChartRenderingMode.TextOnly"/> — strip
     ///   <c>include_chart</c> from the input schema so the model never asks for
     ///   a chart the host can't show.</description></item>
@@ -171,8 +171,8 @@ internal static class UiResources
                 tool.Meta = meta;
                 break;
 
-            case ChartRenderingMode.LegacyStructuredContent:
-                // Host sniffs structuredContent.chart directly — keep
+            case ChartRenderingMode.StructuredContent:
+                // Host renders structuredContent.chart directly — keep
                 // include_chart callable, but skip the SEP-1865 _meta.ui
                 // envelope it has no use for.
                 break;

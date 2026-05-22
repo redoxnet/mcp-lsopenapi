@@ -168,11 +168,12 @@ Capability 협상은 spec 필수다 — 호스트가 `initialize`에서 extensio
 
 ### 결정 (2026-05-22, Jong Hyun)
 
-**AssistStudio를 진짜 SEP-1865 호스트로 만들되, v1.2 게이팅은 듀얼 신호로 한다.**
-- AssistStudio v1.1 작업에서 `io.modelcontextprotocol/ui` iframe 렌더링을 구현하고 `initialize`에서 capability를 advertise한다 (`ui://lsopenapi/plotly` HTML 템플릿은 서버가 이미 `UiResources`로 송출 중 — 서버 측 준비 완료).
-- mcp-lsopenapi v1.2는 capability 단일이 아니라 **capability + `clientInfo` allowlist 듀얼 신호**로 게이팅한다 (W1, `ChartRenderingMode`). 현재 AssistStudio는 capability를 안 보내지만 allowlist가 `clientInfo.Name`으로 잡아 `LegacyStructuredContent` 경로로 차트를 유지한다. AssistStudio v1.1이 capability를 붙이면 같은 연결이 `Sep1865`로 자동 승격된다 — 서버 변경 불필요.
+**듀얼 신호로 게이팅하고, AssistStudio는 capability를 advertise한다 — iframe 렌더는 미구현.**
+- mcp-lsopenapi v1.2는 capability 단일이 아니라 **capability + `clientInfo` allowlist 듀얼 신호**로 게이팅한다 (W1, `ChartRenderingMode`).
+- AssistStudio v1.1은 `initialize`에서 `io.modelcontextprotocol/ui`를 advertise한다. 단, **SEP-1865 iframe 앱 렌더는 구현하지 않는다** — `structuredContent.chart`의 Plotly spec을 자체 렌더러로 직접 그린다. 차트는 데이터(spec)/표현(렌더)이 이미 분리된 형태이고, 호스트가 일관된 테마로 그리는 편이 서버마다 다른 HTML 위젯보다 UX가 낫다. capability advertise는 **의도된·문서화된 절충**이다 — 서버가 호스트명 allowlist 대신 표준 단일 신호로 게이팅하게 해주고, 훗날 AssistStudio가 진짜 iframe 렌더를 추가하면 같은 신호로 자연 승격된다. 비용보다 이득이 크다.
+- 서버 입장: capability를 advertise하는 호스트는 `Sep1865`, allowlist에만 잡히는 호스트(capability 이전 AssistStudio 빌드 등)는 `StructuredContent`, 둘 다 miss면 `TextOnly`. `Sep1865`·`StructuredContent` 모두 `structuredContent.chart`를 송출하므로 AssistStudio는 어느 경로든 차트를 받는다.
 
-**크로스-레포 출시 독립성**: 듀얼 신호 덕분에 v1.2는 AssistStudio v1.1을 기다릴 필요가 없다 — 단독 출시해도 현재 AssistStudio는 legacy 경로로 차트를 유지하고, Claude Code 등은 `TextOnly`로 떨어진다. AssistStudio v1.1은 그 위에서 SEP-1865 경로로 자연스럽게 갈아탄다.
+**크로스-레포 출시 독립성**: 듀얼 신호 덕분에 v1.2는 AssistStudio v1.1을 기다릴 필요가 없다 — 단독 출시해도 capability 미advertise AssistStudio는 allowlist의 `StructuredContent` 경로로 차트를 유지하고, Claude Code 등은 `TextOnly`로 떨어진다.
 
 ## 7. 작업 항목
 
@@ -183,18 +184,18 @@ Capability 협상은 spec 필수다 — 호스트가 `initialize`에서 extensio
 | 모드 | 판정 | 서버 동작 |
 |---|---|---|
 | `Sep1865` | `io.modelcontextprotocol/ui` capability advertise | structuredContent + `_meta.ui` + `ui://` 리소스 |
-| `LegacyStructuredContent` | capability 없음 + `clientInfo.Name`이 allowlist hit | structuredContent만 (SEP-1865 메타·리소스 생략) |
+| `StructuredContent` | capability 없음 + `clientInfo.Name`이 allowlist hit | structuredContent만 (SEP-1865 메타·리소스 생략) |
 | `TextOnly` | 둘 다 miss | structuredContent strip, `include_chart` 숨김 |
 
-**듀얼 신호의 이유**: §6에서 확인했듯 현재 `io.modelcontextprotocol/ui`를 advertise하는 호스트는 0개다. capability 단일 게이팅이면 유일한 차트 호스트(AssistStudio)가 탈락한다. `clientInfo` allowlist(`{"AssistStudio"}`)가 legacy 경로를 잡아 차트 공백을 막고, AssistStudio v1.1이 capability를 붙이면 같은 연결이 자동으로 `Sep1865`로 승격된다 — 서버 변경 불필요.
+**듀얼 신호의 이유**: §6에서 확인했듯 현재 `io.modelcontextprotocol/ui`를 advertise하는 호스트는 0개다. capability 단일 게이팅이면 유일한 차트 호스트(AssistStudio)가 탈락한다. `clientInfo` allowlist(`{"AssistStudio"}`)가 `StructuredContent` 경로로 잡아 차트 공백을 막고, AssistStudio v1.1이 capability를 붙이면 같은 연결이 자동으로 `Sep1865`로 승격된다 — 서버 변경 불필요.
 
 ```csharp
 /// <summary>How the connected host consumes chart payloads.</summary>
-internal enum ChartRenderingMode { TextOnly, LegacyStructuredContent, Sep1865 }
+internal enum ChartRenderingMode { TextOnly, StructuredContent, Sep1865 }
 
 internal static class ChartHostSupport
 {
-    private static readonly HashSet<string> LegacyChartRenderers =
+    private static readonly HashSet<string> KnownChartRenderers =
         new(StringComparer.Ordinal) { "AssistStudio" };
 
     public static ChartRenderingMode Resolve(
@@ -202,8 +203,8 @@ internal static class ChartHostSupport
     {
         if (McpAppsCapability.Read(capabilities) is { SupportsHtmlApp: true })
             return ChartRenderingMode.Sep1865;
-        if (clientInfo?.Name is { Length: > 0 } name && LegacyChartRenderers.Contains(name))
-            return ChartRenderingMode.LegacyStructuredContent;
+        if (clientInfo?.Name is { Length: > 0 } name && KnownChartRenderers.Contains(name))
+            return ChartRenderingMode.StructuredContent;
         return ChartRenderingMode.TextOnly;
     }
 }
@@ -248,7 +249,7 @@ SPEC 원안 corner-case 표의 옵션 2(silently strip)를 **본 픽스로 승�
 
 `AddListToolsFilter`를 확장한다. 모드별 `tools/list` 표면:
 - **`Sep1865`**: 차트 도구 inputSchema에 `include_chart` 유지 + `_meta.ui.resourceUri = "ui://lsopenapi/plotly"` 부착(nested — §4.4) + `resources/list`에 `ui://lsopenapi/plotly` advertise.
-- **`LegacyStructuredContent`**: `include_chart` 유지 + `_meta.ui` 미부착 + 리소스 미advertise (호스트가 `structuredContent.chart`를 직접 sniff하므로 SEP-1865 메타·리소스가 불필요).
+- **`StructuredContent`**: `include_chart` 유지 + `_meta.ui` 미부착 + 리소스 미advertise (호스트가 `structuredContent.chart`를 자체 렌더러로 직접 그리므로 SEP-1865 메타·리소스가 불필요).
 - **`TextOnly`**: inputSchema에서 `include_chart` 제거 + `_meta.ui` 미부착 + 리소스 미advertise.
 
 기존 `Program.cs`의 `AddListToolsFilter`(ToolProfile / `SchemaNormalizer` / 차트 표면 패치)를 확장 — `UiResources.ApplyChartSurface(tool, mode)`. `SchemaNormalizer`가 이미 스키마를 재작성하므로 `properties`에서 `include_chart` 제거는 실현 가능. `resources/list` 게이팅은 `UiResources.ListAsync`에서 `Resolve(...) == Sep1865`로 분기.
@@ -293,8 +294,8 @@ SPEC 원안 corner-case 표의 옵션 2(silently strip)를 **본 픽스로 승�
 
 | 호스트 | 검증 항목 |
 |---|---|
-| AssistStudio (현재 — `LegacyStructuredContent`) | `tools/list`에 `include_chart` 노출(`_meta.ui` 없음), `tools/call`에 `structuredContent.chart` 수신·인라인 렌더, 텍스트에 마커 없음 |
-| AssistStudio v1.1+ (`Sep1865`) | 위 + `_meta.ui` 부착 + `resources/list`에 `ui://lsopenapi/plotly` advertise |
+| AssistStudio — capability 미advertise (`StructuredContent`) | `tools/list`에 `include_chart` 노출(`_meta.ui` 없음), `tools/call`에 `structuredContent.chart` 수신·인라인 렌더, 텍스트에 마커 없음 |
+| AssistStudio v1.1+ — capability advertise (`Sep1865`) | 위 + `_meta.ui` 부착 + `resources/list`에 `ui://lsopenapi/plotly` advertise (AssistStudio는 spec을 직접 렌더하므로 이 메타는 미사용 — 향후 iframe 렌더용) |
 | Claude Code / Codex CLI (`TextOnly`) | `tools/list`에 `include_chart` 안 보임, `tools/call` 응답에 `structuredContent` 없음, 모델이 "차트 있음" 안내 안 함 |
 
 ## 10. 호환성 / 버전
@@ -341,7 +342,7 @@ SPEC 원안 corner-case 표의 옵션 2(silently strip)를 **본 픽스로 승�
 - [ ] E2E 수동 검증 (지원 / 미지원 호스트 양쪽 — §9)
 - [ ] `RELEASENOTES.Mcp.md` / `RELEASENOTES.Core.md` v1.2.0 엔트리 — schema 표면 변경 명시
 - [ ] csproj `<Version>` + `server.json` version 1.2.0 lockstep (csproj `VerifyServerJsonVersion` 타깃이 강제)
-- [ ] **크로스-레포 후속** — AssistStudio v1.1이 `io.modelcontextprotocol/ui`를 advertise하면 그 연결이 `LegacyStructuredContent` → `Sep1865`로 자동 승격. 듀얼 신호(W1)라 v1.2 출시 순서 제약 없음 — v1.2 단독 출시해도 현재 AssistStudio는 legacy 경로로 차트 유지.
+- [ ] **크로스-레포 후속** — AssistStudio v1.1은 `io.modelcontextprotocol/ui`를 advertise(`StructuredContent` → `Sep1865` 승격)하되 iframe 렌더는 미구현 — `structuredContent.chart` spec을 직접 렌더. 듀얼 신호(W1)라 v1.2 출시 순서 제약 없음 — v1.2 단독 출시해도 capability 미advertise AssistStudio는 `StructuredContent` 경로로 차트 유지.
 - [ ] 메모리 `next_mcp_apps_capability.md` — 본 SPEC 출시 후 Closed 처리
 
 ## 참조
