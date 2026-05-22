@@ -8,7 +8,7 @@ Each entry: **symptom → cause (as understood) → workaround → status**.
 
 Status legend: ✅ handled · ⚠️ partially handled · 🔲 open (backlog).
 
-Last updated: 2026-05-21.
+Last updated: 2026-05-22.
 
 ---
 
@@ -35,7 +35,8 @@ t8424 and t1511 truncate identically.
 whitespace and every U+FFFD. Used by `ls_get_index_quote` and, since
 v1.0.0, by `IndustryDataCache` (`ls_get_industry_indices`).
 
-**Status:** ✅ for index/industry names. 🔲 The same padding/truncation
+**Status:** ✅ for index/industry names, and `t1636` stock names
+(`GetProgramTradingTool.CleanName`, v1.1). 🔲 The same padding/truncation
 appears in **broker names** (`"I B K"` instead of `IBK`) from `t3401`
 (analyst opinions) and in **ETF names** from the `t1466` screener
 (`"HANARO 26-12 은행채("` — cut off); those fields are not yet normalized.
@@ -130,6 +131,42 @@ When a related-index entry's `firstjcode` equals the queried `upcode`
 top-level `diffjisu` for the self entry instead of using `firdiff`.
 
 **Status:** ✅ since v0.6.
+
+### 3.3 `/stock/program` amount units differ per TR ⚠️
+
+**TRs:** `t1662` (시간대별 추이), `t1633` (기간별 추이), `t1636` (종목별 동향),
+`t1637` (종목별 추이).
+
+All four live under `/stock/program` and report 금액 when `gubun1`
+selects the amount basis, but the **unit differs**:
+
+- `t1662` / `t1633` ship amounts in **백만원**. t1662 verified against
+  Naver (`2,042,794` → `20,428` 억원); t1633's daily `tot3` for the same
+  session (`2,038,664`) matches t1662's end-of-day cumulative.
+- `t1636` / `t1637` ship program amounts (`svalue` / `offervalue` /
+  `stksvalue`) in **천원**. t1636 verified against its own
+  `mkcap_cmpr_val` (= net buying ÷ market cap): SK `svalue` `6,726,820`
+  천원 = `67.3` 억 ≈ `0.02%` × `sgta` `448,067` 억. t1637 verified
+  against `svolume` × price (삼성전자 intraday `svalue` `-210,133,974`
+  천원 = `-2,101` 억 ≈ `708,026` shares × ~297,000원). `sgta` in t1636
+  is itself in **억원**.
+
+`gubun1` polarity is **inconsistent**: t1636 / t1637 use `0=수량 1=금액`,
+t1662 / t1633 use `0=금액 1=수량`.
+
+⚠️ t1637's **daily** `svolume` does not match the same day's intraday
+cumulative `svolume` and is not a plain share count — only the 금액
+fields (`svalue` etc.) are trustworthy across both t1637 periods.
+
+⚠️ t1637 **intraday** (gubun2=0) only ever returns the **current**
+session — the InBlock `date` field is ignored, so a past day's minute
+series cannot be retrieved.
+
+**Workaround:** `GetProgramTradingTool` converts t1662 / t1633 백만원 ÷ 100
+and t1636 / t1637 천원 ÷ 100,000 onto the 억원 scale the charts render in;
+stock scope (t1637) surfaces amounts only.
+
+**Status:** ✅ since v1.1.
 
 ---
 

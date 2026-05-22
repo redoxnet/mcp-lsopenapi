@@ -234,7 +234,7 @@ public static class GetChartTool
                 {
                     structured = new JsonObject
                     {
-                        ["chart"] = PlotlyChartBuilder.Build(
+                        ["chart"] = CandlestickChartBuilder.Build(
                             shcode, only.PeriodType, only.Candles, only.Indicators, parsedIndicators, name),
                     };
                 }
@@ -453,7 +453,7 @@ public static class GetChartTool
             JsonObject? structured = include_chart
                 ? new JsonObject
                 {
-                    ["chart"] = PlotlyChartBuilder.Build(
+                    ["chart"] = CandlestickChartBuilder.Build(
                         dataset.Shcode,
                         updatedFrame.PeriodType,
                         updatedFrame.Candles,
@@ -562,7 +562,7 @@ public static class GetChartTool
             JsonObject? structured = include_chart
                 ? new JsonObject
                 {
-                    ["chart"] = PlotlyChartBuilder.Build(
+                    ["chart"] = CandlestickChartBuilder.Build(
                         dataset.Shcode,
                         frame.PeriodType,
                         frame.Candles,

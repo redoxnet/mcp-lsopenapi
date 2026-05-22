@@ -1,4 +1,4 @@
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 using FluentAssertions;
 using RedoxNet.LsOpenApi.Core.Charting;
 using RedoxNet.LsOpenApi.Core.Indicators;
@@ -7,7 +7,7 @@ using Xunit;
 
 namespace RedoxNet.LsOpenApi.Core.Tests.Charting;
 
-public class PlotlyChartBuilderTests
+public class CandlestickChartBuilderTests
 {
     static List<Candle> SampleCandles(int count = 5)
     {
@@ -29,7 +29,7 @@ public class PlotlyChartBuilderTests
     public void Build_EnvelopeShape_ContainsTypeVersionAndSpec()
     {
         var candles = SampleCandles();
-        JsonObject envelope = PlotlyChartBuilder.Build(
+        JsonObject envelope = CandlestickChartBuilder.Build(
             "005930", "day", candles,
             new Dictionary<string, IReadOnlyList<double?>>(),
             Array.Empty<IndicatorSpec>());
@@ -44,7 +44,7 @@ public class PlotlyChartBuilderTests
     [Fact]
     public void Build_AlwaysIncludesCandlestickAndVolumeTraces()
     {
-        JsonObject env = PlotlyChartBuilder.Build(
+        JsonObject env = CandlestickChartBuilder.Build(
             "005930", "day", SampleCandles(),
             new Dictionary<string, IReadOnlyList<double?>>(),
             Array.Empty<IndicatorSpec>());
@@ -60,7 +60,7 @@ public class PlotlyChartBuilderTests
     [Fact]
     public void Build_CandlestickUsesKoreanColors()
     {
-        JsonObject env = PlotlyChartBuilder.Build(
+        JsonObject env = CandlestickChartBuilder.Build(
             "005930", "day", SampleCandles(),
             new Dictionary<string, IReadOnlyList<double?>>(),
             Array.Empty<IndicatorSpec>());
@@ -79,7 +79,7 @@ public class PlotlyChartBuilderTests
             new(new DateTime(2024, 1, 2), 102, 103, 95,  98, 1100),  // down
             new(new DateTime(2024, 1, 3),  98, 105, 97, 103, 1200),  // up
         };
-        JsonObject env = PlotlyChartBuilder.Build(
+        JsonObject env = CandlestickChartBuilder.Build(
             "005930", "day", candles,
             new Dictionary<string, IReadOnlyList<double?>>(),
             Array.Empty<IndicatorSpec>());
@@ -100,7 +100,7 @@ public class PlotlyChartBuilderTests
         var service = new IndicatorService();
         var indicators = service.Compute(candles, new[] { ma5, ema12 });
 
-        JsonObject env = PlotlyChartBuilder.Build("005930", "day", candles, indicators, new[] { ma5, ema12 });
+        JsonObject env = CandlestickChartBuilder.Build("005930", "day", candles, indicators, new[] { ma5, ema12 });
 
         JsonArray data = env["spec"]!["data"]!.AsArray();
         // candlestick + ma:5 + ema:12 + volume
@@ -121,7 +121,7 @@ public class PlotlyChartBuilderTests
         var service = new IndicatorService();
         var indicators = service.Compute(candles, new[] { bb });
 
-        JsonObject env = PlotlyChartBuilder.Build("005930", "day", candles, indicators, new[] { bb });
+        JsonObject env = CandlestickChartBuilder.Build("005930", "day", candles, indicators, new[] { bb });
 
         JsonArray data = env["spec"]!["data"]!.AsArray();
         // candlestick + bb upper + bb middle + bb lower + volume
@@ -143,7 +143,7 @@ public class PlotlyChartBuilderTests
         var service = new IndicatorService();
         var indicators = service.Compute(candles, new[] { rsi });
 
-        JsonObject env = PlotlyChartBuilder.Build("005930", "day", candles, indicators, new[] { rsi });
+        JsonObject env = CandlestickChartBuilder.Build("005930", "day", candles, indicators, new[] { rsi });
 
         // Only candlestick + volume, RSI skipped (would need its own subplot).
         env["spec"]!["data"]!.AsArray().Count.Should().Be(2);
@@ -152,7 +152,7 @@ public class PlotlyChartBuilderTests
     [Fact]
     public void Build_Layout_HasExpectedKeys()
     {
-        JsonObject env = PlotlyChartBuilder.Build(
+        JsonObject env = CandlestickChartBuilder.Build(
             "005930", "day", SampleCandles(),
             new Dictionary<string, IReadOnlyList<double?>>(),
             Array.Empty<IndicatorSpec>());
@@ -161,6 +161,13 @@ public class PlotlyChartBuilderTests
         layout["hovermode"]!.GetValue<string>().Should().Be("x unified");
         layout["showlegend"]!.GetValue<bool>().Should().BeTrue();
         layout["xaxis"]!["rangeslider"]!["visible"]!.GetValue<bool>().Should().BeFalse();
+        layout["title"]!["yref"]!.GetValue<string>().Should().Be("paper");
+        layout["title"]!["y"]!.GetValue<double>().Should().Be(1.0);
+        layout["title"]!["yanchor"]!.GetValue<string>().Should().Be("bottom");
+        layout["title"]!["pad"]!["b"]!.GetValue<int>().Should().Be(44);
+        layout["legend"]!["y"]!.GetValue<double>().Should().Be(1.0);
+        layout["legend"]!["yanchor"]!.GetValue<string>().Should().Be("bottom");
+        layout["margin"]!["t"]!.GetValue<int>().Should().Be(76);
 
         JsonArray priceDomain = layout["yaxis"]!["domain"]!.AsArray();
         priceDomain[0]!.GetValue<double>().Should().Be(0.3);
@@ -182,7 +189,7 @@ public class PlotlyChartBuilderTests
         var service = new IndicatorService();
         var indicators = service.Compute(candles, new[] { ma5 });
 
-        JsonObject env = PlotlyChartBuilder.Build("005930", "day", candles, indicators, new[] { ma5 });
+        JsonObject env = CandlestickChartBuilder.Build("005930", "day", candles, indicators, new[] { ma5 });
 
         JsonArray y = env["spec"]!["data"]![1]!["y"]!.AsArray();
         y[0].Should().BeNull();
@@ -194,7 +201,7 @@ public class PlotlyChartBuilderTests
     public void Build_XAxis_TicksAreEvenlySpacedSubsetOfRawX()
     {
         var candles = SampleCandles(30);
-        JsonObject env = PlotlyChartBuilder.Build(
+        JsonObject env = CandlestickChartBuilder.Build(
             "005930", "day", candles,
             new Dictionary<string, IReadOnlyList<double?>>(),
             Array.Empty<IndicatorSpec>());
@@ -228,7 +235,7 @@ public class PlotlyChartBuilderTests
             new(new DateTime(2026, 3, 4), 150, 160, 40, 70, 1200),   // period low 40
             new(new DateTime(2026, 3, 5), 70, 120, 65, 115, 1300),
         };
-        JsonObject env = PlotlyChartBuilder.Build(
+        JsonObject env = CandlestickChartBuilder.Build(
             "005930", "day", candles,
             new Dictionary<string, IReadOnlyList<double?>>(),
             Array.Empty<IndicatorSpec>());
@@ -254,7 +261,7 @@ public class PlotlyChartBuilderTests
         IndicatorSpec ma5 = IndicatorSpecParser.Parse("ma:5");
         var indicators = new IndicatorService().Compute(candles, new[] { ma5 });
 
-        JsonObject env = PlotlyChartBuilder.Build("005930", "day", candles, indicators, new[] { ma5 });
+        JsonObject env = CandlestickChartBuilder.Build("005930", "day", candles, indicators, new[] { ma5 });
 
         env["spec"]!["data"]![1]!["line"]!["color"]!.GetValue<string>().Should().Be("#2F9E44");
     }
@@ -264,12 +271,12 @@ public class PlotlyChartBuilderTests
     {
         var empty = new Dictionary<string, IReadOnlyList<double?>>();
 
-        JsonObject withName = PlotlyChartBuilder.Build(
+        JsonObject withName = CandlestickChartBuilder.Build(
             "005930", "day", SampleCandles(), empty, Array.Empty<IndicatorSpec>(), name: "삼성전자");
         withName["spec"]!["layout"]!["title"]!["text"]!.GetValue<string>()
             .Should().Be("삼성전자 (005930) — 일봉");
 
-        JsonObject noName = PlotlyChartBuilder.Build(
+        JsonObject noName = CandlestickChartBuilder.Build(
             "005930", "day", SampleCandles(), empty, Array.Empty<IndicatorSpec>());
         noName["spec"]!["layout"]!["title"]!["text"]!.GetValue<string>()
             .Should().Be("005930 — 일봉");

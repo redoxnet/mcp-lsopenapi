@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.Json.Nodes;
 using RedoxNet.LsOpenApi.Core.Indicators;
 using RedoxNet.LsOpenApi.Core.Models;
@@ -24,7 +24,7 @@ namespace RedoxNet.LsOpenApi.Core.Charting;
 ///   <item><description><c>rsi</c>, <c>macd</c> → not rendered (would need separate subplots; out of v1.0 scope).</description></item>
 /// </list>
 /// </remarks>
-internal static class PlotlyChartBuilder
+internal static class CandlestickChartBuilder
 {
     /// <summary>Color for rising candles / volume bars (Korean convention).</summary>
     public const string ColorRising = "#E74C3C";
@@ -321,31 +321,27 @@ internal static class PlotlyChartBuilder
 
         var layout = new JsonObject
         {
-            ["title"] = new JsonObject { ["text"] = title },
+            ["title"] = ChartLayout.Title(title),
+            ["font"] = ChartLayout.Font(),
             ["hovermode"] = "x unified",
             ["showlegend"] = true,
-            ["legend"] = new JsonObject
-            {
-                ["orientation"] = "h",
-                ["x"] = 0,
-                ["y"] = 1.05,
-            },
+            ["legend"] = ChartLayout.Legend(),
             ["xaxis"] = BuildXAxisLayout(candles, xAxis, periodType),
             ["yaxis"] = new JsonObject
             {
-                ["title"] = new JsonObject { ["text"] = "Price" },
+                ["title"] = new JsonObject { ["text"] = "주가 (원)" },
                 ["domain"] = new JsonArray { 0.3, 1.0 },
                 ["side"] = "right",
             },
             ["yaxis2"] = new JsonObject
             {
-                ["title"] = new JsonObject { ["text"] = "Volume" },
+                ["title"] = new JsonObject { ["text"] = "거래량 (주)" },
                 ["domain"] = new JsonArray { 0.0, 0.25 },
                 ["side"] = "right",
             },
             ["margin"] = new JsonObject
             {
-                ["l"] = 40, ["r"] = 60, ["t"] = 40, ["b"] = 40,
+                ["l"] = 40, ["r"] = 60, ["t"] = 76, ["b"] = 40,
             },
         };
 
@@ -478,7 +474,7 @@ internal static class PlotlyChartBuilder
             ["arrowcolor"] = color,
             ["ax"] = 0,
             ["ay"] = ay,
-            ["font"] = new JsonObject { ["size"] = 10, ["color"] = color },
+            ["font"] = new JsonObject { ["size"] = ChartLayout.AnnotationFontSize, ["color"] = color },
         };
 
     /// <summary>
