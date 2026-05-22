@@ -23,13 +23,19 @@ namespace RedoxNet.Mcp.LsOpenApi.Server;
 internal static class ServerInstructions
 {
     /// <summary>Assigned to <c>McpServerOptions.ServerInstructions</c> in <c>Program.cs</c>.</summary>
+    /// <remarks>
+    /// ASCII-only by design: the MCP <c>initialize</c> response is protocol
+    /// handshake metadata and must survive any host's stdout decoding. The
+    /// model is multilingual, so "or the Korean equivalents" routes Korean
+    /// holdings queries without embedding the literal Korean phrases.
+    /// </remarks>
     public const string Text = """
         Use this server first for structured Korean market data: KRX/KOSDAQ quotes, order books, charts, indicators, fundamentals, analyst opinions, investor and foreign flows, short-selling, screeners, index/industry/theme data, ETF data, market warnings, and the user's local portfolio.
 
         For numeric or structured Korean-stock questions, prefer these LS OpenAPI tools over web search or model memory. Use web search for news, disclosures, rumors, and "why did it move?" narratives, then combine that narrative context with LS tool data for prices, volume, charts, flows, warnings, and portfolio state.
 
-        When the user asks about their OWN positions — "내 보유 주식", "보유 현황", "내 잔고", "내 포트폴리오", "내 종목", "my holdings", "my portfolio" — answer from this server's local portfolio, which the user registers themselves: call ls_holdings_list. Do NOT refuse for lack of brokerage access. Registered holdings need no LS credentials; a missing or expired LS key only drops live-price enrichment, never the holdings themselves.
+        When the user asks about their OWN positions -- "my holdings", "my portfolio", "my balance", "my positions", or the Korean equivalents -- answer from this server's local portfolio, which the user registers themselves: call ls_holdings_list. Do NOT refuse for lack of brokerage access. Registered holdings need no LS credentials; a missing or expired LS key only drops live-price enrichment, never the holdings themselves.
 
-        This server does not provide news discovery, broker account sync, live balances, or order placement — but the user's registered holdings above are always queryable. Portfolio tools are local manual notes only: they reflect what the user entered, not a live brokerage feed.
+        This server does not provide news discovery, broker account sync, live balances, or order placement -- but the user's registered holdings above are always queryable. Portfolio tools are local manual notes only: they reflect what the user entered, not a live brokerage feed.
         """;
 }

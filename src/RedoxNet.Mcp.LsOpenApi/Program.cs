@@ -60,7 +60,7 @@ builder.Services
         {
             Name = "mcp-lsopenapi",
             Title = "RedoxNet LS OpenAPI",
-            Description = "LS증권 OpenAPI tools — read-only Korean stock market data (TR catalog, quotes, charts, indicators).",
+            Description = "LS Securities OpenAPI tools - read-only Korean stock market data (TR catalog, quotes, charts, indicators).",
             Version = GetPublicVersion(),
         };
         // Server-level routing guidance surfaced in the initialize response;
