@@ -1,6 +1,6 @@
 # SPEC: v1.2.0 — MCP Apps Capability Negotiation
 
-- **상태**: Draft — spike-gated. **Spike A·B 통과 전 본 구현 착수 금지** (§6).
+- **상태**: 구현 진행 — Spike A·B 완료 (§6 Spike 결과). 구현 순서 W1 → W3c → W2 → W3a/W3b → W4. **크로스-레포 의존**: AssistStudio v1.1의 `io.modelcontextprotocol/ui` advertise (§6 결정 · §13).
 - **작성일**: 2026-05-22 (`v1.2-mcp-apps-capability-slice.md` 초안 → 리포 실제 상태와 대조해 본 SPEC으로 정리)
 - **대상 버전**: v1.2.0 — v1.1 안정 라인 위의 **첫 기능 슬라이스**. 단일 슬라이스 집중 릴리스.
 - **작성자**: Jong Hyun + Claude
@@ -67,6 +67,8 @@ Capability 협상은 spec 필수다 — 호스트가 `initialize`에서 extensio
 ```
 
 현재 코드는 이 SHOULD를 따르지 않는다 — capability와 무관하게 항상 UI 표면을 advertise한다. 또한 `chart_available` 마커는 SEP-1865에 근거가 없는 자체 발명품이다 ("모델에게 UI 렌더 사실을 알려라"는 지침이 spec에 없음) → 제거 대상.
+
+> ⚠️ **현실 점검 (§6 참조)**: 2026-05-22 기준 `io.modelcontextprotocol/ui`를 advertise하는 호스트는 0개다 — AssistStudio조차 capability 협상 없이 `structuredContent.chart`를 무조건 렌더한다. v1.2의 capability 게이팅이 의미를 가지려면 AssistStudio v1.1이 이 capability를 advertise해야 한다 (§6 결정).
 
 ## 4. 현재 리포 상태 — 사실관계 대조 (v1.1.0 기준)
 
@@ -148,37 +150,78 @@ Capability 협상은 spec 필수다 — 호스트가 `initialize`에서 extensio
 | 누락 0건 | (a) 결론 — analyze 특이. 추가 조사 불필요 |
 | 누락 발견 | (b) 결론 — 라우팅 픽스를 v1.2 앞 별도 슬라이스로 끼우거나 본 슬라이스 시작점에 흡수 |
 
+### Spike 결과 (2026-05-22)
+
+**Spike A — PASS.** `ModelContextProtocol.Core` 1.3.0 어셈블리 리플렉션 검사:
+- `ClientCapabilities.Extensions` 존재 — `IDictionary<string, object>`, `[Experimental(MCPEXP001)]` 부착. 사용 시 `MCPEXP001` 진단 억제 필요 (`<NoWarn>` 또는 `#pragma`). 값은 per-extension settings object(런타임 `JsonElement`) → `io.modelcontextprotocol/ui` 키 lookup 후 `mimeTypes`만 수동 deserialize. SPEC §6 분류상 **"Pass (dict 노출)"**.
+- `RequestContext<T>.Server`(`McpServer`) → `McpServer.ClientCapabilities` → `.Extensions` 경로 확인. `tools/list`·`tools/call` 필터에서 호스트 capability에 **직접 도달 가능** → W1의 per-connection state holder는 불필요, `ctx.Server.ClientCapabilities`가 정식 경로 (캐싱은 선택).
+- `AddListToolsFilter` / `AddCallToolFilter` 둘 다 존재 — `(IMcpRequestFilterBuilder, McpRequestFilter<TParams,TResult>)` 시그니처, `Program.cs`가 이미 쓰는 형태.
+
+**Spike B — (b) 결론: 일반 라우팅 이슈.** `ls_get_chart`를 `include_chart` true/false로 12+회 호출. `include_chart=false`(analyze)는 요약 텍스트 정상 수신, `include_chart=true`(text + structuredContent 공존)는 **모델이 Plotly JSON만 받고 요약 텍스트 `content`가 소실**. 6/6 결정적 재현 — analyze 특이 현상 아님. 코드상 `McpJson.OkResult`는 text + structuredContent를 둘 다 정상 송출 → **호스트가 `structuredContent`를 모델에 먹이고 텍스트 `content`를 가린다.** 핵심: `structuredContent`는 SEP-1865 전용이 아니라 MCP 2025-06 generic 구조화 출력 필드 — MCP Apps 미지원이라도 generic structuredContent를 지원하는 호스트는 이 필드를 모델 컨텍스트에 전달한다. → 비-UI 호스트에 `structuredContent.chart`를 송출하면 모델 컨텍스트가 거대한 Plotly JSON으로 오염되고 요약이 파괴된다.
+
+### 호스트 사실관계 — SEP-1865 채택 0 (2026-05-22)
+
+`fieldcure-assiststudio` 소스 + LS004 세션(`docs/case-studies/sessions/`) 확인:
+- **AssistStudio** — `McpServerConnection.ConnectAsync`는 `Roots`/`Elicitation` capability만 advertise, `Extensions` 미설정 → `io.modelcontextprotocol/ui` **안 보냄**. 차트 렌더는 capability 협상 없이 모든 tool 결과의 `structuredContent.chart`(`type=="plotly"`)를 무조건 검사하고 자체 번들 `plotly.min.js`를 WebView2에 주입해 직접 렌더 — `ui://` 리소스 / `resources/read` / `_meta.ui` 일절 미사용. `structuredContent`는 모델에 안 먹이고 텍스트 `content`만 모델로(올바름).
+- **Claude Code / Codex** — capability 미advertise, 차트 렌더 안 함.
+- → SPEC §3.2가 가정한 `io.modelcontextprotocol/ui` 게이팅 신호를 advertise하는 호스트가 (현재) **존재하지 않는다.** SPEC을 그대로 구현하면 유일한 차트 렌더 호스트(AssistStudio)가 게이트에서 탈락해 차트가 전면 소실되는 회귀가 된다.
+
+### 결정 (2026-05-22, Jong Hyun)
+
+**AssistStudio를 진짜 SEP-1865 호스트로 만들되, v1.2 게이팅은 듀얼 신호로 한다.**
+- AssistStudio v1.1 작업에서 `io.modelcontextprotocol/ui` iframe 렌더링을 구현하고 `initialize`에서 capability를 advertise한다 (`ui://lsopenapi/plotly` HTML 템플릿은 서버가 이미 `UiResources`로 송출 중 — 서버 측 준비 완료).
+- mcp-lsopenapi v1.2는 capability 단일이 아니라 **capability + `clientInfo` allowlist 듀얼 신호**로 게이팅한다 (W1, `ChartRenderingMode`). 현재 AssistStudio는 capability를 안 보내지만 allowlist가 `clientInfo.Name`으로 잡아 `LegacyStructuredContent` 경로로 차트를 유지한다. AssistStudio v1.1이 capability를 붙이면 같은 연결이 `Sep1865`로 자동 승격된다 — 서버 변경 불필요.
+
+**크로스-레포 출시 독립성**: 듀얼 신호 덕분에 v1.2는 AssistStudio v1.1을 기다릴 필요가 없다 — 단독 출시해도 현재 AssistStudio는 legacy 경로로 차트를 유지하고, Claude Code 등은 `TextOnly`로 떨어진다. AssistStudio v1.1은 그 위에서 SEP-1865 경로로 자연스럽게 갈아탄다.
+
 ## 7. 작업 항목
 
-### W1. Capability 검사 인프라
+### W1. Capability 검사 인프라 — 듀얼 신호
 
-`initialize` 시점에 호스트의 `io.modelcontextprotocol/ui` extension capability를 읽어 세션 컨텍스트에 캐싱한다.
+호스트가 차트를 어떻게 소비하는지를 **두 신호의 OR**로 판정한다. 게이팅의 단일 기준은 SEP-1865 capability 하나가 아니라 `ChartRenderingMode` 3-값이다.
+
+| 모드 | 판정 | 서버 동작 |
+|---|---|---|
+| `Sep1865` | `io.modelcontextprotocol/ui` capability advertise | structuredContent + `_meta.ui` + `ui://` 리소스 |
+| `LegacyStructuredContent` | capability 없음 + `clientInfo.Name`이 allowlist hit | structuredContent만 (SEP-1865 메타·리소스 생략) |
+| `TextOnly` | 둘 다 miss | structuredContent strip, `include_chart` 숨김 |
+
+**듀얼 신호의 이유**: §6에서 확인했듯 현재 `io.modelcontextprotocol/ui`를 advertise하는 호스트는 0개다. capability 단일 게이팅이면 유일한 차트 호스트(AssistStudio)가 탈락한다. `clientInfo` allowlist(`{"AssistStudio"}`)가 legacy 경로를 잡아 차트 공백을 막고, AssistStudio v1.1이 capability를 붙이면 같은 연결이 자동으로 `Sep1865`로 승격된다 — 서버 변경 불필요.
 
 ```csharp
-/// <summary>
-/// Reads the MCP Apps UI capability advertised by the host during initialize.
-/// </summary>
-/// <param name="clientCapabilities">Capabilities object from the initialize request.</param>
-/// <returns>The UI capability descriptor, or <c>null</c> when not advertised.</returns>
-internal static McpAppsCapability? GetUiCapability(ClientCapabilities clientCapabilities)
+/// <summary>How the connected host consumes chart payloads.</summary>
+internal enum ChartRenderingMode { TextOnly, LegacyStructuredContent, Sep1865 }
+
+internal static class ChartHostSupport
 {
-    // Concrete implementation depends on Spike A:
-    //   - typed surface : cast/read directly
-    //   - dict surface  : lookup by extension id key
-    //   - raw JSON      : deserialize the relevant subtree manually
+    private static readonly HashSet<string> LegacyChartRenderers =
+        new(StringComparer.Ordinal) { "AssistStudio" };
+
+    public static ChartRenderingMode Resolve(
+        ClientCapabilities? capabilities, Implementation? clientInfo)
+    {
+        if (McpAppsCapability.Read(capabilities) is { SupportsHtmlApp: true })
+            return ChartRenderingMode.Sep1865;
+        if (clientInfo?.Name is { Length: > 0 } name && LegacyChartRenderers.Contains(name))
+            return ChartRenderingMode.LegacyStructuredContent;
+        return ChartRenderingMode.TextOnly;
+    }
 }
 
-/// <summary>Descriptor for the MCP Apps UI extension capability.</summary>
+/// <summary>SEP-1865 UI extension descriptor, read from ClientCapabilities.Extensions
+/// (string-keyed dict; the io.modelcontextprotocol/ui value's mimeTypes are
+/// deserialized manually — Spike A).</summary>
 internal sealed record McpAppsCapability(IReadOnlyList<string> MimeTypes)
 {
-    /// <summary>Whether the host accepts the HTML MCP app profile.</summary>
     public bool SupportsHtmlApp =>
         MimeTypes.Contains("text/html;profile=mcp-app", StringComparer.Ordinal);
+
+    public static McpAppsCapability? Read(ClientCapabilities? capabilities) { /* … */ }
 }
 ```
 
-- **캐싱 위치**: per-connection state holder (`LsOpenApiSession` 또는 동등). `tools/list` 필터·`tools/call` 필터·응답 빌더가 동일 인스턴스 참조.
-- **보장**: capability는 세션 단위 stable — `initialize` 시 1회 캐싱, 매 호출 재조회 안 함.
+- **도달 경로**: Spike A 확인 — `RequestContext<T>.Server`(`McpServer`) → `.ClientCapabilities` / `.ClientInfo`. `tools/list`·`tools/call` 필터와 `resources/list` 핸들러가 매 요청 `Resolve(...)`를 호출한다. capability는 세션 stable이라 캐싱이 가능하나 dict+hashset lookup이라 무비용 — per-connection state holder는 **불필요**.
+- **`MCPEXP001`**: `ClientCapabilities.Extensions`는 `[Experimental(MCPEXP001)]` — `McpAppsCapability.Read`의 해당 접근에 `#pragma warning disable MCPEXP001`을 국소 적용한다.
 
 ### W2. `chart_available` 마커 제거 — 5개 도구
 
@@ -191,34 +234,30 @@ internal sealed record McpAppsCapability(IReadOnlyList<string> MimeTypes)
   - README의 응답 예제 JSON (`README.en.md` 등 — `chart_available` 노출 예시)
   - 도구 description 문구 — "chart will be embedded" / "ships … as structuredContent" 류 표현 정리
 
-### W3. Capability 조건부 차트 표면 노출
+### W3. Capability 조건부 차트 노출 — W3a / W3b / W3c
 
-`tools/list` 응답을 capability-aware 필터로 가공한다.
+Spike B 이후 W3는 세 갈래로 나뉜다. SPEC 원안의 무게중심은 `tools/list` 표면(W3b)이었으나, Spike B가 드러낸 **본 픽스는 `tools/call` 응답 게이팅(W3c)** 이다 — capability 미보유 호스트가 `structuredContent`를 모델 컨텍스트로 흘려 요약 텍스트를 파괴하기 때문. 구현 순서는 W1 → **W3c** → W2 → W3a/W3b.
 
-**UI 지원 호스트** (capability 보유):
-- 차트 도구의 `include_chart` 파라미터를 inputSchema에 포함
-- `_meta.ui.resourceUri = "ui://lsopenapi/plotly"` 부착 (nested 형식 — §4.4에서 이미 nested 확인)
-- `ui://lsopenapi/plotly` 리소스를 `resources/list`에 advertise
+#### W3c — `tools/call` 응답 게이팅 (본 픽스 · W1 다음 우선)
 
-**UI 미지원 호스트**:
-- `include_chart` 파라미터를 inputSchema에서 제거
-- `_meta.ui` 미부착
-- `ui://lsopenapi/plotly` 리소스 advertise 안 함
+`Program.cs`의 `AddCallToolFilter`를 확장한다. `next()` 실행 후 `ChartHostSupport.Resolve(ctx.Server.ClientCapabilities, ctx.Server.ClientInfo)`로 모드를 판정해, **`TextOnly`일 때 `CallToolResult.StructuredContent`에서 `chart` / `panel` 키를 strip**한다(키 제거 후 비면 `StructuredContent = null`). 응답 후처리이므로 차트 송출의 두 입구 — `include_chart=true`와 `output_mode=display`(`GetChartTool.cs`의 `includeStructuredChart = include_chart || outputMode == "display"`) — 를 한 곳에서 모두 차단한다.
 
-**구현 접근**: SDK의 `AddListToolsFilter`(또는 동등 hook) 사용. 명령형 `RegisterTool` 분기보다 깔끔 — 등록은 한 번, 노출은 동적. 기존 `Program.cs`의 `AddListToolsFilter`(ToolProfile / SchemaNormalizer / `PatchToolMetaIfChartEmitting` 실행)를 확장. `SchemaNormalizer`가 이미 스키마를 재작성하므로 속성 제거는 실현 가능.
+SPEC 원안 corner-case 표의 옵션 2(silently strip)를 **본 픽스로 승격**한다. Spike B가 보였듯 strip이 reject보다 안전하다 — capability 미보유 호스트에서 모델이 텍스트 요약을 그대로 유지하고, 차트만 사라진다. 도구 핸들러가 차트를 빌드하는 낭비는 남지만(W3b가 `include_chart`를 스키마에서 가려 호출 자체가 드물어짐) 정확성에는 무해.
 
-**ToolSurfaceFreezeTests 상호작용**: 동결 테스트는 C# 메서드 시그니처를 리플렉션으로 읽는다. `include_chart`는 **C# 시그니처에 그대로 남고**, capability 필터는 송출되는 `tools/list` JSON만 가공한다 → 동결 테스트는 변함없이 `include_chart`를 보고 통과한다. 동결 테스트 수정 불필요. 신규 검증은 §9의 integration 테스트로.
+#### W3b — `tools/list` 스키마 표면
 
-**W3a — `PlotlyEmittingToolNames` 정합화**: §4.3 갭 청산. `structuredContent.chart`를 실제로 방출하는 도구 전체(5개)가 `_meta.ui`를 받도록 `PlotlyEmittingToolNames`에 `ls_add_indicator` / `ls_reframe_chart`를 추가. (혹은 두 도구를 인라인 렌더 대상에서 제외하는 것이 의도였는지 확인 — §11 open question.)
+`AddListToolsFilter`를 확장한다. 모드별 `tools/list` 표면:
+- **`Sep1865`**: 차트 도구 inputSchema에 `include_chart` 유지 + `_meta.ui.resourceUri = "ui://lsopenapi/plotly"` 부착(nested — §4.4) + `resources/list`에 `ui://lsopenapi/plotly` advertise.
+- **`LegacyStructuredContent`**: `include_chart` 유지 + `_meta.ui` 미부착 + 리소스 미advertise (호스트가 `structuredContent.chart`를 직접 sniff하므로 SEP-1865 메타·리소스가 불필요).
+- **`TextOnly`**: inputSchema에서 `include_chart` 제거 + `_meta.ui` 미부착 + 리소스 미advertise.
 
-**Corner case — 미지원 호스트가 우회로 `include_chart=true` 호출**: 필터는 `tools/list`만 가리고 도구 자체는 등록 상태로 남는다. 핸들러 처리 방안:
+기존 `Program.cs`의 `AddListToolsFilter`(ToolProfile / `SchemaNormalizer` / 차트 표면 패치)를 확장 — `UiResources.ApplyChartSurface(tool, mode)`. `SchemaNormalizer`가 이미 스키마를 재작성하므로 `properties`에서 `include_chart` 제거는 실현 가능. `resources/list` 게이팅은 `UiResources.ListAsync`에서 `Resolve(...) == Sep1865`로 분기.
 
-| 옵션 | 설명 | 평가 |
-|---|---|---|
-| **1 (선호)** | `AddCallToolFilter`로 capability 없으면 `include_chart=true` 호출을 reject | 명시적·안전. SDK가 지원하면 채택 |
-| 2 | 핸들러 내부에서 capability 미보유 시 `include_chart`를 silently 무시 | 폴백으로만 — 동작은 일관되나 모델이 인지 못 함 |
+**ToolSurfaceFreezeTests 상호작용**: `include_chart`는 C# 시그니처에 그대로 남고 필터는 송출 `tools/list` JSON만 가공 → 동결 테스트 영향 없음. 신규 검증은 §9 integration 테스트로.
 
-`AddCallToolFilter` 가용성은 Spike A에서 확인.
+#### W3a — `PlotlyEmittingToolNames` 정합화
+
+`UiResources.PlotlyEmittingToolNames`에 `ls_add_indicator` / `ls_reframe_chart`를 추가해 §4.3 갭을 청산한다 — `structuredContent.chart`를 실제로 방출하는 도구 전체(5개)가 `_meta.ui`를 받도록. LS004 세션(`docs/case-studies/sessions/`)이 두 도구가 실제로 차트를 방출하고 AssistStudio가 렌더함을 확인했으므로, "인라인 렌더 비대상" 가설은 기각 — 추가가 확정이다 (§12 open question 해소).
 
 ### W4. `_meta.ui` 형식 검증
 
@@ -254,8 +293,9 @@ internal sealed record McpAppsCapability(IReadOnlyList<string> MimeTypes)
 
 | 호스트 | 검증 항목 |
 |---|---|
-| Claude.ai / Claude Code (지원) | 차트 정상 렌더, 텍스트에 마커 없음, narrative 자연스러움 |
-| Codex CLI (미지원) | `tools/list`에 `include_chart` 파라미터 안 보임, 모델이 "차트 있음" 안내 안 함 |
+| AssistStudio (현재 — `LegacyStructuredContent`) | `tools/list`에 `include_chart` 노출(`_meta.ui` 없음), `tools/call`에 `structuredContent.chart` 수신·인라인 렌더, 텍스트에 마커 없음 |
+| AssistStudio v1.1+ (`Sep1865`) | 위 + `_meta.ui` 부착 + `resources/list`에 `ui://lsopenapi/plotly` advertise |
+| Claude Code / Codex CLI (`TextOnly`) | `tools/list`에 `include_chart` 안 보임, `tools/call` 응답에 `structuredContent` 없음, 모델이 "차트 있음" 안내 안 함 |
 
 ## 10. 호환성 / 버전
 
@@ -294,13 +334,14 @@ internal sealed record McpAppsCapability(IReadOnlyList<string> MimeTypes)
 
 ## 13. Release 체크리스트 (구현 완료 후)
 
-- [ ] Spike A·B 결과 문서화 (PR 또는 commit message, 본 SPEC §6 갱신)
-- [ ] W1~W4 (+ W3a) 구현 + 테스트
+- [x] Spike A·B 결과 문서화 (§6 Spike 결과 — 2026-05-22)
+- [ ] W1 → W3c → W2 → W3a/W3b → W4 구현 + 테스트
 - [ ] README의 chart 관련 섹션 갱신 + §10 마이그레이션 가이드 추가
 - [ ] 도구 description 검토 — 마커/임베드 관련 표현 제거
 - [ ] E2E 수동 검증 (지원 / 미지원 호스트 양쪽 — §9)
 - [ ] `RELEASENOTES.Mcp.md` / `RELEASENOTES.Core.md` v1.2.0 엔트리 — schema 표면 변경 명시
 - [ ] csproj `<Version>` + `server.json` version 1.2.0 lockstep (csproj `VerifyServerJsonVersion` 타깃이 강제)
+- [ ] **크로스-레포 후속** — AssistStudio v1.1이 `io.modelcontextprotocol/ui`를 advertise하면 그 연결이 `LegacyStructuredContent` → `Sep1865`로 자동 승격. 듀얼 신호(W1)라 v1.2 출시 순서 제약 없음 — v1.2 단독 출시해도 현재 AssistStudio는 legacy 경로로 차트 유지.
 - [ ] 메모리 `next_mcp_apps_capability.md` — 본 SPEC 출시 후 Closed 처리
 
 ## 참조

@@ -278,7 +278,6 @@ public static class GetProgramTradingTool
                 time_range = new { from = FormatTime(minutes[0].Time), to = FormatTime(last.Time) },
                 summary,
                 key_points = BuildKeyPoints(minutes),
-                chart_available = includeChart,
                 chart_view = includeChart ? chartViewName : null,
                 note = "net / arbitrage / non_arbitrage are program net buying in 억원, cumulative from the session open; minute_net is the per-minute delta. The full minute series is cached under dataset_id. Non-arbitrage (비차익) is the directional basket signal (foreign and institutional baskets blended, not 기관-specific); arbitrage (차익) tracks the basis. Cross-check ls_get_investor_flow for investor-class flow.",
             };
@@ -397,7 +396,6 @@ public static class GetProgramTradingTool
                     non_arbitrage = x.NonArbitrage,
                     kospi200 = x.Kospi200,
                 }),
-                chart_available = includeChart,
                 note = "Each row is one day's program net buying (net = arbitrage + non_arbitrage), in 억원. non_arbitrage (비차익) is the directional basket signal (foreign and institutional baskets blended, not 기관-specific). Cross-check ls_get_investor_flow for investor-class flow.",
             };
 
@@ -545,7 +543,6 @@ public static class GetProgramTradingTool
                     sell = r.Sell / divisor,
                     mktcap_ratio = r.MktCapRatio,
                 }),
-                chart_available = includeChart,
                 note = $"Rows are LS-sorted (rank-ascending). net/buy/sell are program-trading values in {valueUnit}; mktcap_ratio is net buying as % of market cap — the normalized program-trading footprint. The program channel blends foreign baskets, index arbitrage, and institutional baskets, and misses off-program institutional (direct-order) buying; cross-check ls_get_investor_flow (investors=[\"all\"]) for investor-class flow.",
             };
 
@@ -781,7 +778,6 @@ public static class GetProgramTradingTool
                 last_price = last.Price,
             },
             key_points = keyPoints,
-            chart_available = includeChart,
             note = "svalue is cumulative program net buying from the session open, in 억원. Positive = the program channel was a net buyer of this stock; negative = a net seller. The program channel blends foreign baskets, index arbitrage, and institutional baskets, and misses off-program institutional (direct-order) buying; cross-check ls_get_investor_flow (investors=[\"all\"]) for investor-class flow.",
         };
 
@@ -830,7 +826,6 @@ public static class GetProgramTradingTool
                 price = o.Price,
                 change_pct = o.ChangePct,
             }),
-            chart_available = includeChart,
             note = "Each row is one day's program net buying (net = buy − sell), in 억원; net_sum is the window total. The program channel blends foreign baskets, index arbitrage, and institutional baskets, and misses off-program institutional (direct-order) buying; cross-check ls_get_investor_flow (investors=[\"all\"]) for investor-class flow.",
         };
 

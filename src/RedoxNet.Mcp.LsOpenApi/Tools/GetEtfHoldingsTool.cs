@@ -38,7 +38,7 @@ public static class GetEtfHoldingsTool
 
         `limit` caps the constituent array — it defaults to 20, since the largest holdings carry most of an ETF's weight. Pass `limit=-1` for the full list; an ETF with 200+ holdings (KODEX 200 ≈ 201) returned in full would blow past inline token budgets. The summary block (`holdings_count`, AUM, NAV, etc.) always reflects the full ETF regardless — only the `holdings[]` array is capped, and `holdings_truncated` flags when it was.
 
-        Set include_chart=true for inline composition rendering on MCP Apps hosts (Claude Desktop, Claude.ai, ChatGPT, Goose, VS Code). A Plotly treemap + top-10 side panel ships as structuredContent (not in the model's text context — zero token cost) and the host's iframe renders it via ui://lsopenapi/plotly. The panel surfaces a concentration badge (분산형 / 균형형 / 집중형 / 초집중형 by top-5 cumulative weight), the top-10 cumulative weights, and notes for single-name concentrations ≥30% and cash buffers.
+        Set include_chart=true for inline composition rendering on hosts that support MCP Apps. When the connected host can render charts, a Plotly treemap + top-10 side panel ships as structuredContent (not in the model's text context — zero token cost) and the host renders it inline; on a text-only host the parameter is not offered. The panel surfaces a concentration badge (분산형 / 균형형 / 집중형 / 초집중형 by top-5 cumulative weight), the top-10 cumulative weights, and notes for single-name concentrations ≥30% and cash buffers.
 
         Note units: `total_assets` is in 억원 (100M KRW), per-holding `value` is in 백만원 (1M KRW), all other monetary fields are raw 원 (KRW).
         """)]
@@ -167,7 +167,6 @@ public static class GetEtfHoldingsTool
 
                 holdings_returned = holdings.Count,
                 holdings_truncated = holdings.Count < rowsInResponse,
-                chart_available = include_chart && holdings.Count > 0,
                 holdings,
             };
             string textJson = JsonSerializer.Serialize(payload, McpJson.Tool);

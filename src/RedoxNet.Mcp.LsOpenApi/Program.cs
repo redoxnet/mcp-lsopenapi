@@ -79,10 +79,12 @@ builder.Services
     //   1. SchemaNormalizer — rewrites `"type": ["X","null"]` to `"X"` so
     //      strict MCP host validators (Ajv / Draft-7 style) accept the
     //      schemas the .NET SDK auto-emits for `T?` parameters.
-    //   2. PatchToolMetaIfChartEmitting — attaches the SEP-1865 _meta.ui
-    //      envelope for chart-emitting tools (attribute-based registration
-    //      can't express the nested shape).
-    // Plus a tools/call filter for LS_TOOL_PROFILE_STRICT.
+    //   2. ApplyChartSurface — gated on the resolved ChartRenderingMode
+    //      (SPEC v1.2 W3b): a SEP-1865 host gets the _meta.ui envelope, a
+    //      legacy chart host keeps include_chart without it, a text-only host
+    //      has include_chart stripped from the schema.
+    // The tools/call filter handles LS_TOOL_PROFILE_STRICT and W3c — stripping
+    // the UI-only structuredContent.chart for text-only hosts.
     .WithRequestFilters(filters =>
     {
         filters.AddListToolsFilter(next => async (ctx, ct) =>
@@ -90,10 +92,12 @@ builder.Services
             var result = await next(ctx, ct);
             if (!toolProfile.IsAll)
                 result.Tools = result.Tools.Where(t => toolProfile.IsVisible(t.Name)).ToList();
+            var chartMode = ChartHostSupport.Resolve(
+                ctx.Server.ClientCapabilities, ctx.Server.ClientInfo);
             foreach (var tool in result.Tools)
             {
                 SchemaNormalizer.NormalizeInputSchema(tool);
-                UiResources.PatchToolMetaIfChartEmitting(tool);
+                UiResources.ApplyChartSurface(tool, chartMode);
             }
             return result;
         });
@@ -106,7 +110,21 @@ builder.Services
                 return McpJson.ErrorResult(
                     "Tool not available in the current LS_TOOL_PROFILE.",
                     new { tool = name, profile = "standard", hint = "set LS_TOOL_PROFILE=all to expose catalog tools" });
-            return await next(ctx, ct);
+
+            var result = await next(ctx, ct);
+
+            // SPEC v1.2 W3c: structuredContent is a generic MCP field — a
+            // text-only host feeds it into the model context. Strip the chart
+            // payload for those hosts so the text summary the model actually
+            // reads survives intact (Spike B, SPEC §6).
+            if (ChartHostSupport.Resolve(
+                    ctx.Server.ClientCapabilities, ctx.Server.ClientInfo)
+                == ChartRenderingMode.TextOnly)
+            {
+                UiResources.StripChartStructuredContent(result);
+            }
+
+            return result;
         });
     });
 

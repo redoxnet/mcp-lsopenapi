@@ -48,7 +48,8 @@ public class GetChartToolPlotlyTests
             "include_chart=false must not ship an inline chart spec");
 
         JsonElement text = ParseTextContent(result);
-        text.GetProperty("chart_available").GetBoolean().Should().BeFalse();
+        text.TryGetProperty("chart_available", out _).Should().BeFalse(
+            "the chart_available marker was removed in v1.2");
     }
 
     [Fact]
@@ -61,9 +62,10 @@ public class GetChartToolPlotlyTests
             indicators: new[] { "ma:5" },
             include_chart: true);
 
-        // Model-facing text: chart_available flag only, no spec.
+        // Model-facing text: summary + dataset_id, no spec, no marker.
         JsonElement text = ParseTextContent(result);
-        text.GetProperty("chart_available").GetBoolean().Should().BeTrue();
+        text.TryGetProperty("chart_available", out _).Should().BeFalse(
+            "the chart_available marker was removed in v1.2 — the host decides chart visibility");
         text.GetProperty("output_mode").GetString().Should().Be("display");
         text.GetProperty("dataset_id").GetString().Should().StartWith("ds_");
         text.TryGetProperty("summary", out _).Should().BeTrue();

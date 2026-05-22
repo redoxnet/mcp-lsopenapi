@@ -80,7 +80,7 @@ public static class GetChartTool
         Single timeframe: period_type='day' → response has top-level summary/context/dataset_id.
         Multi timeframe: period_type='day,week,month' → response has a frames[] array, one compact entry per timeframe.
 
-        Set include_chart=true (single timeframe only) for inline chart rendering on MCP Apps hosts — Claude Desktop, Claude.ai, ChatGPT, Goose, VS Code. The Plotly v5 spec ships as structuredContent (not in the model's text context — zero token cost) and the host's iframe renders it via the ui://lsopenapi/plotly template. Multi-timeframe with include_chart is a no-op for inline rendering (call once per period_type for charts); the structured candles/indicators/context payload is unaffected.
+        Set include_chart=true (single timeframe only) for inline chart rendering on hosts that support MCP Apps. When the connected host can render charts, the Plotly v5 spec ships as structuredContent (not in the model's text context — zero token cost) and the host renders it inline; on a text-only host the parameter is not offered. Multi-timeframe with include_chart is a no-op for inline rendering (call once per period_type for charts); the structured candles/indicators/context payload is unaffected.
 
         output_mode controls token cost:
         - display: chart rendering; text contains dataset_id + AnalyticalSummary, chart spec goes to structuredContent.
@@ -202,7 +202,7 @@ public static class GetChartTool
                 object single = outputMode switch
                 {
                     "export" => BuildSingleExportResponse(
-                        shcode, datasetId, only, cached.Summary, outputMode, summary_only, includeStructuredChart),
+                        shcode, datasetId, only, cached.Summary, outputMode, summary_only),
                     "reference" => new
                     {
                         shcode,
@@ -212,7 +212,6 @@ public static class GetChartTool
                         tr_cd = only.TrCode,
                         count = only.Candles.Count,
                         range = cached.Summary.DateRange,
-                        chart_available = false,
                     },
                     _ => new
                     {
@@ -224,7 +223,6 @@ public static class GetChartTool
                         count = only.Candles.Count,
                         summary = cached.Summary,
                         context = only.Context,
-                        chart_available = includeStructuredChart,
                     },
                 };
                 string singleText = JsonSerializer.Serialize(single, McpJson.Tool);
@@ -291,7 +289,6 @@ public static class GetChartTool
                         count = f.Candles.Count,
                         range = f.Summary.DateRange,
                     }),
-                    chart_available = false,
                 };
             }
             else
@@ -346,8 +343,7 @@ public static class GetChartTool
         FrameResult frame,
         AnalyticalSummary summary,
         string outputMode,
-        bool summaryOnly,
-        bool chartAvailable)
+        bool summaryOnly)
     {
         IReadOnlyList<Candle> candleView = SummarizeCandles(frame.Candles, summaryOnly);
         return new
@@ -365,7 +361,6 @@ public static class GetChartTool
                 ? (object)SummarizeIndicators(frame.Indicators)
                 : frame.Indicators.ToDictionary(kv => kv.Key, kv => kv.Value),
             context = frame.Context,
-            chart_available = chartAvailable,
         };
     }
 
@@ -447,7 +442,6 @@ public static class GetChartTool
                 indicator = SummarizeIndicator(specToAdd.Raw, refreshed.Indicators),
                 summary,
                 context = refreshed.Context,
-                chart_available = include_chart,
             };
 
             JsonObject? structured = include_chart
@@ -556,7 +550,6 @@ public static class GetChartTool
                 count = frame.Candles.Count,
                 summary,
                 context = frame.Context,
-                chart_available = include_chart,
             };
 
             JsonObject? structured = include_chart

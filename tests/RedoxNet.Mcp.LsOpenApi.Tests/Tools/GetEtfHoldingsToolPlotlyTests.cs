@@ -75,7 +75,8 @@ public class GetEtfHoldingsToolPlotlyTests
         result.StructuredContent.Should().BeNull();
 
         JsonElement text = JsonDocument.Parse(result.TextContent()).RootElement;
-        text.GetProperty("chart_available").GetBoolean().Should().BeFalse();
+        text.TryGetProperty("chart_available", out _).Should().BeFalse(
+            "the chart_available marker was removed in v1.2");
     }
 
     [Fact]
@@ -143,15 +144,18 @@ public class GetEtfHoldingsToolPlotlyTests
     }
 
     [Fact]
-    public async Task IncludeChartTrue_TextHasChartAvailableFlag()
+    public async Task IncludeChartTrue_TextCarriesNoChartAvailableMarker()
     {
         var (client, _) = TestClientFactory.Create((_, _) => Ok(T1904FourHoldings));
 
         CallToolResult result = await GetEtfHoldingsTool.GetEtfHoldings(
             client, "305720", include_chart: true);
 
+        // v1.2: the chart ships only in structuredContent; the model-facing
+        // text never claims a chart exists — the host decides that.
         JsonElement text = JsonDocument.Parse(result.TextContent()).RootElement;
-        text.GetProperty("chart_available").GetBoolean().Should().BeTrue();
+        text.TryGetProperty("chart_available", out _).Should().BeFalse(
+            "the chart_available marker was removed in v1.2");
     }
 
     [Fact]

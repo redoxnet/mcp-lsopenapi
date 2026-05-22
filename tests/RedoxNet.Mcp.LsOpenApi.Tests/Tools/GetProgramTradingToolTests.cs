@@ -93,7 +93,8 @@ public class GetProgramTradingToolTests
             "include_chart=false must not ship an inline chart spec");
 
         JsonElement text = ParseTextContent(result);
-        text.GetProperty("chart_available").GetBoolean().Should().BeFalse();
+        text.TryGetProperty("chart_available", out _).Should().BeFalse(
+            "the chart_available marker was removed in v1.2");
     }
 
     [Fact]
@@ -106,7 +107,8 @@ public class GetProgramTradingToolTests
 
         // Model-facing text: flag only, no spec leaked into context.
         JsonElement text = ParseTextContent(result);
-        text.GetProperty("chart_available").GetBoolean().Should().BeTrue();
+        text.TryGetProperty("chart_available", out _).Should().BeFalse(
+            "the chart_available marker was removed in v1.2");
         text.GetProperty("chart_view").GetString().Should().Be("flow_overview");
         text.TryGetProperty("chart", out _).Should().BeFalse(
             "the Plotly spec must not leak into the model's text context");
@@ -231,7 +233,8 @@ public class GetProgramTradingToolTests
         CallToolResult result = await GetProgramTradingTool.GetProgramTrading(
             client, scope: "ranking", include_chart: true);
 
-        ParseTextContent(result).GetProperty("chart_available").GetBoolean().Should().BeTrue();
+        ParseTextContent(result).TryGetProperty("chart_available", out _).Should().BeFalse(
+            "the chart_available marker was removed in v1.2");
 
         JsonElement spec = result.StructuredContent!.Value.GetProperty("chart").GetProperty("spec");
         JsonElement trace = spec.GetProperty("data")[0];
@@ -329,7 +332,8 @@ public class GetProgramTradingToolTests
         CallToolResult result = await GetProgramTradingTool.GetProgramTrading(
             client, scope: "stock", shcode: "005930", name: "삼성전자", include_chart: true);
 
-        ParseTextContent(result).GetProperty("chart_available").GetBoolean().Should().BeTrue();
+        ParseTextContent(result).TryGetProperty("chart_available", out _).Should().BeFalse(
+            "the chart_available marker was removed in v1.2");
 
         JsonElement spec = result.StructuredContent!.Value.GetProperty("chart").GetProperty("spec");
         JsonElement data = spec.GetProperty("data");
