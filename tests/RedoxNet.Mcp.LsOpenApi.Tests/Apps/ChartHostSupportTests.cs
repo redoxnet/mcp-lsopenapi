@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
@@ -143,12 +144,12 @@ public class ChartHostSupportTests
     {
         // Mirrors fieldcure-assiststudio McpServerConnection.AddMcpAppsUiCapability:
         //   capabilities.Extensions["io.modelcontextprotocol/ui"]
-        //       = new { mimeTypes = new[] { "text/html;profile=mcp-app" } };
+        //       = new JsonObject { ["mimeTypes"] = new JsonArray("text/html;profile=mcp-app") };
         var advertised = new ClientCapabilities();
 #pragma warning disable MCPEXP001
         advertised.Extensions = new Dictionary<string, object>(StringComparer.Ordinal)
         {
-            [UiExtensionId] = new { mimeTypes = new[] { HtmlAppMime } },
+            [UiExtensionId] = new JsonObject { ["mimeTypes"] = new JsonArray(HtmlAppMime) },
         };
 #pragma warning restore MCPEXP001
 
