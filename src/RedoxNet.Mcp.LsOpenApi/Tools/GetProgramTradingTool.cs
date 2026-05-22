@@ -280,7 +280,7 @@ public static class GetProgramTradingTool
                 key_points = BuildKeyPoints(minutes),
                 chart_available = includeChart,
                 chart_view = includeChart ? chartViewName : null,
-                note = "net / arbitrage / non_arbitrage are program net buying in 억원, cumulative from the session open; minute_net is the per-minute delta. The full minute series is cached under dataset_id. Non-arbitrage (비차익) is the directional basket signal (foreign and institutional baskets blended, not 기관-specific); arbitrage (차익) tracks the basis.",
+                note = "net / arbitrage / non_arbitrage are program net buying in 억원, cumulative from the session open; minute_net is the per-minute delta. The full minute series is cached under dataset_id. Non-arbitrage (비차익) is the directional basket signal (foreign and institutional baskets blended, not 기관-specific); arbitrage (차익) tracks the basis. Cross-check ls_get_investor_flow for investor-class flow.",
             };
 
             JsonObject? structured = includeChart
@@ -398,7 +398,7 @@ public static class GetProgramTradingTool
                     kospi200 = x.Kospi200,
                 }),
                 chart_available = includeChart,
-                note = "Each row is one day's program net buying (net = arbitrage + non_arbitrage), in 억원. non_arbitrage (비차익) is the directional basket signal (foreign and institutional baskets blended, not 기관-specific).",
+                note = "Each row is one day's program net buying (net = arbitrage + non_arbitrage), in 억원. non_arbitrage (비차익) is the directional basket signal (foreign and institutional baskets blended, not 기관-specific). Cross-check ls_get_investor_flow for investor-class flow.",
             };
 
             JsonObject? structured = includeChart
@@ -546,7 +546,7 @@ public static class GetProgramTradingTool
                     mktcap_ratio = r.MktCapRatio,
                 }),
                 chart_available = includeChart,
-                note = $"Rows are LS-sorted (rank-ascending). net/buy/sell are program-trading values in {valueUnit}; mktcap_ratio is net buying as % of market cap — the normalized program-trading footprint.",
+                note = $"Rows are LS-sorted (rank-ascending). net/buy/sell are program-trading values in {valueUnit}; mktcap_ratio is net buying as % of market cap — the normalized program-trading footprint. The program channel blends foreign baskets, index arbitrage, and institutional baskets, and misses off-program institutional (direct-order) buying; cross-check ls_get_investor_flow (investors=[\"all\"]) for investor-class flow.",
             };
 
             JsonObject? structured = includeChart
@@ -782,7 +782,7 @@ public static class GetProgramTradingTool
             },
             key_points = keyPoints,
             chart_available = includeChart,
-            note = "svalue is cumulative program net buying from the session open, in 억원. Positive = program accumulating this stock, negative = distributing.",
+            note = "svalue is cumulative program net buying from the session open, in 억원. Positive = the program channel was a net buyer of this stock; negative = a net seller. The program channel blends foreign baskets, index arbitrage, and institutional baskets, and misses off-program institutional (direct-order) buying; cross-check ls_get_investor_flow (investors=[\"all\"]) for investor-class flow.",
         };
 
         JsonObject? structured = includeChart
@@ -831,7 +831,7 @@ public static class GetProgramTradingTool
                 change_pct = o.ChangePct,
             }),
             chart_available = includeChart,
-            note = "Each row is one day's program net buying (net = buy − sell), in 억원. net_sum is the window total.",
+            note = "Each row is one day's program net buying (net = buy − sell), in 억원; net_sum is the window total. The program channel blends foreign baskets, index arbitrage, and institutional baskets, and misses off-program institutional (direct-order) buying; cross-check ls_get_investor_flow (investors=[\"all\"]) for investor-class flow.",
         };
 
         JsonObject? structured = includeChart
