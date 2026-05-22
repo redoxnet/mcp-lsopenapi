@@ -24,7 +24,7 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>icon.png</PackageIcon>
     <Copyright>Copyright (c) 2026 RedoxNet</Copyright>
-    <PackageReleaseNotes>v1.1.0 — program-trading tools, additive on the v1.0 stable line. Adds ls_get_program_trading (market / ranking / stock scopes over t1662 / t1633 / t1636 / t1637, with inline Plotly charts) and ls_analyze_program_flow (deterministic institutional-footprint analysis). Tool surface grows from 32 to 34 standard / 35 to 37 all; no existing tool, parameter, or response shape changes. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Mcp.md.</PackageReleaseNotes>
+    <PackageReleaseNotes>v1.1.0 — program-trading tools, additive on the v1.0 stable line. Adds ls_get_program_trading (market / ranking / stock scopes over t1662 / t1633 / t1636 / t1637, with inline Plotly charts) and ls_analyze_program_flow (deterministic program-trading footprint analysis). Tool surface grows from 32 to 34 standard / 35 to 37 all; no existing tool, parameter, or response shape changes. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Mcp.md.</PackageReleaseNotes>
 
     <PackageType>McpServer</PackageType>
     <PackAsTool>true</PackAsTool>

@@ -26,9 +26,9 @@ The public Core API is unchanged.
 
 ### Added — Analysis layer (internal)
 
-- New `Analysis/` namespace. `ProgramFootprintAnalyzer` turns a stock's
-  raw program-trading series into a deterministic institutional-footprint
-  verdict — regime, signals, and plain-language evidence.
+- New `Analysis/` namespace. `ProgramFootprintAnalyzer` classifies a
+  stock's program-trading footprint into a deterministic verdict —
+  regime, signals, and plain-language evidence.
 
 All new types are `internal`, consumed by the MCP server via
 `InternalsVisibleTo`; the public Core surface is unchanged. The
