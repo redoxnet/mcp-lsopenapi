@@ -492,6 +492,12 @@ Current release line:
 - [x] **v0.10.1** — Functional v1.0 release candidate. Published to NuGet and the MCP Registry; includes the compressed 32-tool `standard` surface, token-budget fixes, and the MCP registry manifest fix.
 - [x] **v1.0.0** — First stable release. Freezes the MCP tool surface, model-facing parameter names, and default response shapes, with reflection-based pin tests guarding them. Completes the row-cap `limit` normalization (`ls_get_etf_holdings` + `ls_get_industry_indices`), adds MCP server-instructions routing guidance, and ships NuGet credential metadata.
 - [x] **v1.1.0** — Program-trading support, additive on the v1.0 stable line. Adds `ls_get_program_trading` (market / ranking / stock scopes over t1662 / t1633 / t1636 / t1637, with inline Plotly charts) and `ls_analyze_program_flow` (deterministic program-trading footprint analysis). Tool surface 32 → 34 (`standard`) / 35 → 37 (`all`); no existing tool, parameter, or response shape changes.
+- [x] **v1.2.0** — MCP Apps capability negotiation. Chart-emitting tools now gate their inline Plotly payload on what the connected host can actually render — a correctness slice that stops chart-less hosts from receiving a payload they would bury in the model's context, and from being told a chart exists when none can be shown.
+
+Planned:
+
+- [ ] **v1.3** — Date envelope standardization across date-bearing tools (explicit `query_date` / `data_as_of` so non-trading days are unambiguous to the model), plus first-class overseas stock support (US quote / chart / search alongside the existing index / FX / futures surface).
+- [ ] **v1.4** — Pre-defined screener access ("Q-Click" style scans — moving-average alignment, gap setups, swing entries, etc., browsable as a catalog and runnable by name).
 
 Major milestones:
 
