@@ -390,11 +390,19 @@ public static class GetChartTool
             return McpJson.ErrorResult("dataset_id is required.");
         if (string.IsNullOrWhiteSpace(indicator))
             return McpJson.ErrorResult("indicator is required.");
-        if (!DatasetHandleCache.TryGet<ChartDataset>(dataset_id, out ChartDataset? dataset) || dataset is null)
-            return McpJson.ErrorResult("Unknown or expired dataset_id.", new { dataset_id });
         if (!IndicatorSpecParser.TryParse(indicator, out IndicatorSpec? addedSpec, out string? error))
             return McpJson.ErrorResult($"Invalid indicator spec '{indicator}'.", new { reason = error });
         IndicatorSpec specToAdd = addedSpec!;
+
+        // Overseas chart datasets share the same handle cache; route to the
+        // overseas tool when the handle resolves to one of its payloads.
+        CallToolResult? overseas = await OverseasStockTools.TryAddIndicatorAsync(
+            apiClient, dataset_id, specToAdd, include_chart, cancellationToken).ConfigureAwait(false);
+        if (overseas is not null)
+            return overseas;
+
+        if (!DatasetHandleCache.TryGet<ChartDataset>(dataset_id, out ChartDataset? dataset) || dataset is null)
+            return McpJson.ErrorResult("Unknown or expired dataset_id.", new { dataset_id });
 
         ChartDatasetFrame? frame = ResolveFrame(dataset, period_type, out string? frameError);
         if (frame is null)
@@ -501,6 +509,14 @@ public static class GetChartTool
             return McpJson.ErrorResult("dataset_id is required.");
         if (string.IsNullOrWhiteSpace(period_type))
             return McpJson.ErrorResult("period_type is required.");
+
+        // Overseas chart datasets share the same handle cache; route to the
+        // overseas tool when the handle resolves to one of its payloads.
+        CallToolResult? overseas = await OverseasStockTools.TryReframeAsync(
+            apiClient, dataset_id, period_type, count, from, to, minute_unit, include_chart, cancellationToken).ConfigureAwait(false);
+        if (overseas is not null)
+            return overseas;
+
         if (!DatasetHandleCache.TryGet<ChartDataset>(dataset_id, out ChartDataset? dataset) || dataset is null)
             return McpJson.ErrorResult("Unknown or expired dataset_id.", new { dataset_id });
 

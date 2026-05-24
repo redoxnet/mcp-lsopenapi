@@ -90,6 +90,41 @@ public class NewApiTrCatalogTests
         meta.OutBlocks[1].IsArray.Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData("g3101", "/overseas-stock/market-data", false)]
+    [InlineData("g3102", "/overseas-stock/market-data", true)]
+    [InlineData("g3104", "/overseas-stock/market-data", false)]
+    [InlineData("g3106", "/overseas-stock/market-data", false)]
+    [InlineData("g3190", "/overseas-stock/market-data", true)]
+    [InlineData("g3103", "/overseas-stock/chart", false)]
+    [InlineData("g3202", "/overseas-stock/chart", true)]
+    [InlineData("g3203", "/overseas-stock/chart", true)]
+    [InlineData("g3204", "/overseas-stock/chart", true)]
+    public void OverseasStockTrs_AreCataloged(string code, string path, bool paginated)
+    {
+        TrMeta meta = TrCatalog.Default.Get(code);
+
+        meta.Path.Should().Be(path);
+        meta.Category.Should().StartWith("해외주식");
+        meta.Continuation.Supported.Should().Be(paginated);
+    }
+
+    [Fact]
+    public void G3204_OverseasDailyChart_ModelsPeriodAndContinuation()
+    {
+        TrMeta meta = TrCatalog.Default.Get("g3204");
+
+        meta.InBlocks.Should().ContainSingle()
+            .Which.Fields.Select(f => f.Name).Should().Equal(
+                "sujung", "delaygb", "keysymbol", "exchcd", "symbol", "gubun",
+                "qrycnt", "comp_yn", "sdate", "edate", "cts_date", "cts_info");
+        meta.OutBlocks.Select(b => b.Name).Should().Equal("g3204OutBlock", "g3204OutBlock1");
+        meta.OutBlocks[1].IsArray.Should().BeTrue();
+        meta.OutBlocks[1].Fields.Select(f => f.Name).Should().Contain(
+            new[] { "date", "open", "high", "low", "close", "volume", "amount" });
+        meta.Continuation.KeyFields.Should().Equal("cts_date", "cts_info");
+    }
+
     [Fact]
     public void T3102_NewsBody_ModelsBodyFragmentsAndTitle()
     {

@@ -8,6 +8,8 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 
 **2026-05-21 patch:** 프로그램매매 7종 (`t1631` `t1632` `t1633` `t1636` `t1637` `t1640` `t1662`) 카탈로그 등록 — 🔵 `ls_call_tr` 호출 가능, 전용 wrapper는 미정. 7종 모두 라이브 검증 완료. 카탈로그 총 **53 TRs**.
 
+**2026-05-23 v1.3 patch:** 해외주식 g31xx/g32xx 9종 (`g3101` `g3102` `g3103` `g3104` `g3106` `g3190` `g3202` `g3203` `g3204`) 카탈로그 등록. `g3190`/`g3101`/`g3104`/`g3106`/`g3202`/`g3203`/`g3204`는 `ls_search_overseas_stock`, `ls_get_overseas_quote`, `ls_get_overseas_chart`로 wrapper 제공. 카탈로그 총 **62 TRs**.
+
 **Use this doc when:** deciding what to add to the catalog next, mapping a user request to an underlying TR, or scoping the next release.
 
 **LS-side data quirks:** see [LS-API-QUIRKS.md](LS-API-QUIRKS.md) for undocumented, inconsistent, or wrong LS API behaviors and this project's workarounds.
@@ -63,6 +65,20 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 | `t8410` | 주식 차트 (일/주/월/년) API전용 | 🟢 💡 | `ls_get_chart period_type="day"|"week"|"month"|"year"` |
 | `t8411` | 주식 차트 (틱/n틱) | ⚪ | We use t1301 for tick today; t8411 may offer richer history |
 | `t8412` | 주식 차트 (N분) | 🟢 | `ls_get_chart period_type="min"` — multi-key continuation |
+
+## [해외주식] 시세 / 차트 — Overseas stocks
+
+| TR | 이름 | Status | Tool / Notes |
+| --- | --- | --- | --- |
+| `g3101` | 해외주식 현재가 조회 | 🟢 | `ls_get_overseas_quote` 기본 스냅샷 — price/change/volume/52주/PER/EPS. |
+| `g3102` | 해외주식 시간대별 | 🔵 | In catalog (`ls_call_tr` only). 시간대별 체결/가격 tape, `cts_seq` body continuation. 별도 wrapper는 v1.3 이후 후보. |
+| `g3104` | 해외주식 종목정보 조회 | 🟢 | `ls_get_overseas_quote(include_profile=true)` — 영문명/거래소/증권종류/시총/환율/주문단위. |
+| `g3106` | 해외주식 현재가호가 조회 | 🟢 | `ls_get_overseas_quote(include_orderbook=true)` — 10단계 호가. |
+| `g3190` | 해외주식 마스터 조회 | 🟢 | `ls_search_overseas_stock` — ticker/name 검색, `keysymbol`/`exchcd` 해석. |
+| `g3103` | 해외주식 일주월 조회 | 🔵 | In catalog (`ls_call_tr` only). Semantic wrapper는 범용성이 높은 `g3204`를 사용. |
+| `g3202` | 해외주식 차트 N틱 조회 | 🟢 | `ls_get_overseas_chart(period_type="tick")`, `cts_seq` body continuation. |
+| `g3203` | 해외주식 차트 N분 조회 | 🟢 | `ls_get_overseas_chart(period_type="min")`, `cts_date`/`cts_time` body continuation. |
+| `g3204` | 해외주식 차트 일주월년별 조회 | 🟢 | `ls_get_overseas_chart(period_type="day"|"week"|"month"|"year")`, 수정주가 옵션. |
 
 ## [주식] 종목검색 — Stock search
 
@@ -249,14 +265,15 @@ WebSocket-based stream identifiers, not REST TRs. ~50 channels including:
 
 ---
 
-## Implementation status summary (v0.10.0)
+## Implementation status summary (v1.3.0)
 
-- **46 TRs in catalog** — `t1101`, `t1102`, `t1105`, `t1301`, `t1305`, `t1403`, `t1404`, `t1405`, `t1441`, `t1442`, `t1444`, `t1452`, `t1463`, `t1466`, `t1475`, `t1485`, `t1511`, `t1514`, `t1516`, `t1531`, `t1532`, `t1537`, `t1601`, `t1702`, `t1716`, `t1901`, `t1902`, `t1903`, `t1904`, `t1927`, `t3102`, `t3202`, `t3320`, `t3341`, `t3401`, `t3518`, `t3521`, `t8407`, `t8410`, `t8412`, `t8424`, `t8425`, `t8428`, `t8430`, `t8436`, `t9945`.
-- **35 MCP tools** (32 exposed in the default `standard` profile — the 3 Meta / catalog tools are `all`-profile only):
+- **62 TRs in catalog** — v1.3 adds the nine overseas-stock g31xx/g32xx TRs on top of the v1.1 catalog.
+- **40 MCP tools** (37 exposed in the default `standard` profile — the 3 Meta / catalog tools are `all`-profile only):
   - Meta / catalog (3, `all` profile only) — `ls_search_tr`, `ls_describe_tr`, `ls_call_tr`.
   - Quotes / rankings (5) — `ls_get_quote`, `ls_get_multi_quote`, `ls_get_stock_info`, `ls_get_top_stocks`, `ls_get_high_low_stocks`.
   - Charts (3) — `ls_get_chart`, `ls_add_indicator`, `ls_reframe_chart`.
-  - Stock search (1) — `ls_search_stock`.
+  - Stock search (2) — `ls_search_stock`, `ls_search_overseas_stock`.
+  - Overseas stocks (2) — `ls_get_overseas_quote`, `ls_get_overseas_chart`.
   - ETF (2) — `ls_get_etf_info`, `ls_get_etf_holdings`.
   - Index / industry (4) — `ls_get_index_quote`, `ls_get_index_history`, `ls_get_industry_indices`, `ls_get_industry_stocks`.
   - LS themes (2) — `ls_get_theme_stocks`, `ls_get_stock_themes`.
@@ -269,18 +286,24 @@ WebSocket-based stream identifiers, not REST TRs. ~50 channels including:
 
 ### Tool-surface budget
 
-Total is **35 tools**, **32** in the default `standard` profile (kept low so the LLM has less to route across). v0.10.0's tool-surface compression (SPEC-v0.10) folded the twenty portfolio tools into five action-routed dispatchers (`ls_account` / `ls_holding` / `ls_watchlist` / `ls_watched_themes` / `ls_portfolio_io`) and gated the three catalog tools behind `LS_TOOL_PROFILE=all` — down from the v0.9 peak of 48. See [SPEC-v0.10.md](./SPEC-v0.10.md).
+Total is **40 tools**, **37** in the default `standard` profile (kept low so the LLM has less to route across). v0.10.0's tool-surface compression (SPEC-v0.10) folded the twenty portfolio tools into five action-routed dispatchers (`ls_account` / `ls_holding` / `ls_watchlist` / `ls_watched_themes` / `ls_portfolio_io`) and gated the three catalog tools behind `LS_TOOL_PROFILE=all`; v1.1 added two program-trading tools, and v1.3 adds three overseas-stock tools. See [SPEC-v0.10.md](./SPEC-v0.10.md).
 
 ## Recommended next batch
 
-v0.9's focus is the **response-shape / token-economy refactor** — see [SPEC-v0.9-response-shapes.md](./SPEC-v0.9-response-shapes.md). It reshapes existing tools (`ls_get_index_history` t1514 / `ls_get_stock_info` t1102 / `ls_holdings_list`), not new TR coverage.
+**v1.4 (planned) — date-envelope standardization.** A *cross-cutting* slice, not new TR coverage: every date-bearing tool gets an explicit `query_date` input and a `data_as_of` response field, with non-trading-day fallback (weekend → last close, optionally KRX / NYSE holiday) so the model can't silently read Saturday's "today" as Friday's data. ≈ 10-13 tools touched (`ls_get_top_stocks`, `ls_get_high_low_stocks`, `ls_get_market_funds_trend`, `ls_get_investor_flow`, `ls_get_short_selling_trend`, `ls_get_market_warnings`, `ls_get_industry_indices`, `ls_get_fundamentals_rank`, `ls_get_program_trading`, `ls_get_index_history`, `ls_get_chart`, `ls_get_overseas_chart`, plus quote tools). Estimated 1.5-2.5 work days.
 
-New-TR-coverage candidates (from 🔵 / 💎 markers), deferred to v0.10+:
+**v1.5+ — new-TR coverage / screener access.** Carry-over candidates that don't fit v1.4's horizontal slice:
 
-1. **`ls_get_new_listings`** — wrap `t1403` (신규상장, 🔵 💎). Clean standalone screener.
-2. **`t1105` 피봇/디마크**, **`t1475` 체결강도 추이** — catalog-only; candidates to absorb into `ls_get_stock_info` sections rather than add tools.
-3. **`t3518` 해외 실시간 지수** — time-series companion to `ls_get_global_market_quote` (`t3521`).
-4. **`t3102` 뉴스 본문** — gated on the NWS WebSocket transport (v2.0); catalog-only until then.
+1. **Q-Click style pre-defined screeners** — browsable catalog of LS's stored scans (MA alignment, gap setups, swing entries …) runnable by name. Originally slated for v1.4, slipped to v1.5 by the date-envelope work.
+2. **`ls_get_new_listings`** — wrap `t1403` (신규상장, 🔵 💎). Clean standalone screener.
+3. **`t1105` 피봇/디마크**, **`t1475` 체결강도 추이** — catalog-only; candidates to absorb into `ls_get_stock_info` sections rather than add tools.
+4. **`t3518` 해외 실시간 지수** — time-series companion to `ls_get_global_market_quote` (`t3521`).
+5. **`t3102` 뉴스 본문** — gated on the NWS WebSocket transport (v2.0); catalog-only until then.
+
+**Overseas extensions (post-v1.3).** v1.3 covers US Nasdaq / NYSE / AMEX (exchcd 81 / 82) for individual stocks. Future overseas slices could add:
+
+- **`g3102` (해외주식 시간대별)** — currently catalog-only; semantic wrapper would expose time-and-sales for intraday flow analysis.
+- **Other markets** — Japan / Hong Kong / China A-shares all live on the same g31xx/g32xx TR family with different `natcode` values; the existing `OverseasStockTools` plumbing accepts them today via numeric `exgubun` + `natcode`, but `CurrencyHint` / `BarTimezone` / `ExchangeName` need market-specific entries before each gets a friendly wrapper.
 
 ## How to extend this inventory
 

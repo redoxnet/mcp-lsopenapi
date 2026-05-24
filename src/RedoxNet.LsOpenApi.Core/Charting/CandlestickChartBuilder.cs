@@ -67,6 +67,13 @@ internal static class CandlestickChartBuilder
     /// <c>"{name} ({shcode}) — {label}"</c>; otherwise just <c>"{shcode} — {label}"</c>.
     /// The chart TRs do not carry the name, so the caller passes it through.
     /// </param>
+    /// <param name="currency">
+    /// Optional ISO-ish currency code (<c>"USD"</c>, <c>"JPY"</c>, <c>"HKD"</c>, …)
+    /// for the price y-axis unit. <see langword="null"/> or <c>"KRW"</c>
+    /// keeps the default Korean-market label (<c>주가 (원)</c>); other codes
+    /// substitute a matching symbol (<c>$</c>, <c>¥</c>, …) or fall through
+    /// to the raw code so overseas tools can be wired in without a code change.
+    /// </param>
     /// <returns>
     /// <c>{ "type": "plotly", "version": "5", "spec": { "data": [...], "layout": {...} } }</c>
     /// </returns>
@@ -76,7 +83,8 @@ internal static class CandlestickChartBuilder
         IReadOnlyList<Candle> candles,
         IReadOnlyDictionary<string, IReadOnlyList<double?>> indicators,
         IReadOnlyList<IndicatorSpec> specs,
-        string? name = null)
+        string? name = null,
+        string? currency = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(shcode);
         ArgumentException.ThrowIfNullOrWhiteSpace(periodType);
@@ -98,8 +106,33 @@ internal static class CandlestickChartBuilder
             ["spec"] = new JsonObject
             {
                 ["data"] = data,
-                ["layout"] = BuildLayout(shcode, name, periodType, candles, xAxis),
+                ["layout"] = BuildLayout(shcode, name, periodType, candles, xAxis, currency),
             },
+        };
+    }
+
+    /// <summary>
+    /// Maps a currency code to the unit symbol shown on the price y-axis.
+    /// Codes that have a customary one-character symbol get it (<c>USD → $</c>,
+    /// <c>JPY → ¥</c>, …); anything else falls through to the raw code so a
+    /// caller passing an unfamiliar currency still sees a recognizable label.
+    /// </summary>
+    /// <param name="currency">ISO-ish currency code, or <see langword="null"/>.</param>
+    /// <returns>The display symbol or code, or <c>"원"</c> for KRW / null.</returns>
+    internal static string PriceUnitLabel(string? currency)
+    {
+        if (string.IsNullOrWhiteSpace(currency))
+            return "원";
+
+        return currency.Trim().ToUpperInvariant() switch
+        {
+            "KRW" => "원",
+            "USD" => "$",
+            "JPY" or "CNY" => "¥",
+            "EUR" => "€",
+            "GBP" => "£",
+            "HKD" => "HK$",
+            _ => currency.Trim().ToUpperInvariant(),
         };
     }
 
@@ -295,13 +328,15 @@ internal static class CandlestickChartBuilder
     /// <param name="periodType">Period label; mapped to Korean (일/주/월/분/틱) for display.</param>
     /// <param name="candles">Candle list (oldest first) — drives ticks and annotations.</param>
     /// <param name="xAxis">Shared x-axis array, aligned 1:1 with <paramref name="candles"/>.</param>
+    /// <param name="currency">Currency code for the price y-axis unit; <see langword="null"/> keeps the default <c>원</c>.</param>
     /// <returns>Plotly layout JSON object.</returns>
     static JsonObject BuildLayout(
         string shcode,
         string? name,
         string periodType,
         IReadOnlyList<Candle> candles,
-        JsonArray xAxis)
+        JsonArray xAxis,
+        string? currency)
     {
         string periodLabel = periodType switch
         {
@@ -329,7 +364,7 @@ internal static class CandlestickChartBuilder
             ["xaxis"] = BuildXAxisLayout(candles, xAxis, periodType),
             ["yaxis"] = new JsonObject
             {
-                ["title"] = new JsonObject { ["text"] = "주가 (원)" },
+                ["title"] = new JsonObject { ["text"] = $"주가 ({PriceUnitLabel(currency)})" },
                 ["domain"] = new JsonArray { 0.3, 1.0 },
                 ["side"] = "right",
             },

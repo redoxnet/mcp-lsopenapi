@@ -98,6 +98,7 @@ public sealed class TrCatalog
 
         return ranked
             .OrderByDescending(t => t.score)
+            .ThenBy(t => t.meta.TrCode.StartsWith("g", StringComparison.OrdinalIgnoreCase) ? 1 : 0)
             .ThenBy(t => t.meta.TrCode, StringComparer.OrdinalIgnoreCase)
             .Take(limit)
             .Select(t => t.meta)

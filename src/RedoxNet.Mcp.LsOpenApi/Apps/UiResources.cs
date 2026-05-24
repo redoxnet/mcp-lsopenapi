@@ -64,6 +64,7 @@ internal static class UiResources
         "ls_get_chart",
         "ls_add_indicator",
         "ls_reframe_chart",
+        "ls_get_overseas_chart",
         "ls_get_etf_holdings",
         "ls_get_program_trading",
     };

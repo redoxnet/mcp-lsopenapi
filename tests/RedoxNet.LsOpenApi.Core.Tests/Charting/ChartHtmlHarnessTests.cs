@@ -43,6 +43,67 @@ public class ChartHtmlHarnessTests
     }
 
     /// <summary>
+    /// Candlestick + volume + MA20/60/200 + Bollinger overlays from a
+    /// 260-bar NVDA-shaped uptrend — the shape <c>ls_get_overseas_chart</c>
+    /// ships for a daily US-stock request once v1.3's summary warm-up is in
+    /// effect. 260 bars is sized just past <c>SummaryWarmup("day")=240</c>
+    /// so MA200 actually has values to render across the right edge of the
+    /// chart, instead of starting blank.
+    /// </summary>
+    /// <remarks>
+    /// RSI / MACD are deliberately omitted — <see cref="CandlestickChartBuilder"/>
+    /// only overlays MA / EMA / BB on the price axis; RSI and MACD would
+    /// need their own subplot (v1.0 scope note in the builder).
+    /// </remarks>
+    [Fact]
+    public void Candlestick_OverseasNvda_WithFullIndicatorStack_WritesViewableHtml()
+    {
+        List<Candle> candles = NvdaShapedCandles(260);
+        IReadOnlyList<IndicatorSpec> specs =
+        [
+            ParseSpec("ma:20"),
+            ParseSpec("ma:60"),
+            ParseSpec("ma:200"),
+            ParseSpec("bb:20,2"),
+        ];
+        IReadOnlyDictionary<string, IReadOnlyList<double?>> indicators =
+            new IndicatorService().Compute(candles, specs);
+
+        JsonObject envelope = CandlestickChartBuilder.Build(
+            "NVDA", "day", candles, indicators, specs, name: "NVIDIA", currency: "USD");
+        string path = ChartHtmlHarness.Write("candlestick-NVDA-day", envelope["spec"]!);
+
+        _output.WriteLine("chart written — open in a browser:\n  " + path);
+        string html = File.ReadAllText(path);
+        html.Should().Contain("\"candlestick\"");
+        html.Should().Contain("NVIDIA");
+        html.Should().Contain("MA:200",
+            because: "260 bars is past the 200-period MA warm-up, so the trace must be labelled and populated");
+        html.Should().Contain("BB upper (20, 2)",
+            because: "Bollinger overlays should be present alongside the MA stack");
+        html.Should().Contain("주가 ($)",
+            because: "the USD currency hint must flow into the price y-axis unit instead of the default (원)");
+        html.Should().NotContain("주가 (원)",
+            because: "an overseas chart should never label its prices in won");
+    }
+
+    [Theory]
+    [InlineData(null, "원")]
+    [InlineData("", "원")]
+    [InlineData("KRW", "원")]
+    [InlineData("krw", "원")]
+    [InlineData("USD", "$")]
+    [InlineData("usd", "$")]
+    [InlineData("JPY", "¥")]
+    [InlineData("EUR", "€")]
+    [InlineData("HKD", "HK$")]
+    [InlineData("AUD", "AUD")]  // unfamiliar code falls through to itself
+    public void PriceUnitLabel_MapsCurrencyCodeToDisplaySymbol(string? currency, string expected)
+    {
+        CandlestickChartBuilder.PriceUnitLabel(currency).Should().Be(expected);
+    }
+
+    /// <summary>
     /// ETF holdings treemap, the shape <c>ls_get_etf_holdings</c> ships under
     /// <c>structuredContent.chart</c> — uses a semiconductor-ETF-like weight
     /// distribution so the squarify layout and label suppression are visible.
@@ -91,6 +152,71 @@ public class ChartHtmlHarnessTests
         }
         return candles;
     }
+
+    /// <summary>
+    /// Procedural NVDA-flavored daily series across four regimes — spring
+    /// rally, summer chop, autumn drawdown, winter recovery — so MA-cross
+    /// and Bollinger expansion surface as visible signals in the rendered
+    /// chart. Weekends are skipped so the date labels look like trading
+    /// days. The right edge is anchored to <see cref="AsOfDate"/> (a fixed
+    /// literal, not <c>DateTime.Today</c>) so the artifact stays
+    /// reproducible across runs while still reading as a fresh
+    /// "trailing one year" chart.
+    /// </summary>
+    static List<Candle> NvdaShapedCandles(int count)
+    {
+        // Build the trading-day axis ending at AsOfDate by walking backward,
+        // then reverse to ascending order. This keeps the regime mapping (i=0
+        // → oldest "spring rally" candles, i=count-1 → newest "winter
+        // recovery" candle) anchored to the right edge of the chart.
+        var dates = new List<DateTime>(count);
+        DateTime day = AsOfDate;
+        for (int i = 0; i < count; i++)
+        {
+            dates.Add(day);
+            day = day.AddDays(-1);
+            while (day.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday)
+                day = day.AddDays(-1);
+        }
+        dates.Reverse();
+
+        var rng = new Random(42);
+        var candles = new List<Candle>(count);
+        decimal price = 82m;
+
+        for (int i = 0; i < count; i++)
+        {
+            // Long-horizon drift: rally → chop → correction → recovery.
+            decimal drift = i switch
+            {
+                < 80 => 0.35m,
+                < 140 => 0.10m,
+                < 165 => -0.85m,
+                _ => 0.30m,
+            };
+            decimal noise = (decimal)(rng.NextDouble() - 0.5) * 1.6m;
+            decimal open = price;
+            decimal close = Math.Max(20m, open + drift + noise);
+            decimal high = Math.Max(open, close) + (decimal)rng.NextDouble() * 0.8m;
+            decimal low = Math.Min(open, close) - (decimal)rng.NextDouble() * 0.8m;
+
+            // Volume spikes around the drawdown so the volume sub-plot picks up.
+            long volume = 220_000_000L + rng.Next(0, 80_000_000);
+            if (i is >= 140 and <= 170) volume += 100_000_000;
+
+            candles.Add(new Candle(dates[i], open, high, low, close, volume));
+            price = close;
+        }
+
+        return candles;
+    }
+
+    /// <summary>
+    /// "As-of" anchor for the NVDA chart's right edge — a Friday near the
+    /// v1.3 release-prep date (2026-05-24). Kept literal so test artifacts
+    /// stay byte-stable across runs.
+    /// </summary>
+    static readonly DateTime AsOfDate = new(2026, 5, 22);
 
     /// <summary>
     /// A semiconductor-ETF-shaped holdings list (heavy top-two, long thin

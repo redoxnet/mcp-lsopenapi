@@ -1021,6 +1021,511 @@
       "rate_limit_per_sec": 1
     },
     {
+      "tr_code": "g3101",
+      "name": "해외주식 현재가 조회",
+      "category": "해외주식시세",
+      "path": "/overseas-stock/market-data",
+      "description": "해외주식 단일 종목의 현재가, 등락률, 거래량, 52주 범위, PER/EPS 등 스냅샷을 조회합니다. 예: exchcd=82, symbol=TSLA, keysymbol=82TSLA.",
+      "in_blocks": [
+        {
+          "name": "g3101InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "delaygb", "type": "char", "description": "지연구분", "required": true, "length": 1, "example": "R" },
+            { "name": "keysymbol", "type": "char", "description": "KEY종목코드 (거래소코드+심볼)", "required": true, "length": 18, "example": "82TSLA" },
+            { "name": "exchcd", "type": "char", "description": "거래소코드 (81 뉴욕/아멕스, 82 나스닥)", "required": true, "length": 2, "example": "82" },
+            { "name": "symbol", "type": "char", "description": "종목코드", "required": true, "length": 16, "example": "TSLA" }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "g3101OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "delaygb", "type": "char", "description": "지연구분" },
+            { "name": "keysymbol", "type": "char", "description": "KEY종목코드", "length": 18 },
+            { "name": "exchcd", "type": "char", "description": "거래소코드", "length": 2 },
+            { "name": "exchange", "type": "char", "description": "거래소ID", "length": 4 },
+            { "name": "suspend", "type": "char", "description": "거래상태 (Y 정지, N 보통)", "length": 1 },
+            { "name": "sellonly", "type": "char", "description": "매매구분" },
+            { "name": "symbol", "type": "char", "description": "종목코드", "length": 16 },
+            { "name": "korname", "type": "char", "description": "한글종목명" },
+            { "name": "induname", "type": "char", "description": "업종한글명" },
+            { "name": "low52p", "type": "double", "description": "52주 최저가" },
+            { "name": "floatpoint", "type": "char", "description": "소수점 자릿수" },
+            { "name": "currency", "type": "char", "description": "거래통화" },
+            { "name": "price", "type": "double", "description": "현재가" },
+            { "name": "sign", "type": "char", "description": "전일대비구분", "length": 1 },
+            { "name": "diff", "type": "double", "description": "전일대비" },
+            { "name": "rate", "type": "double", "description": "등락률" },
+            { "name": "volume", "type": "long", "description": "거래량" },
+            { "name": "amount", "type": "long", "description": "거래대금" },
+            { "name": "high52p", "type": "double", "description": "52주 최고가" },
+            { "name": "uplimit", "type": "double", "description": "상한가" },
+            { "name": "dnlimit", "type": "double", "description": "하한가" },
+            { "name": "open", "type": "double", "description": "시가" },
+            { "name": "high", "type": "double", "description": "고가" },
+            { "name": "low", "type": "double", "description": "저가" },
+            { "name": "perv", "type": "double", "description": "PER" },
+            { "name": "epsv", "type": "double", "description": "EPS" }
+          ]
+        }
+      ],
+      "continuation": { "supported": false },
+      "rate_limit_per_sec": 10
+    },
+    {
+      "tr_code": "g3102",
+      "name": "해외주식 시간대별 체결",
+      "category": "해외주식시세",
+      "path": "/overseas-stock/market-data",
+      "description": "해외주식 단일 종목의 시간대별 체결/가격 흐름을 조회합니다. cts_seq 본문 커서로 연속조회합니다.",
+      "in_blocks": [
+        {
+          "name": "g3102InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "delaygb", "type": "char", "description": "지연구분", "required": true, "length": 1, "example": "R" },
+            { "name": "keysymbol", "type": "char", "description": "KEY종목코드", "required": true, "length": 18, "example": "82TSLA" },
+            { "name": "exchcd", "type": "char", "description": "거래소코드", "required": true, "length": 2 },
+            { "name": "readcnt", "type": "int", "description": "조회건수", "required": true },
+            { "name": "cts_seq", "type": "long", "description": "연속시퀀스", "required": true }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "g3102OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "delaygb", "type": "char", "description": "지연구분" },
+            { "name": "keysymbol", "type": "char", "description": "KEY종목코드" },
+            { "name": "exchcd", "type": "char", "description": "거래소코드" },
+            { "name": "symbol", "type": "char", "description": "종목코드" },
+            { "name": "cts_seq", "type": "long", "description": "연속시퀀스" },
+            { "name": "rec_count", "type": "int", "description": "레코드카운트" }
+          ]
+        },
+        {
+          "name": "g3102OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "locdate", "type": "char", "description": "현지일자", "length": 8 },
+            { "name": "loctime", "type": "char", "description": "현지시간", "length": 6 },
+            { "name": "kordate", "type": "char", "description": "한국일자", "length": 8 },
+            { "name": "kortime", "type": "char", "description": "한국시간", "length": 6 },
+            { "name": "price", "type": "double", "description": "현재가" },
+            { "name": "sign", "type": "char", "description": "전일대비구분" },
+            { "name": "diff", "type": "double", "description": "전일대비" },
+            { "name": "rate", "type": "double", "description": "등락률" },
+            { "name": "open", "type": "double", "description": "시가" },
+            { "name": "high", "type": "double", "description": "고가" },
+            { "name": "low", "type": "double", "description": "저가" },
+            { "name": "exevol", "type": "long", "description": "체결량" },
+            { "name": "cgubun", "type": "char", "description": "체결구분" },
+            { "name": "floatpoint", "type": "char", "description": "소수점 자릿수" }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "key_fields": [ "cts_seq" ] },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "g3104",
+      "name": "해외주식 종목정보 조회",
+      "category": "해외주식시세",
+      "path": "/overseas-stock/market-data",
+      "description": "해외주식 단일 종목의 회사/증권 종류, 거래통화, 주문단위, 시가총액, 52주 범위, 환율 등 상세 종목정보를 조회합니다.",
+      "in_blocks": [
+        {
+          "name": "g3104InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "delaygb", "type": "char", "description": "지연구분", "required": true, "length": 1, "example": "R" },
+            { "name": "keysymbol", "type": "char", "description": "KEY종목코드", "required": true, "length": 18, "example": "82TSLA" },
+            { "name": "exchcd", "type": "char", "description": "거래소코드", "required": true, "length": 2 },
+            { "name": "symbol", "type": "char", "description": "종목코드", "required": true, "length": 16 }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "g3104OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "keysymbol", "type": "char", "description": "KEY종목코드" },
+            { "name": "exchcd", "type": "char", "description": "거래소코드" },
+            { "name": "exchange", "type": "char", "description": "거래소ID" },
+            { "name": "symbol", "type": "char", "description": "종목코드" },
+            { "name": "korname", "type": "char", "description": "한글종목명" },
+            { "name": "engname", "type": "char", "description": "영문종목명" },
+            { "name": "exchange_name", "type": "char", "description": "거래소명" },
+            { "name": "nation_name", "type": "char", "description": "국가명" },
+            { "name": "induname", "type": "char", "description": "업종명" },
+            { "name": "instname", "type": "char", "description": "증권종류" },
+            { "name": "currency", "type": "char", "description": "거래통화" },
+            { "name": "suspend", "type": "char", "description": "거래상태" },
+            { "name": "sellonly", "type": "char", "description": "매매구분" },
+            { "name": "share", "type": "long", "description": "발행주식수" },
+            { "name": "untprc", "type": "double", "description": "호가단위" },
+            { "name": "volume", "type": "long", "description": "거래량" },
+            { "name": "amount", "type": "long", "description": "거래대금" },
+            { "name": "pcls", "type": "double", "description": "전일종가" },
+            { "name": "clos", "type": "double", "description": "기준가" },
+            { "name": "open", "type": "double", "description": "시가" },
+            { "name": "high", "type": "double", "description": "고가" },
+            { "name": "low", "type": "double", "description": "저가" },
+            { "name": "high52p", "type": "double", "description": "52주 고가" },
+            { "name": "low52p", "type": "double", "description": "52주 저가" },
+            { "name": "shareprc", "type": "long", "description": "시가총액" },
+            { "name": "perv", "type": "double", "description": "PER" },
+            { "name": "epsv", "type": "double", "description": "EPS" },
+            { "name": "exrate", "type": "double", "description": "환율" },
+            { "name": "bidlotsize2", "type": "char", "description": "매수주문단위" },
+            { "name": "asklotsize2", "type": "char", "description": "매도주문단위" }
+          ]
+        }
+      ],
+      "continuation": { "supported": false },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "g3106",
+      "name": "해외주식 현재가호가 조회",
+      "category": "해외주식시세",
+      "path": "/overseas-stock/market-data",
+      "description": "해외주식 단일 종목의 현재가와 10단계 매도/매수 호가, 잔량, 호가건수를 조회합니다.",
+      "in_blocks": [
+        {
+          "name": "g3106InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "delaygb", "type": "char", "description": "지연구분", "required": true, "length": 1, "example": "R" },
+            { "name": "keysymbol", "type": "char", "description": "KEY종목코드", "required": true, "length": 18, "example": "82TSLA" },
+            { "name": "exchcd", "type": "char", "description": "거래소코드", "required": true, "length": 2 },
+            { "name": "symbol", "type": "char", "description": "종목코드", "required": true, "length": 16 }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "g3106OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "symbol", "type": "char", "description": "종목코드" },
+            { "name": "korname", "type": "char", "description": "한글종목명" },
+            { "name": "price", "type": "double", "description": "현재가" },
+            { "name": "sign", "type": "char", "description": "전일대비구분" },
+            { "name": "diff", "type": "double", "description": "전일대비" },
+            { "name": "rate", "type": "double", "description": "등락률" },
+            { "name": "volume", "type": "long", "description": "누적거래량" },
+            { "name": "amount", "type": "long", "description": "누적거래대금" },
+            { "name": "hotime", "type": "char", "description": "호가수신시간", "length": 6 },
+            { "name": "offercnt", "type": "char", "description": "매도호가건수합" },
+            { "name": "bidcnt", "type": "char", "description": "매수호가건수합" },
+            { "name": "offer", "type": "long", "description": "매도호가잔량합" },
+            { "name": "bid", "type": "long", "description": "매수호가잔량합" },
+            { "name": "offerho1", "type": "double", "description": "매도호가1" },
+            { "name": "bidho1", "type": "double", "description": "매수호가1" },
+            { "name": "offerrem1", "type": "long", "description": "매도호가잔량1" },
+            { "name": "bidrem1", "type": "long", "description": "매수호가잔량1" },
+            { "name": "offerho10", "type": "double", "description": "매도호가10" },
+            { "name": "bidho10", "type": "double", "description": "매수호가10" },
+            { "name": "offerrem10", "type": "long", "description": "매도호가잔량10" },
+            { "name": "bidrem10", "type": "long", "description": "매수호가잔량10" }
+          ]
+        }
+      ],
+      "continuation": { "supported": false },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "g3190",
+      "name": "해외주식 마스터 조회",
+      "category": "해외주식시세",
+      "path": "/overseas-stock/market-data",
+      "description": "해외주식 종목 마스터 목록을 국가/거래소 단위로 조회합니다. keysymbol, exchcd, symbol, 한글/영문명, 통화, ISIN, 상장일자 등을 반환합니다.",
+      "in_blocks": [
+        {
+          "name": "g3190InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "delaygb", "type": "char", "description": "지연구분", "required": true, "length": 1, "example": "R" },
+            { "name": "natcode", "type": "char", "description": "국가구분", "required": true, "length": 2, "example": "US" },
+            { "name": "exgubun", "type": "char", "description": "거래소구분 (1 뉴욕/아멕스, 2 나스닥, 0 전체)", "required": true, "length": 1, "example": "2" },
+            { "name": "readcnt", "type": "int", "description": "조회건수", "required": true },
+            { "name": "cts_value", "type": "char", "description": "연속구분", "required": true, "length": 16 }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "g3190OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "delaygb", "type": "char", "description": "지연구분" },
+            { "name": "natcode", "type": "char", "description": "국가구분" },
+            { "name": "exgubun", "type": "char", "description": "거래소구분" },
+            { "name": "cts_value", "type": "char", "description": "연속구분" },
+            { "name": "rec_count", "type": "int", "description": "레코드카운트" }
+          ]
+        },
+        {
+          "name": "g3190OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "keysymbol", "type": "char", "description": "KEY종목코드", "length": 18 },
+            { "name": "natcode", "type": "char", "description": "국가코드", "length": 2 },
+            { "name": "exchcd", "type": "char", "description": "거래소코드", "length": 2 },
+            { "name": "symbol", "type": "char", "description": "종목코드", "length": 16 },
+            { "name": "seccode", "type": "char", "description": "거래소종목코드" },
+            { "name": "korname", "type": "char", "description": "한글종목명" },
+            { "name": "engname", "type": "char", "description": "영문종목명" },
+            { "name": "currency", "type": "char", "description": "외환코드" },
+            { "name": "isin", "type": "char", "description": "ISIN" },
+            { "name": "floatpoint", "type": "char", "description": "소수점 자릿수" },
+            { "name": "indusury", "type": "char", "description": "업종코드" },
+            { "name": "share", "type": "long", "description": "상장주식수" },
+            { "name": "marketcap", "type": "long", "description": "자본금" },
+            { "name": "clos", "type": "double", "description": "기준가" },
+            { "name": "listed_date", "type": "char", "description": "상장일자" },
+            { "name": "expire_date", "type": "char", "description": "만기일자" },
+            { "name": "suspend", "type": "char", "description": "거래정지여부" },
+            { "name": "sellonly", "type": "char", "description": "SELLONLY구분" },
+            { "name": "point", "type": "char", "description": "소수점매매가능종목" }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "key_fields": [ "cts_value" ] },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "g3103",
+      "name": "해외주식 일주월 조회",
+      "category": "해외주식차트",
+      "path": "/overseas-stock/chart",
+      "description": "해외주식 일/주/월 단위 OHLCV를 조회합니다. v1.3 semantic wrapper는 더 범용적인 g3204를 우선 사용합니다.",
+      "in_blocks": [
+        {
+          "name": "g3103InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "delaygb", "type": "char", "description": "지연구분", "required": true, "length": 1 },
+            { "name": "keysymbol", "type": "char", "description": "KEY종목코드", "required": true, "length": 18 },
+            { "name": "exchcd", "type": "char", "description": "거래소코드", "required": true, "length": 2 },
+            { "name": "symbol", "type": "char", "description": "종목코드", "required": true, "length": 16 },
+            { "name": "gubun", "type": "char", "description": "주기구분", "required": true, "length": 1 },
+            { "name": "date", "type": "char", "description": "조회일자", "required": true, "length": 8 }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "g3103OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "keysymbol", "type": "char", "description": "KEY종목코드" },
+            { "name": "exchcd", "type": "char", "description": "거래소코드" },
+            { "name": "symbol", "type": "char", "description": "종목코드" },
+            { "name": "gubun", "type": "char", "description": "주기구분" },
+            { "name": "date", "type": "char", "description": "조회일자" }
+          ]
+        },
+        {
+          "name": "g3103OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "chedate", "type": "char", "description": "영업일자", "length": 8 },
+            { "name": "price", "type": "double", "description": "현재가" },
+            { "name": "sign", "type": "char", "description": "전일대비구분" },
+            { "name": "diff", "type": "double", "description": "전일대비" },
+            { "name": "rate", "type": "double", "description": "등락률" },
+            { "name": "volume", "type": "long", "description": "누적거래량" },
+            { "name": "open", "type": "double", "description": "시가" },
+            { "name": "high", "type": "double", "description": "고가" },
+            { "name": "low", "type": "double", "description": "저가" },
+            { "name": "floatpoint", "type": "char", "description": "소수점 자릿수" }
+          ]
+        }
+      ],
+      "continuation": { "supported": false },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "g3202",
+      "name": "해외주식 차트 N틱 조회",
+      "category": "해외주식차트",
+      "path": "/overseas-stock/chart",
+      "description": "해외주식 n틱 OHLCV 차트를 조회합니다. cts_seq 본문 커서로 연속조회합니다.",
+      "in_blocks": [
+        {
+          "name": "g3202InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "delaygb", "type": "char", "description": "지연구분", "required": true, "length": 1 },
+            { "name": "keysymbol", "type": "char", "description": "KEY종목코드", "required": true, "length": 18 },
+            { "name": "exchcd", "type": "char", "description": "거래소코드", "required": true, "length": 2 },
+            { "name": "symbol", "type": "char", "description": "종목코드", "required": true, "length": 16 },
+            { "name": "ncnt", "type": "int", "description": "단위(n틱)", "required": true },
+            { "name": "qrycnt", "type": "int", "description": "요청건수", "required": true },
+            { "name": "comp_yn", "type": "char", "description": "압축여부", "required": true, "length": 1 },
+            { "name": "sdate", "type": "char", "description": "시작일자", "required": true, "length": 8 },
+            { "name": "edate", "type": "char", "description": "종료일자", "required": true, "length": 8 },
+            { "name": "cts_seq", "type": "long", "description": "연속시퀀스", "required": true }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "g3202OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "keysymbol", "type": "char", "description": "KEY종목코드" },
+            { "name": "exchcd", "type": "char", "description": "거래소코드" },
+            { "name": "symbol", "type": "char", "description": "종목코드" },
+            { "name": "cts_seq", "type": "long", "description": "연속시퀀스" },
+            { "name": "rec_count", "type": "int", "description": "레코드카운트" }
+          ]
+        },
+        {
+          "name": "g3202OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "date", "type": "char", "description": "날짜", "length": 8 },
+            { "name": "loctime", "type": "char", "description": "현지시간", "length": 6 },
+            { "name": "open", "type": "double", "description": "시가" },
+            { "name": "high", "type": "double", "description": "고가" },
+            { "name": "low", "type": "double", "description": "저가" },
+            { "name": "close", "type": "double", "description": "종가" },
+            { "name": "exevol", "type": "long", "description": "체결량" },
+            { "name": "jongchk", "type": "long", "description": "수정구분" },
+            { "name": "pricechk", "type": "long", "description": "수정주가반영항목" },
+            { "name": "sign", "type": "char", "description": "종가등락구분" }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "key_fields": [ "cts_seq" ] },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "g3203",
+      "name": "해외주식 차트 N분 조회",
+      "category": "해외주식차트",
+      "path": "/overseas-stock/chart",
+      "description": "해외주식 n분 OHLCV 차트를 조회합니다. cts_date/cts_time 본문 커서로 연속조회합니다.",
+      "in_blocks": [
+        {
+          "name": "g3203InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "delaygb", "type": "char", "description": "지연구분", "required": true, "length": 1 },
+            { "name": "keysymbol", "type": "char", "description": "KEY종목코드", "required": true, "length": 18 },
+            { "name": "exchcd", "type": "char", "description": "거래소코드", "required": true, "length": 2 },
+            { "name": "symbol", "type": "char", "description": "종목코드", "required": true, "length": 16 },
+            { "name": "ncnt", "type": "int", "description": "단위(n분)", "required": true },
+            { "name": "qrycnt", "type": "int", "description": "요청건수", "required": true },
+            { "name": "comp_yn", "type": "char", "description": "압축여부", "required": true, "length": 1 },
+            { "name": "sdate", "type": "char", "description": "시작일자", "required": true, "length": 8 },
+            { "name": "edate", "type": "char", "description": "종료일자", "required": true, "length": 8 },
+            { "name": "cts_date", "type": "char", "description": "연속일자", "required": true, "length": 8 },
+            { "name": "cts_time", "type": "char", "description": "연속시간", "required": true, "length": 6 }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "g3203OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "keysymbol", "type": "char", "description": "KEY종목코드" },
+            { "name": "exchcd", "type": "char", "description": "거래소코드" },
+            { "name": "symbol", "type": "char", "description": "종목코드" },
+            { "name": "cts_date", "type": "char", "description": "연속일자" },
+            { "name": "cts_time", "type": "char", "description": "연속시간" },
+            { "name": "rec_count", "type": "int", "description": "레코드카운트" }
+          ]
+        },
+        {
+          "name": "g3203OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "date", "type": "char", "description": "날짜", "length": 8 },
+            { "name": "loctime", "type": "char", "description": "현지시간", "length": 6 },
+            { "name": "open", "type": "double", "description": "시가" },
+            { "name": "high", "type": "double", "description": "고가" },
+            { "name": "low", "type": "double", "description": "저가" },
+            { "name": "close", "type": "double", "description": "종가" },
+            { "name": "exevol", "type": "long", "description": "체결량" },
+            { "name": "amount", "type": "long", "description": "거래대금" }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "key_fields": [ "cts_date", "cts_time" ] },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "g3204",
+      "name": "해외주식 차트 일주월년별 조회",
+      "category": "해외주식차트",
+      "path": "/overseas-stock/chart",
+      "description": "해외주식 일/주/월/년 OHLCV 차트를 조회합니다. 수정주가 적용 여부와 cts_date/cts_info 본문 커서를 지원합니다.",
+      "in_blocks": [
+        {
+          "name": "g3204InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "sujung", "type": "char", "description": "수정주가여부 (Y/N)", "required": true, "length": 1 },
+            { "name": "delaygb", "type": "char", "description": "지연구분", "required": true, "length": 1 },
+            { "name": "keysymbol", "type": "char", "description": "KEY종목코드", "required": true, "length": 18 },
+            { "name": "exchcd", "type": "char", "description": "거래소코드", "required": true, "length": 2 },
+            { "name": "symbol", "type": "char", "description": "종목코드", "required": true, "length": 16 },
+            { "name": "gubun", "type": "char", "description": "주기구분 (2일 3주 4월 5년)", "required": true, "length": 1 },
+            { "name": "qrycnt", "type": "int", "description": "요청건수", "required": true },
+            { "name": "comp_yn", "type": "char", "description": "압축여부", "required": true, "length": 1 },
+            { "name": "sdate", "type": "char", "description": "시작일자", "required": true, "length": 8 },
+            { "name": "edate", "type": "char", "description": "종료일자", "required": true, "length": 8 },
+            { "name": "cts_date", "type": "char", "description": "연속일자", "required": false, "length": 8 },
+            { "name": "cts_info", "type": "char", "description": "연속정보", "required": false, "length": 6 }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "g3204OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "keysymbol", "type": "char", "description": "KEY종목코드" },
+            { "name": "exchcd", "type": "char", "description": "거래소코드" },
+            { "name": "symbol", "type": "char", "description": "종목코드" },
+            { "name": "cts_date", "type": "char", "description": "연속일자" },
+            { "name": "cts_info", "type": "char", "description": "연속정보" },
+            { "name": "rec_count", "type": "int", "description": "레코드카운트" }
+          ]
+        },
+        {
+          "name": "g3204OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "date", "type": "char", "description": "날짜", "length": 8 },
+            { "name": "open", "type": "double", "description": "시가" },
+            { "name": "high", "type": "double", "description": "고가" },
+            { "name": "low", "type": "double", "description": "저가" },
+            { "name": "close", "type": "double", "description": "종가" },
+            { "name": "volume", "type": "long", "description": "거래량" },
+            { "name": "amount", "type": "long", "description": "거래대금" },
+            { "name": "jongchk", "type": "long", "description": "수정구분" },
+            { "name": "prtt_rate", "type": "double", "description": "수정비율" },
+            { "name": "pricechk", "type": "long", "description": "수정주가반영항목" },
+            { "name": "ratevalue", "type": "long", "description": "수정비율반영거래대금" },
+            { "name": "sign", "type": "char", "description": "종가등락구분" }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "key_fields": [ "cts_date", "cts_info" ] },
+      "rate_limit_per_sec": 1
+    },
+    {
       "tr_code": "t3320",
       "name": "FNG_요약 (투자정보 요약)",
       "category": "투자정보",

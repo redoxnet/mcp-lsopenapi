@@ -42,6 +42,7 @@ public class UiResourcesTests
     [InlineData("ls_get_chart")]
     [InlineData("ls_add_indicator")]
     [InlineData("ls_reframe_chart")]
+    [InlineData("ls_get_overseas_chart")]
     [InlineData("ls_get_etf_holdings")]
     [InlineData("ls_get_program_trading")]
     public void ApplyChartSurface_Sep1865_AttachesNestedMetaUi(string toolName)

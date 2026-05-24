@@ -43,6 +43,8 @@ public sealed class ToolSurfaceFreezeTests
         "ls_get_market_funds_trend",
         "ls_get_market_warnings",
         "ls_get_multi_quote",
+        "ls_get_overseas_chart",
+        "ls_get_overseas_quote",
         "ls_get_program_trading",
         "ls_get_quote",
         "ls_get_short_selling_trend",
@@ -55,6 +57,7 @@ public sealed class ToolSurfaceFreezeTests
         "ls_holdings_list",
         "ls_portfolio_io",
         "ls_reframe_chart",
+        "ls_search_overseas_stock",
         "ls_search_stock",
         "ls_stocks_refresh_metadata",
         "ls_watched_themes",
@@ -75,7 +78,7 @@ public sealed class ToolSurfaceFreezeTests
         IReadOnlyList<ToolSurface> tools = DiscoverSurface(ToolProfile.Resolve("standard", null));
 
         tools.Select(t => t.Name).Should().Equal(StandardToolNames.Order(StringComparer.Ordinal));
-        tools.Should().HaveCount(34);
+        tools.Should().HaveCount(37);
     }
 
     [Fact]
@@ -84,7 +87,7 @@ public sealed class ToolSurfaceFreezeTests
         IReadOnlyList<ToolSurface> tools = DiscoverSurface(ToolProfile.Resolve("all", null));
 
         tools.Select(t => t.Name).Should().Equal(AllToolNames.Order(StringComparer.Ordinal));
-        tools.Should().HaveCount(37);
+        tools.Should().HaveCount(40);
     }
 
     [Fact]
