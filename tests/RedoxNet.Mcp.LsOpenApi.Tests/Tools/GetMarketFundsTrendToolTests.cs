@@ -78,7 +78,7 @@ public sealed class GetMarketFundsTrendToolTests
     }
 
     [Fact]
-    public async Task GetMarketFundsTrend_QueryDateWeekend_UsesPriorFriday()
+    public async Task GetMarketFundsTrend_QueryDateWeekend_UsesPriorFriday_AndAnchorsToActualLatestRow()
     {
         var (client, handler) = TestClientFactory.Create((_, _) => Ok(Sample));
 
@@ -86,8 +86,12 @@ public sealed class GetMarketFundsTrendToolTests
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         string body = await handler.Requests[0].Content!.ReadAsStringAsync();
+        // tdate forwarded to LS reflects the resolved query day (weekend -> Friday).
         body.Should().Contain("\"tdate\":\"20260522\"");
-        root.GetProperty("data_as_of").GetString().Should().Be("20260522");
+        // data_as_of reflects the actual latest series row, not the query day.
+        // The Sample fixture's latest row is 20260518; data_as_of anchors there
+        // because t8428 publishing lag means the row date can trail the query day.
+        root.GetProperty("data_as_of").GetString().Should().Be("20260518");
         root.GetProperty("query_date_resolution").GetString().Should().Be("weekend");
     }
 

@@ -75,7 +75,7 @@ public sealed class GetShortSellingTrendToolTests
     }
 
     [Fact]
-    public async Task GetShortSellingTrend_QueryDateWeekend_UsesPriorFridayWhenToOmitted()
+    public async Task GetShortSellingTrend_QueryDateWeekend_UsesPriorFridayWhenToOmitted_AndAnchorsToActualLatestRow()
     {
         var (client, handler) = TestClientFactory.Create((_, _) => Ok(Sample));
 
@@ -86,8 +86,11 @@ public sealed class GetShortSellingTrendToolTests
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         string body = await handler.Requests[0].Content!.ReadAsStringAsync();
+        // edate forwarded to LS reflects the resolved query day (weekend -> Friday).
         body.Should().Contain("\"edate\":\"20260522\"");
-        root.GetProperty("data_as_of").GetString().Should().Be("20260522");
+        // data_as_of reflects the actual latest series row, not the query day —
+        // t1927 has T+1 publishing lag and short-sale data can trail.
+        root.GetProperty("data_as_of").GetString().Should().Be("20230601");
         root.GetProperty("query_date_resolution").GetString().Should().Be("weekend");
     }
 

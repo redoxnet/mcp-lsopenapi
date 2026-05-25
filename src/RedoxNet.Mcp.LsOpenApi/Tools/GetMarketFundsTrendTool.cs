@@ -31,6 +31,8 @@ public static class GetMarketFundsTrendTool
         AVOID WHEN: the user wants per-stock investor flow (use ls_get_investor_flow) or an index time series (use ls_get_index_history).
 
         `market` selects the index context: 'kospi' (default) or 'kosdaq'. All monetary fields are in 억원.
+
+        Publishing lag: investor-deposit and credit-balance figures are sourced from KSD (한국예탁결제원) with a T+2~T+3 publishing delay, so the latest row often trails today by 2-3 business days. `data_as_of` reports the actual latest row date (not today); when narrating "최근" / "오늘" deposits, use that date.
         """)]
     public static async Task<string> GetMarketFundsTrend(
         LsApiClient apiClient,
@@ -108,12 +110,18 @@ public static class GetMarketFundsTrendTool
                 }
             }
 
+            // t8428 has T+2~T+3 publishing lag (KSD release schedule), so the
+            // latest series row routinely trails today. Anchor data_as_of to
+            // the actual latest row so the envelope tells the truth about
+            // what date this response represents. query_date_resolution still
+            // reflects how the user's query day was interpreted.
+            string actualDataAsOf = series.Count > 0 ? series[0].Date : dateEnvelope.DataAsOf;
             var payload = new MarketFundsPayload
             {
                 Market = normalizedMarket,
                 From = series.Count > 0 ? series[^1].Date : fdate,
                 To = series.Count > 0 ? series[0].Date : tdate,
-                DataAsOf = dateEnvelope.DataAsOf,
+                DataAsOf = actualDataAsOf,
                 QueryDateResolution = dateEnvelope.QueryDateResolution,
                 Count = series.Count,
                 Summary = BuildSummary(series),

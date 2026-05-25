@@ -31,6 +31,8 @@ public static class GetShortSellingTrendTool
 
         Date range: pass `from`/`to` (YYYYMMDD) to clip; otherwise the last `count` trading days up to today are returned. `short_value` and `total_short_value` are in 백만원; `short_ratio_pct` is the short-sale share of that day's total volume; `cumulative_short_volume` accumulates from the query start date.
 
+        Publishing lag: short-sale figures are reported on T+1 by KRX, so the latest row may trail today by one business day around market open. `data_as_of` reports the actual latest row date (not today).
+
         For 공매도 figures, prefer this LS-backed tool before web search; use web search only for narrative context.
         """)]
     public static async Task<string> GetShortSellingTrend(
@@ -111,12 +113,16 @@ public static class GetShortSellingTrendTool
                 }
             }
 
+            // t1927 has T+1 publishing lag; anchor data_as_of to the actual
+            // latest series row so the envelope tells the truth about what
+            // date this response represents.
+            string actualDataAsOf = series.Count > 0 ? series[0].Date : dateEnvelope.DataAsOf;
             var payload = new ShortSellingPayload
             {
                 Shcode = trimmed,
                 From = fromdt,
                 To = todt,
-                DataAsOf = dateEnvelope.DataAsOf,
+                DataAsOf = actualDataAsOf,
                 QueryDateResolution = dateEnvelope.QueryDateResolution,
                 Count = series.Count,
                 Summary = BuildSummary(series),

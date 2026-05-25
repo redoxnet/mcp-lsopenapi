@@ -18,9 +18,9 @@ public sealed class ServerInstructionsTests
     {
         ServerInstructions.Text.Should().NotBeNullOrWhiteSpace();
         // A system-message-level instruction — comprehensive but not an essay.
-        // Budget bumped to 3000 in v1.4 to cover the Q-Click signal catalog
-        // paragraph (~80 tokens / ~400 chars).
-        ServerInstructions.Text.Length.Should().BeInRange(200, 3000);
+        // Budget bumped to 3500 in v1.4 to cover the Q-Click signal catalog
+        // paragraph plus the envelope-narration guide (~150 tokens / ~700 chars).
+        ServerInstructions.Text.Length.Should().BeInRange(200, 3500);
     }
 
     [Theory]
@@ -38,6 +38,9 @@ public sealed class ServerInstructionsTests
     [InlineData("ls_list_screeners")]           // Q-Click discovery entry point (v1.4)
     [InlineData("ls_combine_screeners")]        // compound AND/OR screening (v1.4)
     [InlineData("LS-curated catalog")]          // catalog provenance is curated, not user-saved (v1.4)
+    [InlineData("data_as_of")]                  // envelope field surfaced in natural language (v1.4)
+    [InlineData("query_date_resolution")]       // envelope resolution field (v1.4)
+    [InlineData("trails today")]                // KSD lag wording — model must not claim "today's data" when stale (v1.4)
     public void Text_CarriesTheRoutingBoundaryPhrase(string phrase)
     {
         ServerInstructions.Text.Should().Contain(phrase);
