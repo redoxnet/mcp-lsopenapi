@@ -277,13 +277,22 @@ public static class ScreenerTools
             IReadOnlyList<ScreenerInfo> catalog = await GetCatalogAsync(apiClient, cancellationToken).ConfigureAwait(false);
 
             var resolved = new List<ScreenerInfo>();
+            var resolvedIds = new HashSet<string>(StringComparer.Ordinal);
             var ambiguous = new Dictionary<string, IReadOnlyList<ScreenerInfo>>(StringComparer.Ordinal);
             var notFound = new List<string>();
             foreach (string entry in cleaned)
             {
                 ScreenerResolution res = ResolveSignal(catalog, entry);
                 if (res.Single is not null)
-                    resolved.Add(res.Single);
+                {
+                    // Dedupe by id: two different user inputs that resolve to
+                    // the same signal (e.g. "6116" + "골든크로스(5,20)") become
+                    // one t1825 call. signals_resolved reflects the unique
+                    // count so the model can spot when the user named the
+                    // same signal twice.
+                    if (resolvedIds.Add(res.Single.Id))
+                        resolved.Add(res.Single);
+                }
                 else if (res.Candidates.Count >= 2)
                     ambiguous[entry] = res.Candidates;
                 else

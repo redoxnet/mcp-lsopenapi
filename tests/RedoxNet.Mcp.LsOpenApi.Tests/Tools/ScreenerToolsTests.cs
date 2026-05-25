@@ -362,6 +362,36 @@ public sealed class ScreenerToolsTests
     }
 
     [Fact]
+    public async Task CombineScreeners_DuplicateInputs_Deduplicate()
+    {
+        // Two user inputs that resolve to the same id (the 4-digit code and
+        // the exact name) must produce a single t1825 call and a single
+        // signals_resolved entry, not two of each.
+        var (client, handler) = CatalogClient();
+
+        string result = await ScreenerTools.CombineScreeners(
+            client,
+            signals: new[] { "6116", "이평 골든크로스(5,20)" },
+            mode: "and",
+            limit: 5);
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        root.GetProperty("signals_resolved").GetArrayLength().Should().Be(1,
+            "the two inputs resolve to the same id 6116");
+
+        // 5 t1826 catalog calls (cache seed across the five groups) + 1 t1825
+        // execution. If dedupe had failed, this would be 7 (two t1825 calls).
+        handler.Requests.Should().HaveCount(6);
+        int t1825Count = handler.Requests.Count(r => r.Headers.GetValues("tr_cd").Single() == "t1825");
+        t1825Count.Should().Be(1);
+
+        // Each result row reports the signal once, not twice.
+        JsonElement results = root.GetProperty("results");
+        results.EnumerateArray().All(r => r.GetProperty("signals_matched").GetArrayLength() == 1)
+            .Should().BeTrue();
+    }
+
+    [Fact]
     public async Task CombineScreeners_Or_SortsMultiMatchedStocksFirst()
     {
         // 005930 appears in BOTH signal results; 000660 and 035420 each

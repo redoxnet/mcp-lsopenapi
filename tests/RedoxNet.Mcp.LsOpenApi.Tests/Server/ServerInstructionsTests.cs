@@ -18,11 +18,11 @@ public sealed class ServerInstructionsTests
     {
         ServerInstructions.Text.Should().NotBeNullOrWhiteSpace();
         // A system-message-level instruction — comprehensive but not an essay.
-        // Budget bumped to 4200 in v1.4 to cover the Q-Click signal catalog
-        // paragraph, the envelope-narration guide, and the ambiguity-strategy
-        // guide for ls_run_screener / ls_combine_screeners (~200 tokens /
-        // ~1100 chars on top of the v1.2 baseline).
-        ServerInstructions.Text.Length.Should().BeInRange(200, 4200);
+        // Budget bumped to 4800 in v1.4 to cover the Q-Click signal catalog
+        // paragraph, the envelope-narration guide, the ambiguity-strategy
+        // guide, dedupe contract, and the rapid_change noise caveat (~250
+        // tokens / ~1700 chars on top of the v1.2 baseline).
+        ServerInstructions.Text.Length.Should().BeInRange(200, 4800);
     }
 
     [Theory]
@@ -43,6 +43,8 @@ public sealed class ServerInstructionsTests
     [InlineData("data_as_of")]                  // envelope field surfaced in natural language (v1.4)
     [InlineData("query_date_resolution")]       // envelope resolution field (v1.4)
     [InlineData("trails today")]                // KSD lag wording — model must not claim "today's data" when stale (v1.4)
+    [InlineData("deduplicates inputs")]         // ls_combine_screeners dedupe contract (v1.4)
+    [InlineData("rapid_change group")]          // minute-bucket noise caveat anchor (v1.4)
     public void Text_CarriesTheRoutingBoundaryPhrase(string phrase)
     {
         ServerInstructions.Text.Should().Contain(phrase);
