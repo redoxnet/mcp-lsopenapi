@@ -355,68 +355,28 @@ LS server ──(Plotly spec ~1.7k tokens)──▶ Claude context ──(spec �
 
 이건 v1.4-dev 11번째 commit (`60468b2`)의 ServerInstructions hint로 *routing*은 자동화했지만, *토큰 비용 자체*는 그대로다.
 
-### 4.2 두 후보 패턴과 가치 우선순위
+### 4.2 본질 — 모든 호스트가 *같은 데이터*를 받고, *wrap 단계만 다름*
 
-Cowork-class 호스트에는 두 가지 wrap 패턴이 가능하다:
+모든 chart-emitting 도구가 호스트와 *무관하게* 항상 던지는 것:
 
-**(a) `show_widget` / HTML-wrap (Primary in v1.5)**
+- `structuredContent.chart.spec` — Plotly v5 JSON spec. OHLC + volume + 사용자가 요청한 모든 indicator 트레이스(서버 측 계산). 호스트가 어떤 종류든 spec.data는 *동일*.
+- `content[].text` — 자연어 summary.
 
-```html
-<!-- 모델이 출력하는 wrap. spec은 통째로 임베드되어 그대로 plot됨. -->
-<div id="c" style="height:520px"></div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.27.0/plotly.min.js"></script>
-<script>
-  const spec = /* 모델이 우리 응답의 spec.data + spec.layout을 그대로 JSON.stringify로 임베드 */;
-  Plotly.newPlot('c', spec.data, spec.layout, { responsive: true });
-</script>
-```
+호스트가 다른 단 한 가지:
 
-- 토큰 비용: ~3.4k (spec이 모델 출력에 한 번 더 들어감)
-- ✅ **데이터 무결성 보장**: 모델은 *래퍼만* 짜고 spec은 변수로 통째 임베드. 합성 여지 없음.
-- ✅ 호스트 호환성 넓음: show_widget 류 widget tool을 가진 거의 모든 호스트.
-- ❌ 영속성 없음.
+| 호스트 부류 | spec을 어떻게 plot하나 |
+|---|---|
+| AssistStudio (자체 Plotly 보유) | `structuredContent.chart.spec`을 자체 렌더러로 직접 plot. 우리 도움 X. |
+| SEP-1865 Apps-capable | 우리가 같이 보내는 iframe app이 spec을 plot. v1.2 기제 그대로. |
+| Cowork / Claude Desktop (자체 Plotly 없음) | spec을 작은 HTML 스니펫(Plotly CDN + `Plotly.newPlot`)으로 감싸 widget tool에 패스. **wrap만 추가**. |
 
-**(b) `create_artifact` + `callMcpTool` callback (Secondary, opt-in)**
+→ slice C가 추가해야 할 단 하나의 페이로드: **wrap 필요 호스트를 위한 HTML 스니펫 템플릿**. 그게 전부.
 
-```html
-<div id="c" style="height:520px"></div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.27.0/plotly.min.js"></script>
-<script>
-  const r = await window.HOST.callMcpTool('ls_get_chart', { shcode: '005930', ... });
-  const spec = r.structuredContent.chart.spec;  // 브라우저 안에서, 모델 컨텍스트 통과 X
-  Plotly.newPlot('c', spec.data, spec.layout, { responsive: true });
-  // ❌ 추가 indicator 합성 금지 — indicators는 callback args로 재호출.
-</script>
-```
+토큰 절약 / 영속성을 위한 *다른* 패턴들(`create_artifact` + `callMcpTool` callback 등)은 *모델이 JS를 프로그래밍하는* 표면을 만들어 v1.4-dev에서 검증된 fidelity 위험(MA 자체 합성)을 동반. slice C 범위 밖. 토큰 최적화는 v0.10 `output_mode='reference'` + dataset_id, v1.5 slice A 캔들 캐시가 이미 담당.
 
-- 토큰 비용: ~700 (spec 모델 컨텍스트 통과 X)
-- ✅ 영속성: 재접속 시 자동 fresh data
-- ❌ **데이터 무결성 위험**: 모델이 JS를 *프로그래밍*하므로 자체로 indicator 합성 가능. v1.4-dev E2E에서 실제로 발생 — Cowork artifact가 MA5/20/60 trace를 *우리 spec에 없는데도* 그렸음.
-- ❌ artifact API를 가진 특정 호스트(Cowork-class)만 적용.
+### 4.3 디자인 — 단 한 가지 추가
 
-### 4.2.1 가치 우선순위 — 왜 show_widget이 default
-
-Cowork-측 LLM 분석은 *토큰 효율*을 최상위 가치로 잡고 callback 패턴을 제안. 그러나 v1.4-dev 시연이 드러낸 트레이드오프:
-
-| 자원 | callback 패턴 | wrap 패턴 |
-|---|---|---|
-| 토큰 (출력당) | 700 | 3,400 |
-| 데이터 무결성 | 위반 가능 (관찰됨) | 보장 |
-
-**slice C의 진짜 가치는 *호스트 다양성에 걸친 fidelity 일관성*이다** — 토큰은 부차적. 차트가 호스트마다 *다른 데이터*를 그리면(AssistStudio는 verbatim → MA 없음, Cowork artifact는 자체 MA 합성) 같은 도구 호출이 같은 결과를 안 줌. 사용자 신뢰 손상은 한 번이면 충분하다.
-
-추가로, *토큰 절약*은 별도 레이어가 이미 담당:
-- v0.10 dataset-cache + `output_mode='reference'` → 후속 분석에서 dataset_id만 패스
-- v1.5 slice A 캔들 캐시 → 같은 종목 재호출 시 LS round trip 0회
-- v1.5 slice C의 토큰 측면은 *secondary*
-
-→ **v1.5는 show_widget HTML-wrap을 primary fallback으로 default 권장**. artifact callback은 사용자가 *영속성을 명시적으로* 원할 때만 secondary로 옵트인.
-
-### 4.3 디자인 — 세 sub-feature
-
-#### C.1: 응답 페이로드에 `_meta.render_hints` 추가 (**Recommended**)
-
-chart-emitting tool 응답에 *호스트가 해석할 수 있는 렌더 힌트* 박기. **Primary fallback은 wrap (fidelity 우선)**, secondary로 callback (영속성 명시 요청 시).
+#### C.1: 응답에 `_meta.render_hints.wrap_template` 추가
 
 ```jsonc
 {
@@ -424,52 +384,28 @@ chart-emitting tool 응답에 *호스트가 해석할 수 있는 렌더 힌트* 
   "content": [{ "type": "text", "text": "..." }],
   "_meta": {
     "render_hints": {
-      "preferred": "structuredContent.chart",         // Apps-capable / native renderer
-      "fallback": {
-        "kind": "wrap",                               // primary: HTML wrap with spec embedded
-        "html_template": "<div id='c' style='height:520px'></div><script src='https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.27.0/plotly.min.js'></script><script>const spec = SPEC_JSON; Plotly.newPlot('c', spec.data, spec.layout, {responsive: true});</script>",
-        "spec_token": "SPEC_JSON",                    // template placeholder; model inlines the spec verbatim
-        "integrity_note": "Embed the spec verbatim. Do not synthesize MA / RSI / Bollinger / any indicator trace in this JS — calculation is owned by the server. If the user wants an MA overlay, re-call the source tool with indicators=[...]."
-      },
-      "fallback_secondary": {
-        "kind": "artifact_callback",                  // opt-in: persistent + cheap, only when host has artifact API AND user asks for persistence
-        "callback": {
-          "tool": "ls_get_chart",
-          "args": { "shcode": "005930", "period_type": "day", "include_chart": true }
-        },
-        "html_template": "<div id='c' style='height:520px'></div><script src='https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.27.0/plotly.min.js'></script><script>const r = await window.HOST.callMcpTool(CALLBACK.tool, CALLBACK.args); const s = r.structuredContent.chart.spec; Plotly.newPlot('c', s.data, s.layout, {responsive: true});</script>",
-        "integrity_note": "Same rule: render spec.data verbatim. For MA / indicator overlays, change CALLBACK.args.indicators and re-fetch — never compute traces locally."
-      }
+      "preferred": "structuredContent.chart",
+      "wrap_template": "<div id='c' style='height:520px'></div><script src='https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.27.0/plotly.min.js'></script><script>const spec = __SPEC__; Plotly.newPlot('c', spec.data, spec.layout, {responsive: true});</script>",
+      "spec_token": "__SPEC__"
     }
   }
 }
 ```
 
-ServerInstructions 가이드:
-> "When wrapping a chart on a host without a native Plotly renderer, **prefer `fallback.kind=wrap`** by default: it guarantees data integrity (the spec embeds verbatim, the artifact JS cannot diverge from server-side computation). Only switch to `fallback_secondary.kind=artifact_callback` when the user explicitly asks for a *persistent* / *auto-refreshing* chart and the host actually exposes a persistent artifact API. Even in the callback path, never synthesize indicator traces inside the JS — round-trip through callback args."
+호스트별 동작:
+- AssistStudio / SEP-1865 Apps (자체 렌더러): `preferred`만 사용. `wrap_template` 무시.
+- Cowork / Claude Desktop (peer visualize MCP) / 그 외 wrap 필요 host: `wrap_template`의 `spec_token` 자리에 `structuredContent.chart.spec`을 그대로 임베드 → widget tool에 패스.
 
-호스트가 `_meta.render_hints`를 인식하는지에 따라:
-- AssistStudio (native renderer): `preferred` 그대로 사용. fallback 무시.
-- Cowork: `fallback.html_template` + `fallback.callback`을 자기 artifact 도구에 패스. 모델은 hint 보고 한 줄 wrapping만.
-- Claude Desktop SEP-1865: 기존 iframe app 그대로.
-- text-only host: 그대로 무시.
+ServerInstructions:
+> "Hosts without a native Plotly renderer should take `_meta.render_hints.wrap_template`, substitute the `spec_token` placeholder with `structuredContent.chart.spec` (JSON-stringified verbatim), and hand the result to whatever HTML widget tool the host exposes (show_widget / artifact / similar). Do not synthesize additional indicator traces in the wrapper JS — every trace the user sees must come from the server's spec."
 
-`html_template`은 *Cowork에 특화된 글로벌 매크로 이름*(`window.cowork.callMcpTool`)이 아니라 일반화된 `window.HOST` placeholder로 작성. 호스트별 매크로 매핑은 *호스트 측 책임* (또는 v1.6+에 host-specific template 후보).
+#### 데이터 무결성 — *구조적*으로 보장
 
-#### 데이터 무결성 — 패턴 선택의 *진짜* 이유
+Wrap 템플릿은 spec을 *값으로* 임베드한다. JS 안에 indicator를 *프로그래밍할 표면*이 없다 — `const spec = {...}; Plotly.newPlot(...)` 두 줄에 손댈 자리가 없음. v1.4-dev에서 관찰된 artifact 자체 합성(MA5/20/60) 회귀를 wrap 패턴은 *구조적으로* 재현할 수 없다. fidelity가 prompt 강도가 아니라 *디자인*으로 보장됨.
 
-v1.4-dev E2E (2026-05-25) 시연이 두 가지 사실을 동시에 드러냈다:
-1. callback 패턴은 토큰을 ~77% 절감한다.
-2. callback 패턴의 *프로그래밍 가능성*은 모델이 *데이터를 합성*할 여지를 만든다. Cowork artifact가 우리 응답에 *없는* MA5/MA20/MA60 trace를 자체 JS로 계산해 plot했다 — `indicators` 옵션 없이 호출했는데 결과 차트에 이동평균선이 그려졌음.
+#### 왜 `create_artifact` callback은 default가 아닌가
 
-(2)는 단순한 prompt 강제로 100% 막기 어렵다. 모델이 JS를 작성하는 한 "차트를 풍성하게" 만들려는 경향이 상존. 위험:
-- 우리 `BuildFrameAsync`의 정확한 MA 계산 (warm-up + Skender.Stock.Indicators) ≠ artifact JS의 vanilla loop 재구현
-- 사용자가 차트의 MA 값과 우리 텍스트 분석의 MA 값을 *대조*했을 때 불일치 → 신뢰 손상
-- AssistStudio(verbatim) vs Cowork(자체 합성)이 *같은 호출에 다른 차트* → 슬라이스 C가 막으려 한 호스트 불일치의 *재현*
-
-→ slice C의 default fallback이 **`wrap`(spec 통째 임베드)**인 본질적 이유. 모델은 *값을 임베드*만 하고 JS 안에 *재계산 코드를 쓸 자리가 없음*. fidelity 보장이 prompt 강도에 의존하지 않고 *구조적*으로 성립.
-
-`artifact_callback`은 secondary로 보존하되, 같은 fidelity 룰을 ServerInstructions + html_template 주석으로 강제. callback 경로를 *허용*은 하지만 *권장*하지 않음.
+Cowork-측 LLM의 callback 분석은 토큰 절감(~77%)이라는 장점이 분명하지만, 그 패턴은 *모델이 JS를 프로그래밍하는 표면*을 열고 v1.4-dev에서 그 위험을 *실제로* 노출했다 (자체 MA 합성). slice C는 그 표면을 *처음부터 만들지 않는* wrap을 default로 잡는다. 토큰 최적화는 별도 레이어가 담당 — v0.10 `output_mode='reference'` + dataset_id가 후속 분석에서 spec을 다시 보내지 않고, v1.5 slice A 캔들 캐시가 LS round trip을 줄인다. Callback 패턴은 v1.6+에서 *호스트 측 declarative 제약*(allowed trace types 등)을 갖춰 fidelity가 구조적으로 보장될 때 재고.
 
 #### C.2: PNG 폴백 (옵션)
 
@@ -612,16 +548,19 @@ C.2 (PNG 폴백) 미포함.
 (개발자가 SQLite에서 name_at_save를 다른 값으로 수정 → 실행 → drift 응답 확인)
 
 [Slice C — Cowork 환경]
-"삼성전자 일봉 보여줘"
-  → ls_get_chart 호출 (호스트 cowork, native Plotly X)
-  → 응답에 _meta.render_hints.fallback.html_template + callback args
-  → 모델: render_hints 본 즉시 callback 패턴으로 artifact 생성 (~600 tokens 출력)
-  → artifact 안 JS가 callMcpTool로 spec을 *직접* 받아 Plotly.newPlot
-  → 차트 인라인 표시 + spec이 model context 통과 X (~700 tokens 총)
-  → 다음 turn: "그 차트 어제와 비교"
-  → 같은 artifact가 자동 fresh data 페치 (재호출 없이)
+"삼성전자 일봉에 MA20 같이 보여줘"
+  → ls_get_chart(shcode="005930", period_type="day", indicators=["ma:20"]) 호출
+  → 응답: structuredContent.chart.spec (OHLC + MA20 trace, 서버 계산)
+        + _meta.render_hints.wrap_template
+  → 모델: wrap_template의 __SPEC__ 자리에 spec을 그대로 임베드
+        → 결과 HTML을 host의 widget tool에 패스 (show_widget / artifact / 등)
+  → 차트 인라인 표시: 서버가 계산한 MA20 그대로 (자체 합성 없음)
+  → 다음 turn: "MA60도 추가"
+  → 모델: ls_get_chart 재호출 (indicators=["ma:20","ma:60"]) → wrap 다시
+        → MA20 / MA60 둘 다 서버 계산 일관
 
-vs v1.4 흐름 (~3,400 tokens) 대비 ~77% 토큰 절약 + 영속성.
+AssistStudio에서 같은 호출하면 wrap_template 무시, structuredContent.chart 직접 plot.
+어느 호스트든 *같은 trace 집합*이 같은 수치로 보임 — slice C의 핵심 가치.
 ```
 
 체이닝과 자연어 흐름이 *자동적으로* 자기 매크로 사용 흐름을 익히는지가 성공 기준.
@@ -639,7 +578,7 @@ vs v1.4 흐름 (~3,400 tokens) 대비 ~77% 토큰 절약 + 영속성.
 7. **slice C의 `window.HOST` placeholder vs host-specific 매크로** — `html_template` 안에 `window.HOST.callMcpTool` 일반화로 쓸지, 또는 host별로 `window.cowork.callMcpTool` / `window.claude.callMcpTool` 등 분기. v1.5는 *일반화 placeholder + ServerInstructions에서 매핑 가이드* 권장. 다만 ServerInstructions가 모델에게 host 이름 알려야 하므로 결정 필요.
 8. **slice C의 PNG 폴백 (C.2)** — 수요 검증 후 v1.6에 도입. PuppeteerSharp 의존성 +50MB.
 9. **slice C의 `summary_only` 일관화 (C.3)** — v1.5 squeeze vs v1.5.1 패치. 작업량 작아서 v1.5 권장이지만 release 일정 압박 시 분리.
-10. **slice C의 모델 contract 강도** — v1.4-dev E2E에서 Cowork artifact가 *자체로* MA 계산해 plot한 사실(SPEC §4.3 무결성 단락). `html_template` JS 주석 + ServerInstructions의 verbatim 안내 둘 다로 막는데, 모델이 *zealous*하게 차트를 풍성하게 만들려는 경향은 prompt만으로 100% 차단되지 않을 수 있음. v1.5에서 모니터링 후 v1.6에서 더 강한 우회 검토 — 예: `_meta.render_hints.fallback.allowed_trace_types: ["candlestick","bar"]` 같은 *호스트가 강제할 수 있는* 선언적 제약. 다만 *호스트 측 협조*가 필요해서 v1.5에서는 prompt-level 강제만.
+10. **callback 패턴 재고 시점** — v1.5는 wrap-only. v1.6+에서 *호스트 측 declarative 제약*(예: `_meta.render_hints.allowed_trace_types: ["candlestick","bar","scatter"]`)을 호스트가 강제할 수 있다면 callback의 토큰 절감 가치를 *fidelity 보장 하에* 다시 누릴 수 있을 것. 호스트 측 협조가 필요해 v1.5 범위 외.
 
 ---
 
@@ -669,22 +608,20 @@ removal) surfaces via `signals_drift` in the response. Storage in
 the existing portfolio.db. Export/import follows the portfolio_io
 pattern for backup and sharing.
 
-**Chart payload host adaptation — fidelity-first.** Chart-emitting
-tools (ls_get_chart, ls_reframe_chart, ls_add_indicator,
+**Chart payload host adaptation.** Chart-emitting tools
+(ls_get_chart, ls_reframe_chart, ls_add_indicator,
 ls_get_overseas_chart, ls_get_etf_holdings, ls_get_program_trading)
-now ship a `_meta.render_hints` envelope alongside the existing
-`structuredContent.chart`. Hosts with a native Plotly renderer
-(AssistStudio, SEP-1865 apps) ignore it. Hosts without one (Cowork-
-class, Claude Desktop with a peer visualize MCP) get a primary HTML
-wrap template that embeds the chart spec verbatim — the model wraps,
-the server's computed traces (OHLC + any indicators we placed)
-render exactly as sent. A secondary `artifact_callback` hint is
-provided for the persistence case but explicitly demoted from
-default after v1.4-dev E2E showed artifact JS can quietly synthesize
-indicator traces (MA / RSI / Bollinger) that diverge from the
-server's computation. Slice C's primary value is cross-host fidelity
-consistency, not token cost; token optimisation already lives in
-v0.10 dataset-cache references and v1.5 slice A candle cache.
+now ship a `_meta.render_hints.wrap_template` alongside the existing
+`structuredContent.chart`. Native-renderer hosts (AssistStudio,
+SEP-1865 apps) ignore it and use the spec directly. Hosts without a
+native Plotly renderer (Cowork-class, Claude Desktop with a peer
+visualize MCP) substitute the chart spec into the wrap template's
+`__SPEC__` placeholder and hand the resulting HTML to whatever
+widget tool the host exposes (show_widget / artifact / similar).
+The spec embeds verbatim, so every trace the user sees comes from
+the server's computation — no host can quietly synthesize MA /
+RSI / Bollinger lines inside the wrapper JS. Same call, same chart,
+regardless of host.
 
 Tool surface 40 → 45 standard (43 → 49 all). All additions are
 non-breaking; existing tool signatures unchanged.
