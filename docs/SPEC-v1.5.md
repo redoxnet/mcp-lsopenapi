@@ -406,6 +406,29 @@ chart-emitting tool 응답에 *호스트가 해석할 수 있는 렌더 힌트* 
 
 `html_template`은 *Cowork에 특화된 글로벌 매크로 이름*(`window.cowork.callMcpTool`)이 아니라 일반화된 `window.HOST` placeholder로 작성. 호스트별 매크로 매핑은 *호스트 측 책임* (또는 v1.6+에 host-specific template 후보).
 
+#### 데이터 무결성 — *verbatim* 사용 강제
+
+v1.4-dev E2E (2026-05-25) 시연에서 발견: Cowork artifact가 우리 spec을 *그대로 사용하지 않고* **자체 JS로 MA5/MA20/MA60을 재계산**해서 plot했다 — `indicators` 옵션 없이 호출했는데 artifact에 MA 라인이 보임. 즉 모델이 차트를 "예쁘게" 만들려고 LS 데이터에 없는 trace를 추가. 위험:
+
+- 우리 `BuildFrameAsync`의 정확한 MA 계산 (warm-up + Skender.Stock.Indicators) ≠ artifact JS의 vanilla loop 재구현
+- 사용자가 차트의 MA 값과 우리 텍스트 분석의 MA 값을 *대조*했을 때 불일치 가능 → 신뢰 손상
+- AssistStudio (verbatim 사용) vs Cowork (자체 계산) 사이에 *같은 호출이 다른 차트*를 만듦
+
+→ `html_template`은 *명시적으로* spec verbatim 사용을 강제한다:
+
+```js
+// 모델이 generate하는 artifact JS — *spec.data를 그대로 사용*.
+// indicator trace를 직접 계산해서 추가하지 말 것. MA가 필요하면 callback args에
+// indicators=["ma:5","ma:20","ma:60"]을 넣고 다시 호출하라 — 그러면 서버가
+// 정확한 계산으로 spec.data에 trace를 추가해서 돌려준다.
+const r = await window.HOST.callMcpTool(CALLBACK.tool, CALLBACK.args);
+const spec = r.structuredContent.chart.spec;
+Plotly.newPlot('c', spec.data, spec.layout, { responsive: true });
+```
+
+추가로 ServerInstructions에 *모델 측 contract*도 강화:
+> "When you produce an artifact / widget that wraps a chart from this server, render `structuredContent.chart.spec` *verbatim*. Do not synthesize MA / RSI / Bollinger / any indicator trace inside the artifact JS — those calculations are owned by the server (`ls_add_indicator` / `BuildFrameAsync`) and must round-trip back through the tool. If the user wants an MA overlay, re-call `ls_get_chart` (or `ls_add_indicator`) with `indicators=[...]`; the server-side computation is the source of truth."
+
 #### C.2: PNG 폴백 (옵션)
 
 `ls_get_chart(..., format: "spec" | "png" | "auto")`. PNG 모드:
@@ -439,7 +462,9 @@ chart-emitting tool 응답에 *호스트가 해석할 수 있는 렌더 힌트* 
 
 - **단위**: `RenderHintsBuilder.Build(toolName, args)` 헬퍼 → 기대 JSON 매칭.
 - **회귀**: 기존 chart-emitting 도구 테스트가 응답에 새 `_meta.render_hints` 필드를 *허용*하도록 (강제는 안 함).
-- **통합**: ServerInstructions가 모델에게 *언제 callback 패턴 사용할지* 안내 — 키워드 어셔션 추가 (`"artifact_callback"`, `"callback template"`).
+- **통합**: ServerInstructions가 모델에게 *언제 callback 패턴 사용할지* 안내 — 키워드 어셔션 추가 (`"artifact_callback"`, `"callback template"`, `"verbatim"`, `"do not synthesize"`).
+- **무결성 어셔션**: `html_template` 문자열에 `Plotly.newPlot('c', spec.data, spec.layout` 패턴이 그대로 들어있고, *그 이후* 추가 trace 조립 코드가 없는지 정규식 어셔션. 모델 contract도 ServerInstructions 키워드 어셔션으로 회귀 방지.
+- **E2E 검증 (사용자 측)**: artifact 생성 후 (a) 우리 응답에 *지정한 indicators만* 있는지, (b) artifact 차트에 그 trace 외 *추가 라인이 없는지* 시각 확인. v1.4-dev에서 Cowork artifact가 자체 MA를 그렸던 회귀를 재현 안 함을 보장.
 
 ### 4.6 일정 추정
 
@@ -572,6 +597,7 @@ vs v1.4 흐름 (~3,400 tokens) 대비 ~77% 토큰 절약 + 영속성.
 7. **slice C의 `window.HOST` placeholder vs host-specific 매크로** — `html_template` 안에 `window.HOST.callMcpTool` 일반화로 쓸지, 또는 host별로 `window.cowork.callMcpTool` / `window.claude.callMcpTool` 등 분기. v1.5는 *일반화 placeholder + ServerInstructions에서 매핑 가이드* 권장. 다만 ServerInstructions가 모델에게 host 이름 알려야 하므로 결정 필요.
 8. **slice C의 PNG 폴백 (C.2)** — 수요 검증 후 v1.6에 도입. PuppeteerSharp 의존성 +50MB.
 9. **slice C의 `summary_only` 일관화 (C.3)** — v1.5 squeeze vs v1.5.1 패치. 작업량 작아서 v1.5 권장이지만 release 일정 압박 시 분리.
+10. **slice C의 모델 contract 강도** — v1.4-dev E2E에서 Cowork artifact가 *자체로* MA 계산해 plot한 사실(SPEC §4.3 무결성 단락). `html_template` JS 주석 + ServerInstructions의 verbatim 안내 둘 다로 막는데, 모델이 *zealous*하게 차트를 풍성하게 만들려는 경향은 prompt만으로 100% 차단되지 않을 수 있음. v1.5에서 모니터링 후 v1.6에서 더 강한 우회 검토 — 예: `_meta.render_hints.fallback.allowed_trace_types: ["candlestick","bar"]` 같은 *호스트가 강제할 수 있는* 선언적 제약. 다만 *호스트 측 협조*가 필요해서 v1.5에서는 prompt-level 강제만.
 
 ---
 
