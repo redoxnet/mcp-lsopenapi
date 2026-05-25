@@ -242,7 +242,7 @@ public static class ScreenerTools
         AVOID WHEN: the user wants exactly one signal (use ls_run_screener); simple metric ranking (use ls_get_top_stocks / ls_get_fundamentals_rank); user-authored HTS conditions (out of scope).
 
         signals (2-8 entries): each entry is an exact catalog name (one of 99), a 4-character search_cd (6001-6412), or a Korean keyword ("골든크로스"). Server-side matched against the cached catalog. If any entry is ambiguous (matches multiple) or not found, the tool returns an envelope listing per-input candidates and the full mini-catalog of each ambiguous group (β policy), so the next call can pass exact ids without a separate ls_list_screeners round trip.
-        mode: "and" intersection (default) keeps only stocks matched by EVERY listed signal. "or" union keeps stocks matched by AT LEAST ONE, deduplicated by shcode. Each result row carries signals_matched listing which signals fired for that stock.
+        mode: "and" intersection (default) keeps only stocks matched by EVERY listed signal. "or" union keeps stocks matched by AT LEAST ONE, deduplicated by shcode. Each result row carries signals_matched listing which signals fired for that stock. Ordering: AND preserves first-signal rank order (filtered to the intersection). OR sorts by descending signals_matched count first, then by best (smallest) rank — so when limit truncates, the higher-conviction "matched by multiple signals" stocks surface before single-signal matches.
         market: all / kospi / kosdaq. limit: max rows after combination (1-100, default 20). Results share the same envelope (shcode, name, price, change_pct, volume, data_as_of, query_date_resolution) as ls_run_screener for downstream chaining.
         """)]
     public static async Task<string> CombineScreeners(
@@ -334,9 +334,17 @@ public static class ScreenerTools
             }
 
             // Combine by shcode.
+            // - AND: intersection of all per-signal shcode sets, ordered by
+            //   first-signal rank so the user sees the most relevant matches first.
+            // - OR: union, ordered by (a) descending signals_matched count so
+            //   stocks confirmed by MORE signals surface first (most relevant
+            //   compound matches), then (b) by first-signal rank within ties.
+            //   This avoids the v1.4-dev observation where limit=10 in an
+            //   asymmetric OR (e.g. 300 vs 2) buried the smaller signal's
+            //   matches past the limit.
             IReadOnlyCollection<string> combinedShcodes = normalizedMode == "and"
                 ? IntersectShcodes(perSignalRows)
-                : UnionShcodes(perSignalRows);
+                : UnionShcodesOrderedByMatchCount(perSignalRows);
 
             // Assemble row payloads, attaching the list of signals each stock matched.
             var combinedRows = new List<CombinedScreenerRow>();
@@ -533,22 +541,47 @@ public static class ScreenerTools
             VolumeRatePct: row.ReadDouble("volumerate"));
     }
 
-    static HashSet<string> IntersectShcodes(IReadOnlyList<Dictionary<string, ScreenerRow>> perSignal)
+    static List<string> IntersectShcodes(IReadOnlyList<Dictionary<string, ScreenerRow>> perSignal)
     {
         if (perSignal.Count == 0)
-            return new HashSet<string>(StringComparer.Ordinal);
-        var result = new HashSet<string>(perSignal[0].Keys, StringComparer.Ordinal);
+            return new List<string>();
+
+        // Preserve first-signal rank order, filtered to shcodes present in every signal.
+        var common = new HashSet<string>(perSignal[0].Keys, StringComparer.Ordinal);
         for (int i = 1; i < perSignal.Count; i++)
-            result.IntersectWith(perSignal[i].Keys);
-        return result;
+            common.IntersectWith(perSignal[i].Keys);
+
+        var ordered = new List<string>(common.Count);
+        foreach (var kv in perSignal[0].OrderBy(kv => kv.Value.Rank))
+            if (common.Contains(kv.Key))
+                ordered.Add(kv.Key);
+        return ordered;
     }
 
-    static HashSet<string> UnionShcodes(IReadOnlyList<Dictionary<string, ScreenerRow>> perSignal)
+    static List<string> UnionShcodesOrderedByMatchCount(IReadOnlyList<Dictionary<string, ScreenerRow>> perSignal)
     {
-        var result = new HashSet<string>(StringComparer.Ordinal);
+        // For each shcode, count how many signals matched + remember the
+        // best (smallest) rank across signals it appeared in. Then sort by
+        // (matchCount DESC, bestRank ASC) so stocks confirmed by more signals
+        // — the higher-conviction part of the union — surface first.
+        var matchCount = new Dictionary<string, int>(StringComparer.Ordinal);
+        var bestRank = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var dict in perSignal)
-            result.UnionWith(dict.Keys);
-        return result;
+        {
+            foreach (var kv in dict)
+            {
+                string code = kv.Key;
+                matchCount[code] = matchCount.TryGetValue(code, out int n) ? n + 1 : 1;
+                int rank = kv.Value.Rank;
+                if (!bestRank.TryGetValue(code, out int prev) || rank < prev)
+                    bestRank[code] = rank;
+            }
+        }
+
+        return matchCount.Keys
+            .OrderByDescending(code => matchCount[code])
+            .ThenBy(code => bestRank[code])
+            .ToList();
     }
 
     static async Task<IReadOnlyList<ScreenerInfo>> FetchScreenersAsync(

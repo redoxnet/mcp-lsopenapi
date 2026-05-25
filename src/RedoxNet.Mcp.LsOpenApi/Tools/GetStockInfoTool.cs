@@ -44,7 +44,7 @@ public static class GetStockInfoTool
 
         sections (default ["snapshot","fundamentals"]) — request only what the question needs:
         - "snapshot": 현재가 / 등락 / 거래량 / OHLC / 상하한가 / 회전율.
-        - "fundamentals": PER / PBR / EPS, 분기 재무(직전 분기 latest + 그 전 분기 previous — t1102는 당기 진행분을 주지 않음) + 전년대비 성장률, 시가총액·상장주식수·자본금.
+        - "fundamentals": PER / PBR / EPS, 분기 재무(직전 분기 latest + 그 전 분기 previous — t1102는 당기 진행분을 주지 않음) + 전년대비 성장률, 시가총액·상장주식수·자본금. *Note:* PER / PBR can come back as 0 when LS lacks the data — typical for ETFs/ETNs, SPACs, recently listed names, and companies with no published earnings. Treat 0 as "missing/unavailable" (not a real zero ratio) and surface that to the user; lean on EPS / growth rates / flags for valuation context instead.
         - "periods": 52주 / 연중(YTD) 고저 범위.
         - "brokers": 매수 / 매도 상위 5 거래원.
         - "flags": SPAC / 단기과열 / 저유동성 / 배분 구분 플래그 + 공시 텍스트.

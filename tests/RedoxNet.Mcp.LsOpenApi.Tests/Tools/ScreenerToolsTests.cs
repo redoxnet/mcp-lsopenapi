@@ -362,6 +362,30 @@ public sealed class ScreenerToolsTests
     }
 
     [Fact]
+    public async Task CombineScreeners_Or_SortsMultiMatchedStocksFirst()
+    {
+        // 005930 appears in BOTH signal results; 000660 and 035420 each
+        // appear in only one. With limit applied, the multi-matched stock
+        // must come before the single-matched ones — this is the v1.4-dev
+        // observed gap (asymmetric OR with a tight limit buried the smaller
+        // signal's matches).
+        var (client, _) = CatalogClient();
+
+        string result = await ScreenerTools.CombineScreeners(
+            client,
+            signals: new[] { "6116", "6310" },
+            mode: "or",
+            limit: 2);
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        JsonElement results = root.GetProperty("results");
+        results.GetArrayLength().Should().Be(2);
+        results[0].GetProperty("shcode").GetString().Should().Be("005930",
+            "stocks matched by both signals must surface before single-signal matches");
+        results[0].GetProperty("signals_matched").GetArrayLength().Should().Be(2);
+    }
+
+    [Fact]
     public async Task CombineScreeners_AmbiguousKeyword_ReturnsAmbiguityEnvelope()
     {
         var (client, _) = CatalogClient();

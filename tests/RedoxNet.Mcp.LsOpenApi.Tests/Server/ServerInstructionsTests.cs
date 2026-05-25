@@ -18,9 +18,11 @@ public sealed class ServerInstructionsTests
     {
         ServerInstructions.Text.Should().NotBeNullOrWhiteSpace();
         // A system-message-level instruction — comprehensive but not an essay.
-        // Budget bumped to 3500 in v1.4 to cover the Q-Click signal catalog
-        // paragraph plus the envelope-narration guide (~150 tokens / ~700 chars).
-        ServerInstructions.Text.Length.Should().BeInRange(200, 3500);
+        // Budget bumped to 4200 in v1.4 to cover the Q-Click signal catalog
+        // paragraph, the envelope-narration guide, and the ambiguity-strategy
+        // guide for ls_run_screener / ls_combine_screeners (~200 tokens /
+        // ~1100 chars on top of the v1.2 baseline).
+        ServerInstructions.Text.Length.Should().BeInRange(200, 4200);
     }
 
     [Theory]

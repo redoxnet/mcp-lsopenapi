@@ -306,6 +306,9 @@ AVOID WHEN: 단일 시그널 → ls_run_screener. 단순 metric 랭킹 → ls_ge
 
 원래 SPEC은 모델이 카탈로그 87+ 시그널을 어떻게 알지에 대해 모호했다. 결정:
 
+- **결과 순서 정책 (ls_combine_screeners)**:
+  - **AND**: 첫 시그널의 LS rank 순서 유지 — limit으로 잘려도 *가장 매칭 강한* 종목들이 먼저.
+  - **OR**: `signals_matched.count DESC, best_rank ASC` — N개 시그널 모두 충족한 종목이 1개만 충족한 종목보다 위. 비대칭 OR(예: 300 vs 2)에서 limit이 작은 시그널 매칭을 누락하는 v1.4-dev 관찰 fix.
 - **서버 사이드 캐싱**: ScreenerTools가 첫 t1826 호출 결과를 프로세스 lifetime 동안 캐싱. LS-curated라 안정적이라 TTL 무한 OK.
 - **키워드 매칭**: ls_run_screener / ls_combine_screeners 입력을 캐시에서 매칭. exact id → exact name → normalized substring 순.
 - **β policy ambiguity payload**: 후보가 2개 이상이면 *그 후보들*과 *그 후보가 속한 그룹의 미니 카탈로그 전체*를 응답에 박아 반환. 모델은 한 응답 안에서 *결정 컨텍스트*를 받음 → 다음 턴에 정확한 id로 재호출, list 추가 round trip 없음.
@@ -453,7 +456,7 @@ AVOID WHEN: 단일 시그널 → ls_run_screener. 단순 metric 랭킹 → ls_ge
 1. **`query_date` 필드명** ✅ `query_date`로 확정 (2026-05-24 결정). 의도된 의미 "사용자가 기준일자를 지정하는 입력"이 명확하다는 판단.
 2. **`market_close_date`(quote류)** ⚪ v1.4 범위 밖으로 미룸 — quote/range tool들에 `data_as_of`를 일괄 적용할지 별도 필드를 둘지는 v1.5+에서 재검토.
 3. **`pre_market` 임계 시각** ✅ KRX 09:00 KST 이전 = pre_market으로 확정. 단, **명시적 `query_date=오늘`**은 `used`로 처리(사용자가 의도적으로 오늘을 지정한 경우 모델이 "장 전 데이터"라고 헷갈리지 않도록). 생략했을 때만 장 전이면 `pre_market` resolution. 구현은 [DateEnvelope.cs:94](../src/RedoxNet.LsOpenApi.Core/Time/DateEnvelope.cs:94).
-4. **B의 `name_or_id` 매칭 강도** ✅ Exact 매칭만 — ID는 Ordinal, 이름은 case-insensitive Ordinal. Substring/fuzzy 없음. 모델이 `ls_list_screeners`로 정확한 이름/ID를 확보한 뒤 호출하도록 강제. 도구 description에도 "exact" 명시.
+4. **B의 `name_or_id` 매칭 강도** ✅ **(2026-05-25 갱신)** 키워드 매칭 + β policy ambiguity 응답으로 진화. 매칭 우선순위: exact ID(Ordinal) → exact name(case-insensitive) → normalized substring. 후보 1개면 즉시 실행, 2개 이상이면 candidates + group_catalogs payload. Ambiguity 해결 정책은 모델 재량 — (a) 사용자에게 명확화 질문, 또는 (b) 합리적 default 선택(예: OR 합집합, 가장 흔한 변형) + 선택 이유 명시. ServerInstructions가 두 패턴 모두 권장하되 *silent pick 금지*. v1.4-dev E2E에서 모델이 "골든크로스에는 (5,20)과 (20,60) 둘 다 있어서 합집합" / "거래량급증은 5분봉 기준" 식의 자발적 명시가 자연스럽게 발현됨.
 5. **B의 빈 결과 처리** ✅ `count: 0` + 친절한 note. 다만 실상이 LS-curated 87개 카탈로그라 빈 결과는 사실상 발생하지 않으며, 발생 시는 권한/응답 이상 의미. 현재 note 메시지는 §3.6 정정에 맞춰 v1.4 prep에서 갱신 예정.
 6. **A의 응답 envelope 위치** ✅ 최상위 `data_as_of` + `query_date_resolution`으로 통일. ls_run_screener / ls_get_market_funds_trend / ls_get_short_selling_trend에 모두 동일 위치.
 
