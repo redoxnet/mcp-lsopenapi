@@ -170,6 +170,32 @@ public class LsApiClientTests
     }
 
     [Fact]
+    public async Task CallTrAsync_Http500_RetriesUntilSuccess()
+    {
+        // v1.4-dev: LS occasionally returns HTTP 500 for known-good TRs
+        // (observed on t1825 inside ls_combine_screeners, and on g3204
+        // overseas chart). 500 was added to the transient retry list so
+        // these one-shot blips don't surface to the user.
+        int callCount = 0;
+        var (client, handler) = NewClient((req, _) =>
+        {
+            callCount++;
+            if (callCount == 1)
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)
+                {
+                    Content = new StringContent("LS 500"),
+                });
+            return Json(HttpStatusCode.OK,
+                """{ "t1101OutBlock": {}, "rsp_cd": "00000", "rsp_msg": "정상" }""");
+        });
+
+        LsTrResponse response = await client.CallTrAsync("t1101", new JsonObject { ["shcode"] = "005930" });
+
+        response.IsSuccess.Should().BeTrue();
+        handler.Requests.Should().HaveCount(2);
+    }
+
+    [Fact]
     public async Task CallTrAsync_TransientFailure_GivesUpAfterMaxRetries()
     {
         var (client, handler) = NewClient((req, _) =>

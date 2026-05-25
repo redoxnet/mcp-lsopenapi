@@ -18,9 +18,10 @@ namespace RedoxNet.LsOpenApi.Core.Http;
 /// </summary>
 /// <remarks>
 /// Handles bearer-token attachment, per-TR rate limiting, transient-error
-/// retries (HTTP 408/429/5xx), continuation headers, and response parsing.
-/// Business-level failures (LS returns 200 with a non-success <c>rsp_cd</c>)
-/// are surfaced via <see cref="LsTrResponse.IsSuccess"/>, not thrown.
+/// retries (HTTP 408/429/500/502/503/504), continuation headers, and response
+/// parsing. Business-level failures (LS returns 200 with a non-success
+/// <c>rsp_cd</c>) are surfaced via <see cref="LsTrResponse.IsSuccess"/>, not
+/// thrown.
 /// </remarks>
 public sealed class LsApiClient
 {
@@ -230,8 +231,13 @@ public sealed class LsApiClient
     /// <summary>
     /// Builds the Polly retry policy used for every TR call: 3 retries with
     /// 200·2^(n-1) ms back-off, on transient network exceptions or transient
-    /// LS-side HTTP statuses (408/429/502/503/504). The per-call <c>TrCode</c>
-    /// is threaded through Polly's context so retry log lines name the TR.
+    /// LS-side HTTP statuses (408/429/500/502/503/504). 500 was added to the
+    /// list in v1.4-dev after E2E showed LS occasionally returning HTTP 500
+    /// for known-good TR calls (t1825 single-call inside ls_combine_screeners,
+    /// g3204 overseas chart) where an immediate re-call succeeded — i.e. the
+    /// behaviour is transient and inside the same "retry, don't surface" class
+    /// as 502/503/504. The per-call <c>TrCode</c> is threaded through Polly's
+    /// context so retry log lines name the TR.
     /// </summary>
     /// <param name="logger">Logger used by the retry callback.</param>
     /// <returns>An <see cref="AsyncRetryPolicy{HttpResponseMessage}"/>.</returns>
@@ -242,6 +248,7 @@ public sealed class LsApiClient
             .OrResult(response =>
                 response.StatusCode is HttpStatusCode.RequestTimeout
                                      or HttpStatusCode.TooManyRequests
+                                     or HttpStatusCode.InternalServerError
                                      or HttpStatusCode.BadGateway
                                      or HttpStatusCode.ServiceUnavailable
                                      or HttpStatusCode.GatewayTimeout)
