@@ -44,6 +44,8 @@ public sealed class GetShortSellingTrendToolTests
         (await handler.Requests[0].Content!.ReadAsStringAsync()).Should().Contain("\"shcode\":\"005930\"");
 
         root.GetProperty("count").GetInt32().Should().Be(2);
+        root.GetProperty("data_as_of").GetString().Should().MatchRegex(@"^\d{8}$");
+        root.GetProperty("query_date_resolution").GetString().Should().NotBeNullOrWhiteSpace();
 
         JsonElement first = root.GetProperty("series")[0];
         first.GetProperty("date").GetString().Should().Be("20230601");
@@ -70,6 +72,23 @@ public sealed class GetShortSellingTrendToolTests
         string body = await handler.Requests[0].Content!.ReadAsStringAsync();
         body.Should().Contain("\"sdate\":\"20230501\"");
         body.Should().Contain("\"edate\":\"20230601\"");
+    }
+
+    [Fact]
+    public async Task GetShortSellingTrend_QueryDateWeekend_UsesPriorFridayWhenToOmitted()
+    {
+        var (client, handler) = TestClientFactory.Create((_, _) => Ok(Sample));
+
+        string result = await GetShortSellingTrendTool.GetShortSellingTrend(
+            client,
+            "005930",
+            query_date: "20260524");
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        string body = await handler.Requests[0].Content!.ReadAsStringAsync();
+        body.Should().Contain("\"edate\":\"20260522\"");
+        root.GetProperty("data_as_of").GetString().Should().Be("20260522");
+        root.GetProperty("query_date_resolution").GetString().Should().Be("weekend");
     }
 
     [Fact]

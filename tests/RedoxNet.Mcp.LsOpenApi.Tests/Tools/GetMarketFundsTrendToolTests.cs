@@ -46,6 +46,8 @@ public sealed class GetMarketFundsTrendToolTests
         body.Should().Contain("\"gubun\":\"1\"");
 
         root.GetProperty("market").GetString().Should().Be("kospi");
+        root.GetProperty("data_as_of").GetString().Should().MatchRegex(@"^\d{8}$");
+        root.GetProperty("query_date_resolution").GetString().Should().NotBeNullOrWhiteSpace();
         root.GetProperty("count").GetInt32().Should().Be(2);
 
         JsonElement first = root.GetProperty("series")[0];
@@ -73,6 +75,20 @@ public sealed class GetMarketFundsTrendToolTests
         await GetMarketFundsTrendTool.GetMarketFundsTrend(client, market: "kosdaq");
 
         (await handler.Requests[0].Content!.ReadAsStringAsync()).Should().Contain("\"upcode\":\"301\"");
+    }
+
+    [Fact]
+    public async Task GetMarketFundsTrend_QueryDateWeekend_UsesPriorFriday()
+    {
+        var (client, handler) = TestClientFactory.Create((_, _) => Ok(Sample));
+
+        string result = await GetMarketFundsTrendTool.GetMarketFundsTrend(client, query_date: "20260524");
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        string body = await handler.Requests[0].Content!.ReadAsStringAsync();
+        body.Should().Contain("\"tdate\":\"20260522\"");
+        root.GetProperty("data_as_of").GetString().Should().Be("20260522");
+        root.GetProperty("query_date_resolution").GetString().Should().Be("weekend");
     }
 
     [Fact]

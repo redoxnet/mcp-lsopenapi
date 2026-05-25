@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 using ModelContextProtocol.Server;
 using RedoxNet.LsOpenApi.Core.Auth;
 using RedoxNet.LsOpenApi.Core.Http;
+using RedoxNet.LsOpenApi.Core.Time;
 
 namespace RedoxNet.Mcp.LsOpenApi.Tools;
 
@@ -42,6 +43,8 @@ public static class GetShortSellingTrendTool
         string? to = null,
         [Description("Trading days to return when 'from' is omitted (1-120). Default 30.")]
         int count = DefaultCount,
+        [Description("Optional basis date in yyyyMMdd used when 'to' is omitted. Weekends resolve to the prior Friday; future dates clamp to the latest available trading day.")]
+        string? query_date = null,
         CancellationToken cancellationToken = default)
     {
         string trimmed = (shcode ?? "").Trim();
@@ -50,8 +53,10 @@ public static class GetShortSellingTrendTool
         if (count < 1 || count > MaxCount)
             return McpJson.Error($"count must be between 1 and {MaxCount}.", new { received = count });
 
+        if (!ResolveEndDate(to, query_date, out string todt, out DateEnvelope dateEnvelope, out string? dateError))
+            return McpJson.Error(dateError!);
+
         bool fromExplicit = TryParseYmd((from ?? "").Trim(), out _);
-        string todt = NormalizeDateOrToday(to);
         string fromdt = NormalizeDateOrDefault(from, todt, count);
         if (string.Compare(fromdt, todt, StringComparison.Ordinal) > 0)
             return McpJson.Error("from must be <= to.", new { from = fromdt, to = todt });
@@ -111,6 +116,8 @@ public static class GetShortSellingTrendTool
                 Shcode = trimmed,
                 From = fromdt,
                 To = todt,
+                DataAsOf = dateEnvelope.DataAsOf,
+                QueryDateResolution = dateEnvelope.QueryDateResolution,
                 Count = series.Count,
                 Summary = BuildSummary(series),
                 Series = series,
@@ -149,12 +156,38 @@ public static class GetShortSellingTrendTool
             HighestRatioDay: peak);
     }
 
-    static string NormalizeDateOrToday(string? raw)
+    static bool ResolveEndDate(
+        string? to,
+        string? queryDate,
+        out string todt,
+        out DateEnvelope dateEnvelope,
+        out string? error)
     {
-        string trimmed = (raw ?? "").Trim();
-        return TryParseYmd(trimmed, out _)
-            ? trimmed
-            : DateTime.Now.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
+        string toTrimmed = (to ?? "").Trim();
+        if (toTrimmed.Length > 0)
+        {
+            if (!TryParseYmd(toTrimmed, out _))
+            {
+                todt = "";
+                dateEnvelope = default!;
+                error = "to must use yyyyMMdd format, e.g. 20260522.";
+                return false;
+            }
+
+            todt = toTrimmed;
+            dateEnvelope = DateEnvelope.FromDataAsOf(todt);
+            error = null;
+            return true;
+        }
+
+        if (!DateEnvelope.TryResolveKrxDailySnapshot(queryDate, out dateEnvelope, out error))
+        {
+            todt = "";
+            return false;
+        }
+
+        todt = dateEnvelope.DataAsOf;
+        return true;
     }
 
     static string NormalizeDateOrDefault(string? raw, string anchorYmd, int days)
@@ -184,6 +217,8 @@ public static class GetShortSellingTrendTool
         public string Shcode { get; init; } = "";
         public string From { get; init; } = "";
         public string To { get; init; } = "";
+        public string DataAsOf { get; init; } = "";
+        public QueryDateResolution QueryDateResolution { get; init; }
         public int Count { get; init; }
         public ShortSellingSummary Summary { get; init; } = null!;
         public IReadOnlyList<ShortSellingPoint> Series { get; init; } = Array.Empty<ShortSellingPoint>();

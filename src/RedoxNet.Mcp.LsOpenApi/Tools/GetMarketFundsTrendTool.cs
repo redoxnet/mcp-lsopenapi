@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 using ModelContextProtocol.Server;
 using RedoxNet.LsOpenApi.Core.Auth;
 using RedoxNet.LsOpenApi.Core.Http;
+using RedoxNet.LsOpenApi.Core.Time;
 
 namespace RedoxNet.Mcp.LsOpenApi.Tools;
 
@@ -37,18 +38,23 @@ public static class GetMarketFundsTrendTool
         string market = "kospi",
         [Description("Trading days to return (1-120). Default 20.")]
         int count = DefaultCount,
+        [Description("Optional basis date in yyyyMMdd. Weekends resolve to the prior Friday; future dates clamp to the latest available trading day.")]
+        string? query_date = null,
         CancellationToken cancellationToken = default)
     {
         if (!TryResolveMarket(market, out string upcode, out string normalizedMarket))
             return McpJson.Error($"market '{market}' is not recognized. Use 'kospi' or 'kosdaq'.");
         if (count < 1 || count > MaxCount)
             return McpJson.Error($"count must be between 1 and {MaxCount}.", new { received = count });
+        if (!DateEnvelope.TryResolveKrxDailySnapshot(query_date, out DateEnvelope dateEnvelope, out string? dateError))
+            return McpJson.Error(dateError!);
 
-        string tdate = DateTime.Now.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
+        string tdate = dateEnvelope.DataAsOf;
         // t8428 returns trading days only; pad the calendar window so weekends
         // and holidays don't truncate the requested count.
         int padded = (int)Math.Ceiling(count * 1.6) + 5;
-        string fdate = DateTime.Now.Date.AddDays(-padded).ToString("yyyyMMdd", CultureInfo.InvariantCulture);
+        DateTime anchor = DateTime.ParseExact(tdate, "yyyyMMdd", CultureInfo.InvariantCulture);
+        string fdate = anchor.AddDays(-padded).ToString("yyyyMMdd", CultureInfo.InvariantCulture);
 
         try
         {
@@ -107,6 +113,8 @@ public static class GetMarketFundsTrendTool
                 Market = normalizedMarket,
                 From = series.Count > 0 ? series[^1].Date : fdate,
                 To = series.Count > 0 ? series[0].Date : tdate,
+                DataAsOf = dateEnvelope.DataAsOf,
+                QueryDateResolution = dateEnvelope.QueryDateResolution,
                 Count = series.Count,
                 Summary = BuildSummary(series),
                 Series = series,
@@ -154,6 +162,8 @@ public static class GetMarketFundsTrendTool
         public string Market { get; init; } = "";
         public string From { get; init; } = "";
         public string To { get; init; } = "";
+        public string DataAsOf { get; init; } = "";
+        public QueryDateResolution QueryDateResolution { get; init; }
         public int Count { get; init; }
 
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
