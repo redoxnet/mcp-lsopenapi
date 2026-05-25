@@ -18,11 +18,12 @@ public sealed class ServerInstructionsTests
     {
         ServerInstructions.Text.Should().NotBeNullOrWhiteSpace();
         // A system-message-level instruction — comprehensive but not an essay.
-        // Budget bumped to 4800 in v1.4 to cover the Q-Click signal catalog
+        // Budget bumped to 5500 in v1.4 to cover the Q-Click signal catalog
         // paragraph, the envelope-narration guide, the ambiguity-strategy
-        // guide, dedupe contract, and the rapid_change noise caveat (~250
-        // tokens / ~1700 chars on top of the v1.2 baseline).
-        ServerInstructions.Text.Length.Should().BeInRange(200, 4800);
+        // guide, dedupe contract, the rapid_change noise caveat, and the
+        // chart wrap-and-route fallback for hosts without a native Plotly
+        // renderer (~300 tokens / ~2300 chars on top of the v1.2 baseline).
+        ServerInstructions.Text.Length.Should().BeInRange(200, 6000);
     }
 
     [Theory]
@@ -45,6 +46,7 @@ public sealed class ServerInstructionsTests
     [InlineData("trails today")]                // KSD lag wording — model must not claim "today's data" when stale (v1.4)
     [InlineData("deduplicates inputs")]         // ls_combine_screeners dedupe contract (v1.4)
     [InlineData("rapid_change group")]          // minute-bucket noise caveat anchor (v1.4)
+    [InlineData("Plotly.newPlot")]              // chart wrap-and-route fallback for hosts w/o renderer (v1.4)
     public void Text_CarriesTheRoutingBoundaryPhrase(string phrase)
     {
         ServerInstructions.Text.Should().Contain(phrase);
