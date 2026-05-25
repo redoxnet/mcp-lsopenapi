@@ -28,6 +28,7 @@ public sealed class ToolSurfaceFreezeTests
         "ls_account",
         "ls_add_indicator",
         "ls_analyze_program_flow",
+        "ls_combine_screeners",
         "ls_get_analyst_opinions",
         "ls_get_chart",
         "ls_get_etf_holdings",
@@ -40,6 +41,7 @@ public sealed class ToolSurfaceFreezeTests
         "ls_get_industry_indices",
         "ls_get_industry_stocks",
         "ls_get_investor_flow",
+        "ls_list_screeners",
         "ls_get_market_funds_trend",
         "ls_get_market_warnings",
         "ls_get_multi_quote",
@@ -57,6 +59,7 @@ public sealed class ToolSurfaceFreezeTests
         "ls_holdings_list",
         "ls_portfolio_io",
         "ls_reframe_chart",
+        "ls_run_screener",
         "ls_search_overseas_stock",
         "ls_search_stock",
         "ls_stocks_refresh_metadata",
@@ -78,7 +81,7 @@ public sealed class ToolSurfaceFreezeTests
         IReadOnlyList<ToolSurface> tools = DiscoverSurface(ToolProfile.Resolve("standard", null));
 
         tools.Select(t => t.Name).Should().Equal(StandardToolNames.Order(StringComparer.Ordinal));
-        tools.Should().HaveCount(37);
+        tools.Should().HaveCount(40);
     }
 
     [Fact]
@@ -87,7 +90,7 @@ public sealed class ToolSurfaceFreezeTests
         IReadOnlyList<ToolSurface> tools = DiscoverSurface(ToolProfile.Resolve("all", null));
 
         tools.Select(t => t.Name).Should().Equal(AllToolNames.Order(StringComparer.Ordinal));
-        tools.Should().HaveCount(40);
+        tools.Should().HaveCount(43);
     }
 
     [Fact]
@@ -112,6 +115,7 @@ public sealed class ToolSurfaceFreezeTests
 
         string[] limitTools =
         [
+            "ls_combine_screeners",
             "ls_get_etf_holdings",
             "ls_get_top_stocks",
             "ls_get_high_low_stocks",
@@ -120,6 +124,7 @@ public sealed class ToolSurfaceFreezeTests
             "ls_get_theme_stocks",
             "ls_get_fundamentals_rank",
             "ls_get_market_warnings",
+            "ls_run_screener",
         ];
 
         foreach (string toolName in limitTools)
@@ -139,7 +144,7 @@ public sealed class ToolSurfaceFreezeTests
         // Reflection-surface proxy for tools/list. The historical v0.10
         // standard tools/list was about 60k chars; this budget catches
         // description/schema creep while leaving room for minor wording fixes.
-        json.ShouldFitTokenBudget(30000);
+        json.ShouldFitTokenBudget(32000);
     }
 
     [Fact]
@@ -147,7 +152,7 @@ public sealed class ToolSurfaceFreezeTests
     {
         string json = SerializeSurface(ToolProfile.Resolve("all", null));
 
-        json.ShouldFitTokenBudget(34000);
+        json.ShouldFitTokenBudget(36000);
     }
 
     static string SerializeSurface(ToolProfile profile) =>
