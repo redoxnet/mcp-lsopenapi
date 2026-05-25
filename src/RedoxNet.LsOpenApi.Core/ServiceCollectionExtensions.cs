@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using RedoxNet.LsOpenApi.Core.Auth;
 using RedoxNet.LsOpenApi.Core.Catalog;
 using RedoxNet.LsOpenApi.Core.Http;
+using RedoxNet.LsOpenApi.Core.Time;
 
 namespace RedoxNet.LsOpenApi.Core;
 
@@ -46,6 +47,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<ITokenStore>(_ => new LsTokenCache());
         services.TryAddSingleton(_ => TrCatalog.Default);
         services.TryAddSingleton<TrRateLimiter>();
+        services.TryAddSingleton<ITradingCalendar, WeekendOnlyCalendar>();
 
         services.AddHttpClient(TokenHttpClientName, (sp, client) =>
         {
