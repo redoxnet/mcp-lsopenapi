@@ -217,6 +217,97 @@ read `volume_surge_percent` as a meaningful magnitude; treat it as a
 coarse "unusually active" flag. The model is expected to note ETF/bond
 inclusion when summarizing.
 
+### 4.2 `t1825` / `t1826` return `rsp_cd=""` on success ✅
+
+**TRs:** `t1825` (종목Q클릭검색 실행), `t1826` (종목Q클릭검색 리스트조회) —
+the Q-Click / 씽큐스마트 saved-screener pair.
+
+LS's own response example in the official spec shows a successful
+response with `"rsp_cd": ""` (empty string) and `"rsp_msg": ""` — not
+the usual `"00000"` / `"정상"` envelope. Every other documented TR uses
+`"00000"` on success, so a strict `RspCode == "00000"` success check
+mis-classifies these two as business-level errors and discards the
+payload.
+
+**Workaround:** `ScreenerTools.IsScreenerSuccess` treats an empty
+`rsp_cd` plus a present output block (`t1825OutBlock1` or
+`t1826OutBlock`) as success. Non-empty error codes still surface
+normally, and `LsTrResponse.IsSuccess` was left untouched so other
+TRs are unaffected.
+
+**Status:** ✅ v1.4-dev — discovered during user E2E ("Break_Above_MA20"
+saved condition; `ls_list_screeners` initially returned `rsp_cd=""`
+errors). Defensive unit tests cover both the quirk and the
+hypothetical `"00000"` future-fix path.
+
+### 4.3 "Q-Click / 씽큐스마트" is LS-curated, not user-authored ✅
+
+**TRs:** `t1825`, `t1826` (Q-Click signal pair) + HTS screens [1801]
+((KRX)종목Q클릭검색) and [1892] ((KRX)조건검색).
+
+The naming suggests "saved by the user," but the t1825/t1826 surface
+exposes **LS's own curated signal catalog** — not user-authored
+conditions. As of 2026-05-24 the catalog is 87 signals across four
+groups:
+
+- `search_gb=0` 핵심검색 → 6001–6023 (23 signals: 이평밀집정배열, 쌍바닥형, 스윙트레이딩매수, …)
+- `search_gb=1` 지표검색 → 6101–6133 (33: 골든크로스/이평/MACD/Stochastic, …)
+- `search_gb=2` 시세동향 → 6201–6216 (16: 상한가 패턴, 14시 이후 돌파, …)
+- `search_gb=3` 투자자동향 → 6301–6315 (15: 외인/프로그램/거래원, …)
+
+Every account sees the *same* catalog from the first call; there is no
+write-back path. The "API보내기" button on HTS [1892] (the visual
+condition builder for user-authored expressions) ships matched stock
+codes to *other HTS screens* (관심종목, 주문창), not to this OpenAPI
+surface — user-authored conditions are therefore not reachable via
+t1825/t1826 in v1.4. The "급변종목" group visible in HTS [1801] is also
+out of the 0–3 enumeration (likely surfaced by a separate TR family
+already covered by `ls_get_top_stocks(kind=...)`).
+
+**Workaround:** none — this is product semantics, not a defect. v1.4
+tooling (`ls_list_screeners`, `ls_run_screener`, `ls_combine_screeners`)
+and SPEC §3 are written against the LS-curated catalog assumption. Tool
+descriptions explicitly call out that HTS [1892] conditions are a
+separate system. `ls_combine_screeners` is the user-facing compensation
+for the LS-curated constraint — it lets the model combine N catalog
+signals via shcode set operations (AND / OR), expressing compound
+conditions that no single HTS screen can.
+
+**Status:** ✅ documented in [`SPEC-v1.4.md`](./SPEC-v1.4.md#3-슬라이스-b--q-클릭-시그널-카탈로그-노출)
+§3 and reflected in `ScreenerTools` tool descriptions. The original
+v1.4 kickoff frame ("expose user-saved conditions") is preserved as a
+postmortem in SPEC §3.6.
+
+### 4.4 `t1826` `search_gb=4` works but is undocumented ✅
+
+**TR:** `t1826` (종목Q클릭검색 리스트조회 / 씽큐스마트).
+
+LS's official spec doc (`todo/[주식] 종목검색_t1826.txt:26`) enumerates
+`search_gb` values 0..3 (핵심검색 / 지표검색 / 시세동향 / 투자자동향) —
+the same four groups in the documented response example. HTS [1801]
+((KRX)종목Q클릭검색) however shows a 5th group, **급변종목**, with 12
+intra-minute signals (가격급등/급락 × 4 bar widths, 거래량급증 × 4 bar
+widths).
+
+v1.4-dev E2E (2026-05-25) confirmed that calling `t1826` with
+`search_gb=4` returns those 12 signals — ids **6401–6412** — even
+though the spec doc never mentions them. Total catalog with the 5th
+group: 99 signals (23 + 33 + 16 + 15 + 12).
+
+**Workaround:** `ScreenerTools.Groups` includes `search_gb=4` and
+`FetchScreenersAsync` wraps the call in a try/catch + IsScreenerSuccess
+safety net so a *future* server-side rejection (if LS ever decides to
+hide the group) downgrades to a silent skip rather than breaking the
+whole catalog fetch.
+
+**Status:** ✅ catalog exposure complete; the group is named
+`rapid_change` (English) / `급변종목` (Korean label) in
+`ls_list_screeners` / `ls_run_screener` / `ls_combine_screeners`.
+Note: most rapid-change signals are also reachable through dedicated
+screener TRs we already wrap (`t1442` etc., surfaced via
+`ls_get_top_stocks(kind="volume_surge")`); the Q-Click variants run on
+shorter minute buckets and complement rather than duplicate.
+
 ---
 
 ## 5. Environment & data-source notes
