@@ -141,6 +141,25 @@ public class TrCatalogTests
         meta.Continuation.KeyFields.Should().Equal(continuationField);
     }
 
+    [Theory]
+    [InlineData("t1825", "t1825InBlock", "t1825OutBlock1", "search_cd")]
+    [InlineData("t1826", "t1826InBlock", "t1826OutBlock", "search_gb")]
+    public void QClickScreenerTrs_HaveExpectedCatalogShape(
+        string trCode,
+        string inBlockName,
+        string rowBlockName,
+        string firstInputField)
+    {
+        TrMeta meta = TrCatalog.Default.Get(trCode);
+
+        meta.Path.Should().Be("/stock/item-search");
+        meta.Category.Should().Be("종목검색");
+        meta.InBlocks.Should().ContainSingle().Which.Name.Should().Be(inBlockName);
+        meta.InBlocks[0].Fields.Should().Contain(f => f.Name == firstInputField && f.Required);
+        meta.OutBlocks.Should().Contain(b => b.Name == rowBlockName && b.IsArray);
+        meta.Continuation.Supported.Should().BeFalse();
+    }
+
     [Fact]
     public void FromContent_ParsesMinimalCatalog()
     {

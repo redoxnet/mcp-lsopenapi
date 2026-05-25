@@ -3477,6 +3477,77 @@
       ],
       "continuation": { "supported": false },
       "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t1825",
+      "name": "종목Q클릭검색 (씽큐스마트)",
+      "category": "종목검색",
+      "path": "/stock/item-search",
+      "description": "LS xingTrader/씽큐스마트에 저장된 종목 Q-클릭 조건(search_cd)을 실행하여 매칭 종목 목록을 반환합니다. 조건 작성은 HTS에서 수행하고, API는 저장된 조건의 실행만 지원합니다.",
+      "in_blocks": [
+        {
+          "name": "t1825InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "search_cd", "type": "char", "description": "검색코드 (t1826OutBlock.search_cd)", "required": true, "length": 4, "example": "0001" },
+            { "name": "gubun", "type": "char", "description": "시장구분 (0:전체 1:코스피 2:코스닥)", "required": false, "length": 1, "example": "0" }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t1825OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "JongCnt", "type": "int", "description": "검색종목수" }
+          ]
+        },
+        {
+          "name": "t1825OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "shcode", "type": "char", "description": "종목코드", "length": 6 },
+            { "name": "hname", "type": "char", "description": "종목명", "length": 20 },
+            { "name": "sign", "type": "char", "description": "전일대비구분", "length": 1 },
+            { "name": "signcnt", "type": "int", "description": "연속봉수" },
+            { "name": "close", "type": "long", "description": "현재가" },
+            { "name": "change", "type": "long", "description": "전일대비" },
+            { "name": "diff", "type": "double", "description": "등락율" },
+            { "name": "volume", "type": "long", "description": "거래량" },
+            { "name": "volumerate", "type": "double", "description": "거래량전일대비율" }
+          ]
+        }
+      ],
+      "continuation": { "supported": false },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t1826",
+      "name": "종목Q클릭검색 리스트조회 (씽큐스마트)",
+      "category": "종목검색",
+      "path": "/stock/item-search",
+      "description": "LS xingTrader/씽큐스마트에 저장된 종목 Q-클릭 조건 목록을 조회합니다. search_gb는 0:핵심검색, 1:지표검색, 2:시세동향, 3:투자자동향입니다.",
+      "in_blocks": [
+        {
+          "name": "t1826InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "search_gb", "type": "char", "description": "검색구분 (0:핵심검색 1:지표검색 2:시세동향 3:투자자동향)", "required": true, "length": 1, "example": "0" }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t1826OutBlock",
+          "is_array": true,
+          "fields": [
+            { "name": "search_cd", "type": "char", "description": "검색코드", "length": 4 },
+            { "name": "search_nm", "type": "char", "description": "검색명", "length": 40 }
+          ]
+        }
+      ],
+      "continuation": { "supported": false },
+      "rate_limit_per_sec": 1
     }
   ]
 }
