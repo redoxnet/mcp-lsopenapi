@@ -9,15 +9,17 @@
 [![CI](https://github.com/redoxnet/mcp-lsopenapi/actions/workflows/ci.yml/badge.svg)](https://github.com/redoxnet/mcp-lsopenapi/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-MCP server for **LS Securities OpenAPI** — ask an AI assistant for quotes, charts, screeners, ETF holdings, program-trading flow, index / industry / theme context, and your local portfolio in natural language.
+MCP server over **LS Securities OpenAPI**: quotes, charts, screeners, ETF holdings, program-trading flow, index / industry / theme context, and your local portfolio — accessed in natural language.
 
 > **v1.0 scope:** read-only market data + local portfolio notes. Portfolio tools persist user-supplied entries to a local SQLite store; they do not sync with brokerage accounts, fetch live balances, or place orders.
 
 ## Why it works well in chat
 
+An LLM-friendly window into Korean and US stock market data — designed so agents don't waste tokens reconstructing what the server can compute once.
+
 - **Market context in one place.** Quotes, order books, OHLCV charts, indicators, fundamentals, analyst opinions, investor / foreign flows, short-selling, market warnings, ETF data, and index / industry / theme screens.
 - **Q-Click signal screeners (v1.4+).** LS-curated saved conditions (~99 signals: MA alignment, breakouts, short-side trend, foreign-flow streaks, …) discovered by keyword, run by name, and *combined* with AND / OR — compound conditions no single HTS screen offers.
-- **Token-efficient by default.** Heavy responses are shaped for LLM conversations: charts return summary-first payloads and dataset handles; list tools cap rows with `limit`; reshaped defaults cut common responses by 66-97% compared with the pre-v0.9 shapes.
+- **Token-efficient by default.** Heavy responses are shaped for the model's context window — not the API's raw shape. Charts return summary-first payloads + dataset handles, raw bars stay off-context unless `output_mode: "export"` is asked for, and list tools cap rows with `limit`. The common chart / history / holdings payloads run 66-97% smaller than the pre-v0.9 shapes, so long multi-turn analysis conversations don't burn the budget on bar arrays.
 - **A smaller routing surface.** The default `standard` profile exposes 34 semantic tools, while the 3 catalog escape-hatch tools stay hidden unless `LS_TOOL_PROFILE=all`.
 - **Local portfolio memory.** Track holdings, watchlists, watched themes, corporate actions, and JSON backup / restore without sending portfolio notes anywhere except your local SQLite database.
 
@@ -48,6 +50,26 @@ Wire it into your MCP host:
 ### Claude Desktop / Claude Code
 
 `claude_desktop_config.json` (Claude Desktop) or `.mcp.json` at your workspace root (Claude Code):
+
+```jsonc
+{
+  "mcpServers": {
+    "lsopenapi": {
+      "command": "dnx",
+      "args": ["RedoxNet.Mcp.LsOpenApi", "--yes"],
+      "env": {
+        "LS_APPKEY": "...",
+        "LS_APPSECRETKEY": "...",
+        "LS_MARKET": "real"  // default if omitted; use "virtual" only for LS mock accounts
+      }
+    }
+  }
+}
+```
+
+### Cursor
+
+`~/.cursor/mcp.json` (global) or `.cursor/mcp.json` at your workspace root:
 
 ```jsonc
 {
