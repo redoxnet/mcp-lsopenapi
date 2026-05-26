@@ -1,4 +1,54 @@
-# Release Notes — RedoxNet.Mcp.LsOpenApi
+﻿# Release Notes — RedoxNet.Mcp.LsOpenApi
+
+## v1.3.0 (2026-05-24)
+
+First-class overseas stock support for the v1.x line. This release adds
+semantic MCP tools for US/overseas individual stocks alongside the
+existing overseas index / FX / futures snapshot tool.
+
+### Added — Overseas stocks
+
+- `ls_search_overseas_stock` — searches the LS overseas stock master
+  (`g3190`) by ticker, Korean name, or English name and returns
+  `keysymbol`, `exchcd`, and `symbol` for follow-up calls. When the
+  keyword looks like a US ticker (1-5 alphanumeric chars), the wrapper
+  short-circuits via a direct `g3104` probe by keysymbol, so the actual
+  ticker (e.g. `NVDA → 82NVDA`) outranks unrelated ETFs whose Korean
+  name happens to contain the same substring. Master-scan fallback
+  threads the body cursor back as `continuationKey:` (sets `tr_cont: Y`),
+  without which LS silently resets to page 1 on every continuation
+  request — and scans up to 10 pages (5,000 rows) so a name-only
+  search like `"NVIDIA"` reaches symbols deep in the alphabetical
+  listing (see [docs/LS-API-QUIRKS.md §6.1](docs/LS-API-QUIRKS.md)).
+- `ls_get_overseas_quote` — overseas stock quote snapshot (`g3101`) with
+  optional profile fields (`g3104`) and 10-level order book (`g3106`).
+- `ls_get_overseas_chart` — overseas stock OHLCV charts:
+  day/week/month/year via `g3204`, minute via `g3203`, and tick via
+  `g3202`, with optional indicators and Plotly rendering through the
+  same MCP Apps chart side channel. All three TRs are called with
+  `comp_yn="N"` — LS's `"Y"` compression path mangles floating-point
+  prices to control bytes (`rsp_cd=IGW40014`), forcing HTTP 500 on
+  every call (see [docs/LS-API-QUIRKS.md §3.4](docs/LS-API-QUIRKS.md)). The summary-warm-up policy matches
+  `ls_get_chart`, so long-period MAs (e.g. `ma:200`) and the 1Y change /
+  MA-slope fields populate even when the display window is short. The
+  response carries `currency` and `bar_timezone` (e.g. `USD` /
+  `America/New_York` for Nasdaq/NYSE/AMEX) so the model can read a
+  "5/22 일봉" as the NYSE trading session, not an Asia/Seoul calendar
+  date; the chart's price y-axis label switches to the matching currency
+  symbol via `CandlestickChartBuilder`'s new optional `currency` argument.
+
+### Changed — Chart follow-ups now span KR + overseas
+
+`ls_add_indicator` and `ls_reframe_chart` now also accept `dataset_id`s
+returned by `ls_get_overseas_chart`. The "여기에 MA200도 추가해줘" /
+"일봉으로 바꿔서 6개월" conversational flow that worked for Korean
+stocks now works identically for US stocks; the handle cache is shared.
+
+Tool surface **34 → 37** in the `standard` profile (**37 → 40** in
+`all`). The addition is additive; existing tool names, parameters, and
+response shapes are unchanged.
+
+Versioned in lockstep with `RedoxNet.LsOpenApi.Core` 1.3.0.
 
 ## v1.2.0 (2026-05-22)
 

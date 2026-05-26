@@ -24,9 +24,18 @@ namespace RedoxNet.Mcp.LsOpenApi.Tools;
 public static class OverseasStockTools
 {
     const int MaxFetchCount = 500;
-    // g3190 rate_limit_per_sec = 1; at most 5 pages × 500 = 2,500 master rows
-    // scanned for a rare-keyword query, capped at ~5s of LS-imposed delay.
-    const int SearchMaxPages = 5;
+    // g3190 rate_limit_per_sec = 1; at most 10 pages × 500 = 5,000 master rows
+    // scanned, which covers full Nasdaq alphabetically. Common ticker queries
+    // short-circuit via the g3104 fast path below, so this only bites on
+    // name-only searches (e.g. "NVIDIA", "엔비디아").
+    const int SearchMaxPages = 10;
+    // Ranking weights for master-scan matches. Exact ticker / korname matches
+    // outrank ETFs whose names merely contain the same substring.
+    const int ScoreExactSymbol = 1000;
+    const int ScoreExactKorname = 800;
+    const int ScoreEngnameStarts = 400;
+    const int ScoreSymbolStarts = 200;
+    const int ScoreSubstring = 50;
 
     static readonly IndicatorService Indicators = new();
     static readonly HashSet<string> KnownPeriodTypes =
@@ -48,6 +57,8 @@ public static class OverseasStockTools
         USE WHEN: the user names a US stock but only knows the ticker or Korean/English name, e.g. "테슬라", "Tesla", "NVDA", "미장 엔비디아".
         AVOID WHEN: the user already supplied keysymbol/exchcd/symbol; call ls_get_overseas_quote or ls_get_overseas_chart directly.
 
+        Best results: pass the US ticker when you know it (e.g. "NVDA" for 엔비디아). A ticker keyword routes through a fast direct lookup, while a Korean/English name falls back to a paginated master scan that is slower and may miss symbols deep in the alphabetical listing.
+
         US exchange defaults: exchange='nasdaq' maps to exgubun=2/exchcd=82, exchange='nyse' or 'amex' maps to exgubun=1/exchcd=81, exchange='all' scans both with exgubun=0. natcode defaults to 'US'; non-US queries require passing natcode and exchange='all' (or a numeric exgubun).
         """)]
     public static async Task<string> SearchOverseasStock(
@@ -68,26 +79,66 @@ public static class OverseasStockTools
         int cappedLimit = Math.Clamp(limit, 1, 100);
         string exgubun = NormalizeExchangeGroup(exchange);
         string needle = keyword.Trim();
+        string needleUpper = needle.ToUpperInvariant();
+        string resolvedNatcode = string.IsNullOrWhiteSpace(natcode) ? "US" : natcode.Trim().ToUpperInvariant();
 
         try
         {
-            var matches = new List<object>();
+            // (1) Ticker fast path. The master (g3190) is paginated alphabetically;
+            // tickers like NVIDIA / NVDA sit far enough into the listing that a
+            // 5-page scan misses them, and ETF names containing "NVDA" otherwise
+            // outrank the real ticker by sheer alphabetical luck. A direct
+            // g3104 probe by keysymbol resolves both problems in one call.
+            var directHits = new List<DiscoveredSymbol>();
+            bool g3104Used = false;
+            if (LooksLikeTicker(needleUpper) && resolvedNatcode == "US")
+            {
+                string[] probeExchanges = exgubun switch
+                {
+                    "2" => new[] { "82" },
+                    "1" => new[] { "81" },
+                    _ => new[] { "82", "81" },
+                };
+                foreach (string ex in probeExchanges)
+                {
+                    g3104Used = true;
+                    DiscoveredSymbol? hit = await ProbeOverseasTickerAsync(
+                        apiClient, ex, needleUpper, cancellationToken).ConfigureAwait(false);
+                    if (hit is not null)
+                        directHits.Add(hit);
+                }
+            }
+
+            // (2) Master scan with relevance scoring. Accumulate beyond
+            // cappedLimit so the ranker has options — a high-scoring exact
+            // match on page 6 must beat low-scoring substring noise on page 1.
+            var scored = new List<(int Score, DiscoveredSymbol Row)>();
             int scanned = 0;
             string cursor = "";
             int pages = 0;
+            int scanTarget = Math.Max(cappedLimit * 3, cappedLimit + 20);
 
             do
             {
+                // g3190 needs `tr_cont: Y` (set by passing continuationKey)
+                // to recognize a paginated request, even though it's a
+                // body-cursor TR. Without the header LS silently resets
+                // every request to page 1 — same `cts_value` in both
+                // request and response, indistinguishable from a stuck
+                // cursor. Passing the cursor as continuationKey sets both
+                // the header and `tr_cont_key`; the body `cts_value` is
+                // redundant but kept for catalog conformance.
                 LsTrResponse response = await apiClient.CallTrAsync(
                     "g3190",
                     new JsonObject
                     {
                         ["delaygb"] = "R",
-                        ["natcode"] = string.IsNullOrWhiteSpace(natcode) ? "US" : natcode.Trim().ToUpperInvariant(),
+                        ["natcode"] = resolvedNatcode,
                         ["exgubun"] = exgubun,
                         ["readcnt"] = 500,
                         ["cts_value"] = cursor,
                     },
+                    continuationKey: string.IsNullOrWhiteSpace(cursor) ? null : cursor,
                     cancellationToken: cancellationToken).ConfigureAwait(false);
 
                 if (!response.IsSuccess)
@@ -106,43 +157,72 @@ public static class OverseasStockTools
                             continue;
 
                         scanned++;
-                        if (matches.Count >= cappedLimit)
-                            continue;
-
-                        matches.Add(new
-                        {
-                            keysymbol = keySymbol,
-                            symbol,
-                            exchcd = row.ReadString("exchcd"),
-                            exchange = ExchangeName(row.ReadString("exchcd")),
-                            natcode = row.ReadString("natcode"),
-                            korean_name = korName,
-                            english_name = engName,
-                            currency = row.ReadString("currency"),
-                            isin = row.ReadString("isin"),
-                            listed_date = row.ReadString("listed_date"),
-                            suspend = row.ReadString("suspend"),
-                            sellonly = row.ReadString("sellonly"),
-                            fractional_trading = row.ReadString("point"),
-                        });
+                        int score = ScoreRelevance(symbol, keySymbol, korName, engName, needle, needleUpper);
+                        scored.Add((score, new DiscoveredSymbol(
+                            KeySymbol: keySymbol,
+                            Symbol: symbol,
+                            Exchcd: row.ReadString("exchcd"),
+                            Exchange: ExchangeName(row.ReadString("exchcd")),
+                            Natcode: row.ReadString("natcode"),
+                            KoreanName: korName,
+                            EnglishName: engName,
+                            Currency: row.ReadString("currency"),
+                            Isin: row.ReadString("isin"),
+                            ListedDate: row.ReadString("listed_date"),
+                            Suspend: row.ReadString("suspend"),
+                            Sellonly: row.ReadString("sellonly"),
+                            FractionalTrading: row.ReadString("point"))));
                     }
                 }
 
                 cursor = response.ContinuationKeys.TryGetValue("cts_value", out string? nextCursor) ? nextCursor : "";
                 pages++;
             }
-            while (matches.Count < cappedLimit && !string.IsNullOrWhiteSpace(cursor) && pages < SearchMaxPages);
+            while (scored.Count < scanTarget && !string.IsNullOrWhiteSpace(cursor) && pages < SearchMaxPages);
+
+            // (3) Combine: direct hits first (always exact ticker matches),
+            // then the master-scan ranking. Dedupe on keysymbol so a direct
+            // hit doesn't appear twice if the master scan also surfaced it.
+            var seenKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var results = new List<DiscoveredSymbol>();
+            foreach (DiscoveredSymbol hit in directHits)
+            {
+                if (results.Count >= cappedLimit) break;
+                if (!string.IsNullOrWhiteSpace(hit.KeySymbol) && seenKeys.Add(hit.KeySymbol!))
+                    results.Add(hit);
+            }
+            foreach ((_, DiscoveredSymbol row) in scored.OrderByDescending(s => s.Score))
+            {
+                if (results.Count >= cappedLimit) break;
+                if (!string.IsNullOrWhiteSpace(row.KeySymbol) && seenKeys.Add(row.KeySymbol!))
+                    results.Add(row);
+            }
 
             return JsonSerializer.Serialize(new
             {
                 keyword = needle,
                 exchange_filter = exchange,
-                country = string.IsNullOrWhiteSpace(natcode) ? "US" : natcode.Trim().ToUpperInvariant(),
-                count = matches.Count,
+                country = resolvedNatcode,
+                count = results.Count,
                 matches_scanned = scanned,
                 pages_scanned = pages,
-                results = matches,
-                source_tr = "g3190",
+                results = results.Select(r => new
+                {
+                    keysymbol = r.KeySymbol,
+                    symbol = r.Symbol,
+                    exchcd = r.Exchcd,
+                    exchange = r.Exchange,
+                    natcode = r.Natcode,
+                    korean_name = r.KoreanName,
+                    english_name = r.EnglishName,
+                    currency = r.Currency,
+                    isin = r.Isin,
+                    listed_date = r.ListedDate,
+                    suspend = r.Suspend,
+                    sellonly = r.Sellonly,
+                    fractional_trading = r.FractionalTrading,
+                }),
+                source_tr = g3104Used && directHits.Count > 0 ? "g3104+g3190" : "g3190",
             }, McpJson.Tool);
         }
         catch (LsAuthException ex)
@@ -153,6 +233,100 @@ public static class OverseasStockTools
         {
             return McpJson.Error("TR call failed.", new { reason = ex.Message, status = ex.StatusCode });
         }
+    }
+
+    static bool LooksLikeTicker(string upper)
+    {
+        if (upper.Length is < 1 or > 5) return false;
+        foreach (char c in upper)
+        {
+            // US tickers: A-Z and 0-9. Dotted tickers (BRK.B) are 4-5 chars
+            // including the dot — accept those too.
+            if (!(c is >= 'A' and <= 'Z' or >= '0' and <= '9' or '.'))
+                return false;
+        }
+        return true;
+    }
+
+    static async Task<DiscoveredSymbol?> ProbeOverseasTickerAsync(
+        LsApiClient apiClient,
+        string exchcd,
+        string symbolUpper,
+        CancellationToken ct)
+    {
+        try
+        {
+            LsTrResponse response = await apiClient.CallTrAsync(
+                "g3104",
+                new JsonObject
+                {
+                    ["delaygb"] = "R",
+                    ["keysymbol"] = exchcd + symbolUpper,
+                    ["exchcd"] = exchcd,
+                    ["symbol"] = symbolUpper,
+                },
+                cancellationToken: ct).ConfigureAwait(false);
+
+            if (!response.IsSuccess)
+                return null;
+
+            JsonElement? block = response.GetBlock("g3104OutBlock");
+            if (block is null) return null;
+
+            JsonElement b = block.Value;
+            string? korname = b.ReadString("korname");
+            string? engname = b.ReadString("engname");
+            // LS sometimes returns 00000 with an empty body for unknown
+            // symbols. Treat empty korname AND empty engname as "no hit".
+            if (string.IsNullOrWhiteSpace(korname) && string.IsNullOrWhiteSpace(engname))
+                return null;
+
+            return new DiscoveredSymbol(
+                KeySymbol: b.ReadString("keysymbol") ?? (exchcd + symbolUpper),
+                Symbol: b.ReadString("symbol") ?? symbolUpper,
+                Exchcd: b.ReadString("exchcd") ?? exchcd,
+                Exchange: ExchangeName(b.ReadString("exchcd") ?? exchcd),
+                Natcode: null,
+                KoreanName: korname,
+                EnglishName: engname,
+                Currency: b.ReadString("currency"),
+                Isin: null,
+                ListedDate: null,
+                Suspend: b.ReadString("suspend"),
+                Sellonly: b.ReadString("sellonly"),
+                FractionalTrading: null);
+        }
+        catch (LsTrException)
+        {
+            return null;
+        }
+    }
+
+    static int ScoreRelevance(
+        string? symbol,
+        string? keysymbol,
+        string? korname,
+        string? engname,
+        string needle,
+        string needleUpper)
+    {
+        int score = 0;
+        if (string.Equals(symbol, needleUpper, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(keysymbol, needleUpper, StringComparison.OrdinalIgnoreCase))
+            score += ScoreExactSymbol;
+        if (!string.IsNullOrWhiteSpace(korname) && string.Equals(korname, needle, StringComparison.Ordinal))
+            score += ScoreExactKorname;
+        if (!string.IsNullOrWhiteSpace(engname) &&
+            (string.Equals(engname, needleUpper, StringComparison.OrdinalIgnoreCase) ||
+             engname.StartsWith(needleUpper + " ", StringComparison.OrdinalIgnoreCase)))
+            score += ScoreEngnameStarts;
+        if (!string.IsNullOrWhiteSpace(symbol) &&
+            symbol.StartsWith(needleUpper, StringComparison.OrdinalIgnoreCase))
+            score += ScoreSymbolStarts;
+        // Any substring hit (the ContainsAny gate) is worth a baseline so
+        // matches still sort above unmatched rows when no stronger signal fires.
+        score += ScoreSubstring;
+        return score;
     }
 
     // ============================================================
@@ -761,7 +935,13 @@ public static class OverseasStockTools
                 ["symbol"] = symbol.Symbol,
                 ["gubun"] = gubun,
                 ["qrycnt"] = count,
-                ["comp_yn"] = "Y",
+                // comp_yn = 압축여부 (Y=압축, N=비압축). Forced to "N":
+                // asking LS for the compressed path corrupts the price
+                // fields on overseas charts (rsp_cd=IGW40014, e.g.
+                // "id=[시가(open)] in.data=[ 190.8400(<] dPoint=[8]"
+                // — control bytes prefixing what should be a USD price).
+                // KR chart TRs use "N" for the same reason.
+                ["comp_yn"] = "N",
                 ["sdate"] = effectiveStart,
                 ["edate"] = effectiveEnd,
                 ["cts_date"] = "",
@@ -791,7 +971,13 @@ public static class OverseasStockTools
                 ["symbol"] = symbol.Symbol,
                 ["ncnt"] = unit,
                 ["qrycnt"] = count,
-                ["comp_yn"] = "Y",
+                // comp_yn = 압축여부 (Y=압축, N=비압축). Forced to "N":
+                // asking LS for the compressed path corrupts the price
+                // fields on overseas charts (rsp_cd=IGW40014, e.g.
+                // "id=[시가(open)] in.data=[ 190.8400(<] dPoint=[8]"
+                // — control bytes prefixing what should be a USD price).
+                // KR chart TRs use "N" for the same reason.
+                ["comp_yn"] = "N",
                 ["sdate"] = from ?? "",
                 ["edate"] = to ?? "",
                 ["cts_date"] = "",
@@ -821,7 +1007,13 @@ public static class OverseasStockTools
                 ["symbol"] = symbol.Symbol,
                 ["ncnt"] = unit,
                 ["qrycnt"] = count,
-                ["comp_yn"] = "Y",
+                // comp_yn = 압축여부 (Y=압축, N=비압축). Forced to "N":
+                // asking LS for the compressed path corrupts the price
+                // fields on overseas charts (rsp_cd=IGW40014, e.g.
+                // "id=[시가(open)] in.data=[ 190.8400(<] dPoint=[8]"
+                // — control bytes prefixing what should be a USD price).
+                // KR chart TRs use "N" for the same reason.
+                ["comp_yn"] = "N",
                 ["sdate"] = from ?? "",
                 ["edate"] = to ?? "",
                 ["cts_seq"] = 0,
@@ -1150,6 +1342,27 @@ public static class OverseasStockTools
     // ============================================================
 
     internal readonly record struct OverseasSymbol(string Symbol, string Exchcd, string KeySymbol);
+
+    /// <summary>
+    /// One row returned by <see cref="SearchOverseasStock"/>. Sourced from
+    /// either the g3190 master scan or a g3104 ticker probe — fields that
+    /// only g3190 supplies (ISIN, listed_date, fractional_trading) are null
+    /// when the row came from the probe.
+    /// </summary>
+    internal sealed record DiscoveredSymbol(
+        string? KeySymbol,
+        string? Symbol,
+        string? Exchcd,
+        string? Exchange,
+        string? Natcode,
+        string? KoreanName,
+        string? EnglishName,
+        string? Currency,
+        string? Isin,
+        string? ListedDate,
+        string? Suspend,
+        string? Sellonly,
+        string? FractionalTrading);
 
     internal sealed record OverseasFrame(
         string PeriodType,

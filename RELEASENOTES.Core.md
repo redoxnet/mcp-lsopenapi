@@ -1,4 +1,32 @@
-# Release Notes — RedoxNet.LsOpenApi.Core
+﻿# Release Notes — RedoxNet.LsOpenApi.Core
+
+## v1.3.0 (2026-05-24)
+
+Embedded TR catalog update for first-class overseas stock support in
+`RedoxNet.Mcp.LsOpenApi` 1.3.0, plus one additive chart-builder API
+change so non-KRW prices render with the right unit.
+
+### Added — Catalog rows (9 new TRs)
+
+- Overseas stock market data: `g3101` (current quote), `g3102`
+  (time-and-sales / time-sliced quotes), `g3104` (security profile),
+  `g3106` (10-level order book), and `g3190` (overseas stock master).
+- Overseas stock charts: `g3103` (legacy day/week/month), `g3202`
+  (N-tick), `g3203` (N-minute), and `g3204` (day/week/month/year).
+
+Catalog count **53 → 62 TRs**.
+
+### Added — Charting
+
+- `CandlestickChartBuilder.Build` gains an optional `currency` argument.
+  `null` / `"KRW"` keeps the default Korean-market label (`주가 (원)`);
+  `"USD"` / `"JPY"` / `"EUR"` / `"GBP"` / `"HKD"` substitute the matching
+  symbol (`$` / `¥` / `€` / `£` / `HK$`); any other code falls through
+  to itself. Existing callers are unaffected (parameter is optional and
+  defaults to KRW). Internal `PriceUnitLabel(string?)` helper exposed
+  for `InternalsVisibleTo` tests.
+
+Versioned in lockstep with `RedoxNet.Mcp.LsOpenApi` 1.3.0.
 
 ## v1.2.0 (2026-05-22)
 

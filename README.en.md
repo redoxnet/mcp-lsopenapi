@@ -106,7 +106,7 @@ You need an **AppKey** and **AppSecretKey** pair issued by LS Securities to use 
 
 ### Prerequisites
 
-- **LS Securities account** — Open via mobile app, online, or branch office. Additional permissions (overseas equities, derivatives, etc.) may require separate applications.
+- **LS Securities account** — Open via mobile app, online, or branch office. Additional permissions (overseas equities, derivatives, etc.) require separate agreement signups — see [Additional setup for overseas (US) stocks](#additional-setup-for-overseas-us-stocks) below.
 - LS Securities home-trading ID.
 
 ### Issuance Steps
@@ -124,6 +124,29 @@ You need an **AppKey** and **AppSecretKey** pair issued by LS Securities to use 
 - Access tokens issued by the OAuth endpoint are valid for 24 hours; this package refreshes them automatically.
 
 For more details from LS, see the [official usage guide](https://openapi.ls-sec.co.kr/howto-use) (Korean only).
+
+## Additional setup for overseas (US) stocks
+
+Starting v1.3, the server covers US-listed stocks (Nasdaq / NYSE / AMEX) — quotes, charts, master search. **Skip this section if you only need Korean stocks.** US data requires two extra agreement signups at LS Securities, **but no new API key is issued** — LS accumulates permissions on the same `AppKey` / `AppSecretKey` pair as the agreements are signed.
+
+### Signup order
+
+1. **[HTS 2004] Overseas Stock Trading Agreement** — adds US trading permission to the account. In LS xingTrader, jump to screen `2004` or navigate `해외시장 → 해외주식 → 거래신청`. Sign the four disclosure documents (외화증권 거래설명서 / 해외주식 투자위험고지 / 해외주식 직접투자 신고 등 유의사항 / 개인신용정보 필수동의서). A 종합매매 (comprehensive) account works as-is — no new account needed.
+
+2. **[HTS 2007] Real-time Overseas Quote Subscription** — free for the US. Screen `2007` or `해외시장 → 해외주식 → 실시간 시세신청`. You must also complete **비전문가 (non-professional / individual customer) registration** in the same flow, otherwise the real-time permission is not granted. Without [2007], LS serves **15-minute-delayed quotes** by default. LS may auto-cancel this subscription if you go an extended period without logging in to LS HTS / MTS or placing US trades — keep the LS client opened periodically.
+
+3. **(If a `대차거래서비스` / stock-lending agreement exists, cancel it first)** — via LS Securities → 마이페이지 → 약정관리, or by calling `1544-9911`. An active 대차거래 agreement blocks the OpenAPI overseas signup at step 4.
+
+4. **[Web] Register the Overseas Stock OpenAPI** — LS Securities → 마이페이지 → 매매시스템 → 사용등록/해지 → select the "해외주식 API" radio → `사용등록`. Permission is added to your existing `AppKey` / `AppSecretKey` pair; environment variables stay the same.
+
+The v1.3 tools become available immediately after step 4 — `ls_search_overseas_stock`, `ls_get_overseas_quote`, `ls_get_overseas_chart`, plus follow-up handling (`ls_add_indicator` / `ls_reframe_chart`) on the same overseas datasets via the shared handle cache.
+
+### Notes
+
+- **No additional key issued** — KR and US share the same key pair. `LS_APPKEY` / `LS_APPSECRETKEY` env vars are unchanged.
+- **Non-Display restriction** — LS's NYSE / Nasdaq data license is Display-only. The "AI assistant shows the result to the user" pattern this server is built for falls within Display use; automated trading bots and third-party data redistribution may violate LS terms.
+- **Commissions** — US stock trades via the OPEN API channel are charged 0.25%. (No separate data-feed fee.) v1.3 tools are read-only, so no trading commissions apply — that becomes relevant only when order tools land in a later release.
+- **Time zones** — quote timestamps are Seoul wall-clock (`timestamp_tz: "Asia/Seoul"`); daily / minute bars are US Eastern (`bar_timezone: "America/New_York"`). An NVDA "5/22 day bar" is the NYSE 5/22 session, which spans 22:30 5/22 → 05:00 5/23 in Seoul time.
 
 ## Environment variables
 
@@ -207,10 +230,13 @@ These three catalog tools are hidden from `tools/list` in the default `standard`
 | Tool | TR | Purpose |
 | --- | --- | --- |
 | `ls_get_quote` | `t1101` | Current price + 10-level order book for a single Korean stock. |
+| `ls_search_overseas_stock` | `g3190` | Search the overseas stock master by ticker / Korean / English name and return `keysymbol`, `exchcd`, and `symbol` for follow-up calls. |
+| `ls_get_overseas_quote` | `g3101` + optional `g3104` / `g3106` | US/overseas stock snapshot. Optional profile fields and 10-level order book. |
 | `ls_get_multi_quote` | `t8407` | Compact price snapshot for **up to 50 stocks in one call** — price, OHLC, volume, best ask/bid, total ask/bid volume, trade strength. Use for side-by-side comparison or watchlists. |
 | `ls_get_top_stocks` | `t1441` / `t1444` / `t1452` / `t1463` / `t1466` | Market-wide screeners — top gainers/losers/unchanged, market cap, volume, trading value, and volume surges. |
 | `ls_get_stock_info` | `t1102` | Company profile + fundamentals: PER/PBR/EPS, quarterly financials and growth rates, 52-week + YTD ranges, top-5 buy/sell brokerages, foreign-investor activity, status flags (SPAC / administrative issue). |
 | `ls_get_chart` | `t8410` / `t8412` / `t1301` | OHLCV charts (day/week/month/year/min/tick), optional indicators (SMA, EMA, RSI, MACD, Bollinger), token-efficient `summary` + `dataset_id`, **multi-timeframe in one call** (`period_type: "day,week,month"`). Raw bars are returned only with `output_mode: "export"`. |
+| `ls_get_overseas_chart` | `g3204` / `g3203` / `g3202` | US/overseas stock OHLCV charts (day/week/month/year/min/tick), optional indicators, token-efficient summary/context, and optional Plotly chart rendering. |
 | `ls_add_indicator` | process-local handle cache + chart TR | Add an indicator to a `dataset_id` and return the updated `summary` / chart spec. Example: "add MA200 too". |
 | `ls_reframe_chart` | process-local handle cache + chart TR | Re-query the same `dataset_id` symbol with a different period/count and update the handle. Example: "switch this to daily for the last 6 months". |
 | `ls_search_stock` | `t8436` | Find KOSPI/KOSDAQ codes by name fragment; surfaces SPAC and administrative-issue flags and an `instrument` filter (`all` / `stock` / `etf`). |
@@ -496,7 +522,7 @@ Current release line:
 
 Planned:
 
-- [ ] **v1.3** — Date envelope standardization across date-bearing tools (explicit `query_date` / `data_as_of` so non-trading days are unambiguous to the model), plus first-class overseas stock support (US quote / chart / search alongside the existing index / FX / futures surface).
+- [x] **v1.3.0** — First-class overseas stock support: `ls_search_overseas_stock`, `ls_get_overseas_quote`, and `ls_get_overseas_chart`, plus catalog fallback for the nine g31xx/g32xx overseas-stock TRs. Date envelope standardization remains a v1.4 candidate.
 - [ ] **v1.4** — Pre-defined screener access ("Q-Click" style scans — moving-average alignment, gap setups, swing entries, etc., browsable as a catalog and runnable by name).
 
 Major milestones:

@@ -8,7 +8,7 @@ Each entry: **symptom → cause (as understood) → workaround → status**.
 
 Status legend: ✅ handled · ⚠️ partially handled · 🔲 open (backlog).
 
-Last updated: 2026-05-22.
+Last updated: 2026-05-26.
 
 ---
 
@@ -168,6 +168,36 @@ stock scope (t1637) surfaces amounts only.
 
 **Status:** ✅ since v1.1.
 
+### 3.4 Overseas chart `comp_yn="Y"` corrupts price bytes ✅
+
+**TRs:** `g3204` (해외주식 일주월년별 차트), `g3203` (해외주식 분봉),
+`g3202` (해외주식 틱). InBlock `comp_yn` (압축여부, `Y` = 압축,
+`N` = 비압축).
+
+Asking LS for compressed delivery (`comp_yn="Y"`) on overseas chart
+TRs corrupts the response: the price fields come back with control
+bytes prefixed to the decimal digits, and LS rejects its own payload
+mid-stream with `rsp_cd=IGW40014`. The uncompressed path
+(`comp_yn="N"`) returns clean OHLCV:
+
+```
+id=[시가(open)] in.data=[ 190.8400(<] dPoint=[8]
+Error=Character   is neither a decimal digit number, decimal point,
+nor "e" notation exponential mark.
+```
+
+Confirmed 2026-05-26 on NVDA `g3204` daily: `comp_yn="Y"` HTTP 500,
+`comp_yn="N"` returns 30 clean daily candles. The KR chart wrapper
+(`GetChartTool`) has always used `"N"`; the overseas wrapper was
+coded with `"Y"` and the bug never surfaced in unit tests because the
+test fixtures hardcode the response shape.
+
+**Workaround:** `OverseasStockTools` forces `comp_yn="N"` on all three
+overseas chart TRs. A test pins `\"comp_yn\":\"N\"` on the request
+body so a regression to `"Y"` fails CI.
+
+**Status:** ✅ since v1.3.0 (fixed during release-prep E2E).
+
 ---
 
 ## 4. Screener semantics (surprising, not bugs)
@@ -204,3 +234,40 @@ The LS developer-site testbed returns **canned documentation samples**,
 not live data. Use them to pin response *shapes* only — never as a source
 of value truth or for behavioral assumptions (e.g. `gubun1` semantics in
 §2.1 could not be derived from the testbed and required live calls).
+
+---
+
+## 6. Continuation & paging
+
+### 6.1 `g3190` body cursor ignored without `tr_cont: Y` header ✅
+
+**TR:** `g3190` (해외주식 마스터). Body cursor field: `cts_value`.
+
+Catalog declares `g3190` as a body-cursor-paged TR
+(`"continuation": { "supported": true, "key_fields": ["cts_value"] }`),
+but LS silently treats every request as the **initial page** unless the
+HTTP header `tr_cont: Y` is also set. Symptom: the response's
+`cts_value` echoes the request's `cts_value` unchanged, and rows on
+"page 2" are byte-for-byte identical to page 1, so a paging loop
+scans the first 500 rows forever. Confirmed 2026-05-26 by issuing two
+consecutive `ls_call_tr` calls — `cts_value=""` and
+`cts_value="0000000000000501"` returned the same first-page rows
+starting at `AACB`.
+
+**Workaround:** `OverseasStockTools.SearchOverseasStock` threads the
+returned cursor back through `LsApiClient.CallTrAsync`'s
+`continuationKey:` parameter, which sets `tr_cont: Y` (and a redundant
+`tr_cont_key`). The body `cts_value` is still sent for catalog
+conformance. A unit test pins both `tr_cont: N` on the first request
+and `tr_cont: Y` on the continuation so a regression to body-only
+paging fails CI.
+
+**Likely scope:** Other body-cursor-only TRs in the catalog
+(`{ "supported": true, "key_fields": [...] }` with no header
+declaration) probably share this requirement. The general fix is
+"always pass the cursor through `continuationKey:`" — header-paged
+TRs already do, this just brings body-paged TRs in line.
+
+**Status:** ✅ for `g3190` since v1.3.0. 🔲 broader audit deferred — the
+v1.3 wrapper that hit it is currently the only paging path that loops
+in production.

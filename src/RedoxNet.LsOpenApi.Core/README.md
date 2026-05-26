@@ -1,6 +1,6 @@
 # RedoxNet.LsOpenApi.Core
 
-.NET SDK for the **LS증권 OpenAPI** (REST). Provides the auth, HTTP, TR catalog, and indicator primitives used by the [`RedoxNet.Mcp.LsOpenApi`](https://www.nuget.org/packages/RedoxNet.Mcp.LsOpenApi/) MCP server, and usable on its own as a Korean stock market data SDK.
+.NET SDK for the **LS증권 OpenAPI** (REST). Provides the auth, HTTP, TR catalog, and indicator primitives used by the [`RedoxNet.Mcp.LsOpenApi`](https://www.nuget.org/packages/RedoxNet.Mcp.LsOpenApi/) MCP server, and usable on its own as a Korean and US/overseas stock market data SDK.
 
 > Unofficial third-party SDK. Not affiliated with or endorsed by LS Securities Co., Ltd. (LS증권). Read-only market-data scope.
 
@@ -47,7 +47,7 @@ if (response.IsSuccess)
 |---|---|
 | **Auth** | `LsTokenIssuer` — OAuth2 `client_credentials`, with `LsTokenCache` (SQLite WAL, key = `SHA256(appkey):market` — raw app key never on disk). Auto-refresh 5 min pre-expiry; concurrent issuance is serialized. |
 | **HTTP** | `LsApiClient.CallTrAsync` with Polly retries on 408/429/5xx + per-TR rate limiter + dual continuation modes (header `tr_cont_key` and body field continuation). |
-| **Catalog** | `TrCatalog.Default` — 53-TR catalog as an embedded resource (시세 / 차트 / 지수 / 업종 / 테마 / ETF / 스크리너 / 종목조회 / 기타). `Search` ranks by exact-code, name, category, description, and field-level matches. |
+| **Catalog** | `TrCatalog.Default` — 62-TR catalog as an embedded resource (시세 / 차트 / 지수 / 업종 / 테마 / ETF / 스크리너 / 종목조회 / 해외주식시세 / 해외주식차트 / 기타). `Search` ranks by exact-code, name, category, description, and field-level matches. |
 | **Indicators** | `IndicatorService` over `Skender.Stock.Indicators` (SMA, EMA, RSI, MACD, Bollinger). Compact spec parser (`ma:5`, `bb:20,2`, `macd:12,26,9`). |
 | **Chart context** | `ChartContextBuilder` — pre-computed analysis block (divergence from each MA, volume averages, drawdown from period high, MA trend, tristate `bullish_alignment` with `null` during MA warm-up). |
 | **Analytical summary** | `AnalyticalSummaryBuilder` — token-efficient model-facing snapshot (period-aware MA snapshots, MA60 deviation + slope via least-squares fit, drawdown from peak, 1Y/5Y change, ZigZag-based `key_turns` with strict peak/trough alternation, and an `IndicatorCoverage` block that reports each indicator as `ok` / `insufficient_data` / `disabled` with a human-readable note when a window is too narrow). |

@@ -2,7 +2,7 @@
 
 # RedoxNet.Mcp.LsOpenApi
 
-MCP server for the **LS 증권 OpenAPI** — exposes Korean stock market data as MCP tools so AI assistants can query quotes, charts, ETF data, market screeners, and index / industry / theme context in natural language, alongside a local-only portfolio module (multi-account holdings, watchlists, watched themes, JSON backup / restore).
+MCP server for the **LS 증권 OpenAPI** — exposes Korean and US/overseas (Nasdaq / NYSE / AMEX) stock market data as MCP tools so AI assistants can query quotes, charts, ETF data, market screeners, and index / industry / theme context in natural language, alongside a local-only portfolio module (multi-account holdings, watchlists, watched themes, JSON backup / restore).
 
 > Unofficial third-party MCP server. Not affiliated with or endorsed by LS Securities Co., Ltd. (LS증권). v0.x.x scope: read-only market data + local portfolio notes (manual entry; no broker sync, no order placement).
 
@@ -87,9 +87,9 @@ LS_APPSECRETKEY=...
 LS_MARKET=real
 ```
 
-AssistStudio renders the optional Plotly chart spec from `ls_get_chart` inline in the
-chat — call it with `include_chart=true` (single timeframe) to get a candlestick chart
-directly in the conversation.
+AssistStudio renders the optional Plotly chart spec from `ls_get_chart` / `ls_get_overseas_chart`
+inline in the chat — call either with `include_chart=true` (single timeframe) to get a
+candlestick chart directly in the conversation.
 
 ## Environment variables
 
@@ -108,9 +108,14 @@ Credentials are accepted **only** through the process environment — never thro
 
 Local data lives at `%LOCALAPPDATA%\RedoxNet\LsOpenApi\` on Windows and `~/.local/share/redoxnet/lsopenapi/` on Linux/macOS: `token.db` (auth cache, SHA-256 keyed) and `portfolio.db` (user-supplied holdings/watchlists; never read or written by tools outside the portfolio family).
 
-## Tools (34 in the `standard` profile)
+## Tools (37 in the `standard` profile, 40 in `all`)
 
-v0.10 (BREAKING) compresses the tool surface: the twenty v0.9 portfolio tools fold into **five action-routed dispatchers** (`ls_account`, `ls_watchlist`, `ls_watched_themes`, `ls_portfolio_io`, `ls_holding`), and the new `LS_TOOL_PROFILE` env var hides the three catalog tools in the default `standard` profile. Surface 48 → **32** (`standard`) / 35 (`all`). Additive in the same release: `ls_get_stock_info` gains an opt-in `foreign` ownership section (t1716); list / screener tools unify their row cap to `limit` and emit `total_available`; `ls_get_index_history` gains `output_mode=export` with a `dataset_id` drill.
+Recent surface highlights (full history in [RELEASENOTES.Mcp.md](https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Mcp.md)):
+
+- **v1.3** — first-class **US/overseas stocks** (Nasdaq / NYSE / AMEX): `ls_search_overseas_stock`, `ls_get_overseas_quote`, `ls_get_overseas_chart`. `ls_add_indicator` / `ls_reframe_chart` accept overseas `dataset_id`s through the shared handle cache.
+- **v1.2** — chart side-channel adapts per host via MCP Apps capability negotiation (SEP-1865 `io.modelcontextprotocol/ui` + a `clientInfo` allowlist). Text-only hosts get neither `include_chart` nor `structuredContent.chart`; chart-rendering hosts get the Plotly spec.
+- **v1.1** — program-trading slice (`ls_get_program_trading`, `ls_analyze_program_flow`).
+- **v0.10** — surface compressed via five **action-routed portfolio dispatchers** (`ls_account`, `ls_watchlist`, `ls_watched_themes`, `ls_portfolio_io`, `ls_holding`); `LS_TOOL_PROFILE` hides the 3 catalog tools by default.
 
 ### Market data (LS-backed, credentials required)
 
@@ -126,12 +131,20 @@ v0.10 (BREAKING) compresses the tool surface: the twenty v0.9 portfolio tools fo
 | `ls_get_top_stocks` | `t1441` / `t1444` / `t1452` / `t1463` / `t1466` | Top gainers/losers, market cap, volume, trading value, and volume-surge screeners. |
 | `ls_get_stock_info` | `t1102` + `t1716` | PER/PBR/EPS, quarterly financials, 52-week + YTD ranges, top-5 brokerages, SPAC / 관리종목 flags, and an opt-in `foreign` ownership-level section. Pick blocks with `sections` (default `snapshot`+`fundamentals`). |
 | `ls_get_chart` | `t8410` / `t8412` / `t1301` | OHLCV (day/week/month/year/min/tick), indicators (SMA/EMA/RSI/MACD/BB), token-efficient `summary` + `dataset_id`, multi-timeframe in one call, optional Plotly v5 chart spec. Raw bars only with `output_mode='export'`; `with_warmup` toggles the summary warm-up; `summary.coverage` explains any null indicators. |
-| `ls_add_indicator` | (handle cache + chart TR) | Adds an indicator to a `dataset_id` returned by `ls_get_chart` and returns the updated `summary` + chart spec. Example: *"add MA200 too"*. |
-| `ls_reframe_chart` | (handle cache + chart TR) | Reframes a `dataset_id` to a new period/count using the cached symbol. Example: *"이걸 일봉으로 바꿔서 최근 6개월만 보여줘"*. |
+| `ls_add_indicator` | (handle cache + chart TR) | Adds an indicator to a `dataset_id` returned by `ls_get_chart` *or* `ls_get_overseas_chart` and returns the updated `summary` + chart spec. KR and US datasets share the same cache. Example: *"add MA200 too"*. |
+| `ls_reframe_chart` | (handle cache + chart TR) | Reframes a `dataset_id` to a new period/count using the cached symbol. Works on both KR and US chart datasets. Example: *"이걸 일봉으로 바꿔서 최근 6개월만 보여줘"*. |
 | `ls_search_stock` | `t8436` | Name → code search with `instrument` filter (`all` / `stock` / `etf`). |
 | `ls_get_etf_info` | `t1901` | ETF/ETN snapshot — NAV, 괴리율, 추적오차율, reference index, AUM, LP list. |
 | `ls_get_etf_holdings` | `t1904` | ETF PDF (구성종목) — per-holding weight / valuation. `limit` caps the rows (default 20; `limit=-1` for the full list). |
 | `ls_get_global_market_quote` | `t3521` | Overseas index / FX / futures snapshot. Aliases include `nasdaq`, `sp500`, `dow`, `soxx`, `usdkrw`, `wti`, `gold`; raw LS symbols like `NAS@IXIC` are accepted. |
+
+### US / overseas individual stocks (LS-backed)
+
+| Tool | TR | Purpose |
+|---|---|---|
+| `ls_search_overseas_stock` | `g3104` + `g3190` | Ticker / Korean name / English name search across the LS overseas stock master. Ticker-pattern keywords short-circuit through a direct `g3104` probe (so `NVDA` resolves to the real ticker, not an unrelated ETF whose name contains "NVDA"); name keywords fall back to a ranked paginated master scan. Returns `keysymbol`, `exchcd`, `symbol` for follow-up calls. |
+| `ls_get_overseas_quote` | `g3101` + opt. `g3104` / `g3106` | Overseas stock quote snapshot — price, change %, OHLC, 52-week range, PER/EPS, optional company/security profile and 10-level order book. |
+| `ls_get_overseas_chart` | `g3204` / `g3203` / `g3202` | OHLCV candles for US stocks — day/week/month/year (`g3204`), N분봉 (`g3203`), N틱 (`g3202`). Same indicator stack and `summary` / `dataset_id` / Plotly chart spec as `ls_get_chart`; response carries `currency` (`USD` for Nasdaq/NYSE/AMEX) and `bar_timezone` (`America/New_York`) so the model can disambiguate "5/22 일봉" as the NYSE session rather than an Asia/Seoul calendar date. |
 
 ### Index + industry (LS-backed)
 

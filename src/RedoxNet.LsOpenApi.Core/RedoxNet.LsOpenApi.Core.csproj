@@ -11,7 +11,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 
-    <Version>1.2.0</Version>
+    <Version>1.3.0</Version>
     <PackageId>RedoxNet.LsOpenApi.Core</PackageId>
     <Authors>Jong Hyun Kim</Authors>
     <Company>RedoxNet</Company>
@@ -24,7 +24,7 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
 	<PackageIcon>icon.png</PackageIcon>
     <Copyright>Copyright (c) 2026 RedoxNet</Copyright>
-    <PackageReleaseNotes>v1.1.0 — program-trading support. The embedded TR catalog grows from 46 to 53 TRs (the /stock/program family). New internal chart-spec builders and an Analysis layer (ProgramFootprintAnalyzer) back the MCP server's program-trading tools; the public Core API is unchanged. Versioned in lockstep with RedoxNet.Mcp.LsOpenApi 1.1.0. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Core.md for full notes.</PackageReleaseNotes>
+    <PackageReleaseNotes>v1.3.0 — embedded TR catalog update for overseas stock support. Adds nine g31xx/g32xx overseas-stock quote/master/chart TRs; public Core API unchanged. Versioned in lockstep with RedoxNet.Mcp.LsOpenApi 1.3.0. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Core.md for full notes.</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>

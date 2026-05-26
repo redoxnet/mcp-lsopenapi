@@ -89,6 +89,308 @@ public sealed class OverseasStockToolsTests
         row.GetProperty("exchange").GetString().Should().Be("nasdaq");
     }
 
+    [Fact]
+    public async Task SearchOverseasStock_PaginationCallsSetTrContHeader()
+    {
+        // g3190 needs `tr_cont: Y` on continuation requests, otherwise LS
+        // silently resets to page 1 — same cts_value in both directions,
+        // and the client loops on identical rows. The wrapper must thread
+        // the body cursor through `continuationKey:` so the header lands.
+        const string page1 = """
+        {
+          "rsp_cd": "00000",
+          "rsp_msg": "조회완료",
+          "g3190OutBlock": {
+            "delaygb": "R", "natcode": "US", "exgubun": "2",
+            "cts_value": "0000000000000501", "rec_count": 1
+          },
+          "g3190OutBlock1": [
+            {
+              "keysymbol": "82WIDGT", "natcode": "US", "exchcd": "82", "symbol": "WIDGT",
+              "korname": "WIDGET A 일치", "engname": "WIDGET A INC", "currency": "USD"
+            }
+          ]
+        }
+        """;
+        const string page2 = """
+        {
+          "rsp_cd": "00000",
+          "rsp_msg": "조회완료",
+          "g3190OutBlock": {
+            "delaygb": "R", "natcode": "US", "exgubun": "2",
+            "cts_value": "", "rec_count": 1
+          },
+          "g3190OutBlock1": [
+            {
+              "keysymbol": "82WIDGB", "natcode": "US", "exchcd": "82", "symbol": "WIDGB",
+              "korname": "WIDGET B 일치", "engname": "WIDGET B CORP", "currency": "USD"
+            }
+          ]
+        }
+        """;
+
+        int g3190Call = 0;
+        var (client, handler) = TestClientFactory.Create((request, _) =>
+        {
+            string tr = request.Headers.GetValues("tr_cd").Single();
+            if (tr != "g3190")
+                return Ok("""{"rsp_cd":"99999","rsp_msg":"unexpected tr"}""");
+            return Ok(++g3190Call == 1 ? page1 : page2);
+        });
+
+        // "WIDGET" is non-ticker (>5 chars) so no g3104 probe; pure master
+        // scan exercises the pagination header.
+        string result = await OverseasStockTools.SearchOverseasStock(
+            client, keyword: "WIDGET", exchange: "nasdaq", limit: 5);
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        IReadOnlyList<HttpRequestMessage> g3190Requests = handler.Requests
+            .Where(r => r.Headers.GetValues("tr_cd").Single() == "g3190")
+            .ToList();
+        g3190Requests.Count.Should().BeGreaterThanOrEqualTo(2,
+            because: "pagination must continue past page 1 when LS reports has_more");
+
+        // Page 1 → tr_cont: N (initial request). Page 2 → tr_cont: Y.
+        g3190Requests[0].Headers.GetValues("tr_cont").Single().Should().Be("N");
+        g3190Requests[1].Headers.GetValues("tr_cont").Single().Should().Be("Y");
+        g3190Requests[1].Headers.GetValues("tr_cont_key").Single().Should().Be("0000000000000501");
+
+        root.GetProperty("count").GetInt32().Should().Be(2,
+            because: "with pagination working, page 2's row joins page 1's row in results");
+        root.GetProperty("pages_scanned").GetInt32().Should().Be(2);
+    }
+
+    [Fact]
+    public async Task SearchOverseasStock_TickerKeyword_PromotesG3104HitAboveSubstringEtfs()
+    {
+        // The Nasdaq master only returns NVDA-substring ETFs in the first
+        // pages — NVDA itself sits much deeper alphabetically. The fast path
+        // must call g3104 by keysymbol so the actual ticker wins regardless
+        // of where it lands in the paginated master.
+        const string g3104Sample = """
+        {
+          "rsp_cd": "00000",
+          "rsp_msg": "조회완료",
+          "g3104OutBlock": {
+            "keysymbol": "82NVDA",
+            "exchcd": "82",
+            "symbol": "NVDA",
+            "korname": "엔비디아",
+            "engname": "NVIDIA CORP",
+            "currency": "USD",
+            "suspend": "N",
+            "sellonly": "0"
+          }
+        }
+        """;
+        const string g3190Sample = """
+        {
+          "rsp_cd": "00000",
+          "rsp_msg": "조회완료",
+          "g3190OutBlock": {
+            "delaygb": "R", "natcode": "US", "exgubun": "2",
+            "cts_value": "", "rec_count": 2
+          },
+          "g3190OutBlock1": [
+            {
+              "keysymbol": "82ANV", "natcode": "US", "exchcd": "82", "symbol": "ANV",
+              "korname": "GRANITESHARES AUTOCALLABLE NVDA",
+              "engname": "GRANITESHARES AUTOCALLABLE NVDA ETF",
+              "currency": "USD"
+            },
+            {
+              "keysymbol": "82BNVD", "natcode": "US", "exchcd": "82", "symbol": "BNVD",
+              "korname": "다른 NVDA 연계 ETF",
+              "engname": "OTHER NVDA-LINKED ETF",
+              "currency": "USD"
+            }
+          ]
+        }
+        """;
+
+        var (client, handler) = TestClientFactory.Create((request, _) =>
+        {
+            string tr = request.Headers.GetValues("tr_cd").Single();
+            return Ok(tr switch
+            {
+                "g3104" => g3104Sample,
+                "g3190" => g3190Sample,
+                _ => throw new InvalidOperationException(tr),
+            });
+        });
+
+        string result = await OverseasStockTools.SearchOverseasStock(
+            client, keyword: "NVDA", exchange: "nasdaq");
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        // exgubun=2 → exactly one g3104 probe (exchange 82 only); then g3190 scan.
+        IReadOnlyList<string> trs = handler.Requests
+            .Select(r => r.Headers.GetValues("tr_cd").Single())
+            .ToList();
+        trs[0].Should().Be("g3104", because: "ticker fast path must probe g3104 first");
+        trs.Skip(1).Should().AllBe("g3190");
+        trs.Count(t => t == "g3104").Should().Be(1, because: "Nasdaq-only filter should not probe NYSE (81)");
+
+        root.GetProperty("source_tr").GetString().Should().Be("g3104+g3190");
+        root.GetProperty("count").GetInt32().Should().Be(3);
+
+        // Direct hit must lead the results, ahead of the ETF substring matches.
+        JsonElement first = root.GetProperty("results")[0];
+        first.GetProperty("keysymbol").GetString().Should().Be("82NVDA");
+        first.GetProperty("symbol").GetString().Should().Be("NVDA");
+        first.GetProperty("english_name").GetString().Should().Be("NVIDIA CORP");
+    }
+
+    [Fact]
+    public async Task SearchOverseasStock_TickerKeyword_AllExchangesProbesBothG3104s()
+    {
+        // exchange='all' → exgubun=0 → probe both 82 and 81. The mock returns
+        // a hit on 82NVDA only; the 81 probe replies "no data" so it should
+        // not pollute results.
+        const string g3104Nasdaq = """
+        {
+          "rsp_cd": "00000",
+          "rsp_msg": "조회완료",
+          "g3104OutBlock": {
+            "keysymbol": "82NVDA", "exchcd": "82", "symbol": "NVDA",
+            "korname": "엔비디아", "engname": "NVIDIA CORP", "currency": "USD"
+          }
+        }
+        """;
+        const string g3104NyseEmpty = """
+        {
+          "rsp_cd": "00000",
+          "rsp_msg": "조회완료",
+          "g3104OutBlock": {
+            "keysymbol": "", "exchcd": "", "symbol": "",
+            "korname": "", "engname": ""
+          }
+        }
+        """;
+        const string g3190Empty = """
+        {
+          "rsp_cd": "00000",
+          "rsp_msg": "조회완료",
+          "g3190OutBlock": { "delaygb": "R", "natcode": "US", "exgubun": "0", "cts_value": "", "rec_count": 0 },
+          "g3190OutBlock1": []
+        }
+        """;
+
+        int g3104Calls = 0;
+        var (client, handler) = TestClientFactory.Create((request, _) =>
+        {
+            string tr = request.Headers.GetValues("tr_cd").Single();
+            if (tr == "g3104")
+            {
+                string body = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+                g3104Calls++;
+                return Ok(body.Contains("\"exchcd\":\"82\"") ? g3104Nasdaq : g3104NyseEmpty);
+            }
+            return Ok(g3190Empty);
+        });
+
+        string result = await OverseasStockTools.SearchOverseasStock(
+            client, keyword: "NVDA", exchange: "all");
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        g3104Calls.Should().Be(2, because: "exchange='all' must probe both 82 (Nasdaq) and 81 (NYSE/AMEX)");
+        handler.Requests.Count(r => r.Headers.GetValues("tr_cd").Single() == "g3190").Should().BeGreaterThan(0);
+
+        // Only the Nasdaq hit survives the "empty korname AND engname" filter.
+        root.GetProperty("count").GetInt32().Should().Be(1);
+        root.GetProperty("results")[0].GetProperty("keysymbol").GetString().Should().Be("82NVDA");
+        root.GetProperty("source_tr").GetString().Should().Be("g3104+g3190");
+    }
+
+    [Fact]
+    public async Task SearchOverseasStock_NonTickerKeyword_DoesNotProbeG3104()
+    {
+        // "NVIDIA" is 6 chars → fails the ticker pattern. Same for Korean
+        // keywords. The wrapper must NOT issue a g3104 probe in this case,
+        // because the probe with keysymbol="82NVIDIA" would return a false
+        // negative and waste latency.
+        const string sample = """
+        {
+          "rsp_cd": "00000",
+          "rsp_msg": "조회완료",
+          "g3190OutBlock": {
+            "delaygb": "R", "natcode": "US", "exgubun": "2",
+            "cts_value": "", "rec_count": 1
+          },
+          "g3190OutBlock1": [
+            {
+              "keysymbol": "82NVDA", "natcode": "US", "exchcd": "82", "symbol": "NVDA",
+              "korname": "엔비디아", "engname": "NVIDIA CORP", "currency": "USD"
+            }
+          ]
+        }
+        """;
+
+        var (client, handler) = TestClientFactory.Create((_, _) => Ok(sample));
+
+        string result = await OverseasStockTools.SearchOverseasStock(
+            client, keyword: "NVIDIA", exchange: "nasdaq");
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        handler.Requests
+            .Select(r => r.Headers.GetValues("tr_cd").Single())
+            .Should().AllBe("g3190", because: "non-ticker keywords skip the g3104 fast path");
+
+        root.GetProperty("source_tr").GetString().Should().Be("g3190");
+        root.GetProperty("count").GetInt32().Should().Be(1);
+        root.GetProperty("results")[0].GetProperty("symbol").GetString().Should().Be("NVDA");
+    }
+
+    [Fact]
+    public async Task SearchOverseasStock_TickerProbeMisses_FallsBackToMasterScan()
+    {
+        // Probe returns 00000 but empty body → wrapper must treat it as "no hit"
+        // and still serve the master-scan substring matches.
+        const string g3104Empty = """
+        {
+          "rsp_cd": "00000",
+          "rsp_msg": "조회완료",
+          "g3104OutBlock": {
+            "keysymbol": "", "korname": "", "engname": ""
+          }
+        }
+        """;
+        const string g3190Sample = """
+        {
+          "rsp_cd": "00000",
+          "rsp_msg": "조회완료",
+          "g3190OutBlock": {
+            "delaygb": "R", "natcode": "US", "exgubun": "2",
+            "cts_value": "", "rec_count": 1
+          },
+          "g3190OutBlock1": [
+            {
+              "keysymbol": "82ANV", "natcode": "US", "exchcd": "82", "symbol": "ANV",
+              "korname": "GRANITESHARES AUTOCALLABLE XYZQ",
+              "engname": "GRANITESHARES AUTOCALLABLE XYZQ ETF",
+              "currency": "USD"
+            }
+          ]
+        }
+        """;
+
+        var (client, _) = TestClientFactory.Create((request, _) =>
+        {
+            string tr = request.Headers.GetValues("tr_cd").Single();
+            return Ok(tr == "g3104" ? g3104Empty : g3190Sample);
+        });
+
+        string result = await OverseasStockTools.SearchOverseasStock(
+            client, keyword: "XYZQ", exchange: "nasdaq");
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+
+        // Probe miss → source_tr drops back to plain g3190 even though g3104
+        // was attempted. count comes from the substring fallback.
+        root.GetProperty("source_tr").GetString().Should().Be("g3190");
+        root.GetProperty("count").GetInt32().Should().Be(1);
+        root.GetProperty("results")[0].GetProperty("symbol").GetString().Should().Be("ANV");
+    }
+
     // ============================================================
     // ls_get_overseas_quote
     // ============================================================
@@ -245,6 +547,10 @@ public sealed class OverseasStockToolsTests
         string body = await handler.Requests[0].Content!.ReadAsStringAsync();
         body.Should().Contain("\"keysymbol\":\"82TSLA\"");
         body.Should().Contain("\"sujung\":\"Y\"");
+        // comp_yn must be "N" — "Y" triggers LS upstream compression that
+        // mangles floating-point prices (rsp_cd=IGW40014 / dPoint=[8]
+        // binary garbage) on overseas chart TRs.
+        body.Should().Contain("\"comp_yn\":\"N\"");
 
         root.GetProperty("output_mode").GetString().Should().Be("display");
         root.GetProperty("currency").GetString().Should().Be("USD");
