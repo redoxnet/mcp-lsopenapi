@@ -108,10 +108,11 @@ Credentials are accepted **only** through the process environment — never thro
 
 Local data lives at `%LOCALAPPDATA%\RedoxNet\LsOpenApi\` on Windows and `~/.local/share/redoxnet/lsopenapi/` on Linux/macOS: `token.db` (auth cache, SHA-256 keyed) and `portfolio.db` (user-supplied holdings/watchlists; never read or written by tools outside the portfolio family).
 
-## Tools (37 in the `standard` profile, 40 in `all`)
+## Tools (40 in the `standard` profile, 43 in `all`)
 
 Recent surface highlights (full history in [RELEASENOTES.Mcp.md](https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Mcp.md)):
 
+- **v1.4** — (a) **date envelope** (`query_date` input + `data_as_of` / `query_date_resolution` response fields) so non-trading-day fallbacks are explicit — wired on `ls_get_market_funds_trend` and `ls_get_short_selling_trend`; (b) **LS Q-Click signal screeners**: `ls_list_screeners`, `ls_run_screener`, `ls_combine_screeners` over `t1825` / `t1826`.
 - **v1.3** — first-class **US/overseas stocks** (Nasdaq / NYSE / AMEX): `ls_search_overseas_stock`, `ls_get_overseas_quote`, `ls_get_overseas_chart`. `ls_add_indicator` / `ls_reframe_chart` accept overseas `dataset_id`s through the shared handle cache.
 - **v1.2** — chart side-channel adapts per host via MCP Apps capability negotiation (SEP-1865 `io.modelcontextprotocol/ui` + a `clientInfo` allowlist). Text-only hosts get neither `include_chart` nor `structuredContent.chart`; chart-rendering hosts get the Plotly spec.
 - **v1.1** — program-trading slice (`ls_get_program_trading`, `ls_analyze_program_flow`).
@@ -154,7 +155,7 @@ Recent surface highlights (full history in [RELEASENOTES.Mcp.md](https://github.
 | `ls_get_index_history` | `t1514` | Daily/weekly/monthly index time series — per-bar OHLC, volume, breadth, foreign/institutional net flow. `verbosity` shapes the payload; `output_mode=export` caches the whole series under a `dataset_id` for no-API-call drill (`from` / `to` / `recent_n`). |
 | `ls_get_industry_indices` | `t8424` + `t1511` fanout | Top-N industry indices sorted by change %. 60s cache so repeated calls with different `limit` reuse one fanout. |
 | `ls_get_industry_stocks` | `t1516` | Stocks inside one industry + the industry's index summary. Body-based paging. Accepts `upcode` or `industry_keyword` (LIKE on cached t8424 catalog). |
-| `ls_get_market_funds_trend` | `t8428` | Market-liquidity time series — 고객예탁금, 신용잔고, 미수금, 선물예수금, and equity/mixed/bond/MMF fund money (억원). |
+| `ls_get_market_funds_trend` | `t8428` | Market-liquidity time series — 고객예탁금, 신용잔고, 미수금, 선물예수금, and equity/mixed/bond/MMF fund money (억원). Accepts the v1.4 date envelope (`query_date` in, `data_as_of` + `query_date_resolution` out). |
 
 ### LS themes (LS-backed)
 
@@ -172,8 +173,11 @@ Recent surface highlights (full history in [RELEASENOTES.Mcp.md](https://github.
 | `ls_get_stock_events` | `t3202` | Per-stock corporate-action / 주주총회 calendar covering all 14 LS event types. `kinds` accepts English snake_case, Korean labels, or raw two-char upgu codes. TBD entries survive date filtering. |
 | `ls_get_market_warnings` | `t1404` + `t1405` | Union of the two KRX surveillance screens (13 designations: 관리 / 불성실공시 / 투자유의 / 투자환기 / 투자경고 / 매매정지 / 정리매매 / 투자주의 / 투자위험 / 위험예고 / 단기과열지정 / 이상급등 / 상장주식수부족). `shcodes` clips against holdings for "내 보유 중 관리종목" queries. |
 | `ls_get_analyst_opinions` | `t3401` | Per-stock brokerage (sell-side) investment-opinion history — rating + target price before/after each change, broker, opinion-day close, plus a current-price snapshot. |
-| `ls_get_short_selling_trend` | `t1927` | Per-stock daily short-selling (공매도) — short volume/value (백만원), short ratio, average short price, cumulative short volume, uptick-applied vs. exempt split. |
+| `ls_get_short_selling_trend` | `t1927` | Per-stock daily short-selling (공매도) — short volume/value (백만원), short ratio, average short price, cumulative short volume, uptick-applied vs. exempt split. Accepts the v1.4 date envelope (`query_date` in, `data_as_of` + `query_date_resolution` out). |
 | `ls_get_high_low_stocks` | `t1442` | New-high / new-low (신고가 / 신저가) screener. `direction`, `period` (52w default), `maintained` (돌파유지 vs 일시돌파); ETF/ETN excluded by default. |
+| `ls_list_screeners` | `t1826` | List the user's saved **Q-Click 조건식** screeners on the LS server side, with partial Korean-name filter. |
+| `ls_run_screener` | `t1825` | Execute a saved Q-Click condition by id and return the matching stocks (`limit`-capped). Rows reporting `0` price for thinly-traded names are tagged `rapid_change_noise`. |
+| `ls_combine_screeners` | `t1825` (fanout) | Intersect or union the results of multiple saved Q-Click screeners in a single call. Dedupes inputs; preserves the per-screener row caps. |
 
 ### Program trading (LS-backed)
 

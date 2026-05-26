@@ -1,5 +1,82 @@
 ﻿# Release Notes — RedoxNet.Mcp.LsOpenApi
 
+## v1.4.0 (2026-05-26)
+
+Two independent additive slices: (A) a standardized **date envelope**
+so non-trading-day fallbacks are explicit to the model, and (B)
+first-class access to LS's **Q-Click signal screeners** (saved
+condition expressions). Both are additive — existing tool signatures
+and response shapes are unchanged for callers that ignore the new
+fields.
+
+### Added — Date envelope (slice A)
+
+Date-bearing tools now accept an optional `query_date` (`yyyyMMdd`)
+and always echo back `data_as_of` (the trading day LS actually used)
+plus `query_date_resolution` — one of `used` / `weekend` / `holiday`
+/ `future_date` / `pre_market`. Saturday queries no longer silently
+return Friday's data labeled as "today"; future-dated input no longer
+goes through silently — the response makes the fallback explicit.
+
+v1.4 wires the envelope on the two highest-value daily-snapshot tools:
+
+- `ls_get_market_funds_trend` (`t8428`) — market liquidity time series.
+- `ls_get_short_selling_trend` (`t1927`) — daily short selling.
+
+The remaining ~10 date-bearing tools listed in
+[docs/SPEC-v1.4.md §2.3](docs/SPEC-v1.4.md) follow in v1.5+. The
+weekend-only fallback ships now; KRX / NYSE holiday tables remain a
+v1.5+ slice.
+
+Underlying calendar lives in `RedoxNet.LsOpenApi.Core.Time` —
+swappable via DI so a future holiday-aware calendar drops in without
+touching the Mcp wrappers.
+
+### Added — Q-Click signal screeners (slice B)
+
+LS hosts user-defined Q-Click (조건검색) expressions on the broker
+side. v1.4 exposes them as three additive tools:
+
+- `ls_list_screeners` — list the user's saved Q-Click conditions
+  (`t1826`) so the model can find them by partial Korean name.
+- `ls_run_screener` — execute a saved condition by its Q-Click id
+  (`t1825`) and return the matching stocks with the usual `limit`
+  row cap. The Q-Click runtime occasionally ships a row whose price
+  reads `0` for thinly-traded names — the wrapper tags those rows
+  with a `rapid_change_noise` flag rather than dropping silently.
+- `ls_combine_screeners` — intersect or union the results of multiple
+  saved screeners in one call, deduping inputs (the same id passed
+  twice is collapsed) and returning the set the model needs for
+  *"give me names appearing on both the 거래대금 급증 and 외국인 매수
+  screeners"*-style asks.
+
+See [docs/SPEC-v1.4.md §3](docs/SPEC-v1.4.md) for the design rationale
+and three Q-Click response quirks recorded during implementation in
+[docs/LS-API-QUIRKS.md](docs/LS-API-QUIRKS.md).
+
+### Changed — Server instructions
+
+- `ServerInstructions` carries an ambiguity-strategy guide so the
+  model handles low-confidence matches consistently (e.g. when
+  `ls_search_overseas_stock` returns multiple plausible candidates);
+  the OR-combined keyword path orders by match count; the PER/PBR=0
+  quirk is now called out so a fundamentals-rank zero isn't read as
+  "cheap".
+- The server nudges the model to forward chart specs to a peer
+  visualize MCP when the host can't render `structuredContent.chart`
+  itself — same Plotly spec, lifted off the in-process chart side
+  channel through whichever rendering MCP the user has connected.
+  Groundwork for the broader chart-host-adaptation work specced in
+  [docs/SPEC-v1.5.md](docs/SPEC-v1.5.md).
+
+### Tool surface
+
+**37 → 40** in the `standard` profile (40 → 43 in `all`). All
+additions are new tool names; no existing tool was renamed, removed,
+or signature-changed.
+
+Versioned in lockstep with `RedoxNet.LsOpenApi.Core` 1.4.0.
+
 ## v1.3.0 (2026-05-24)
 
 First-class overseas stock support for the v1.x line. This release adds

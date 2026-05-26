@@ -1,5 +1,52 @@
 ﻿# Release Notes — RedoxNet.LsOpenApi.Core
 
+## v1.4.0 (2026-05-26)
+
+Trading-calendar + date-envelope primitives for the v1.4 `query_date` /
+`data_as_of` standardization (consumed by `RedoxNet.Mcp.LsOpenApi`
+1.4.0), one transient-retry expansion, and two Q-Click signal-screener
+TRs in the catalog. Surface additions only; public API back-compat.
+
+### Added — Trading calendar + date envelope
+
+- `RedoxNet.LsOpenApi.Core.Time.ITradingCalendar` — minimal contract
+  (`IsTradingDay(DateOnly)` + `PreviousTradingDay(DateOnly)`) so a
+  consumer can plug in KRX-, NYSE-, or any other calendar without
+  reaching into the core library.
+- `WeekendOnlyCalendar` — ships in-box, treats Saturday and Sunday as
+  non-trading days. Sufficient for v1.4's weekend-fallback envelope;
+  full KRX / NYSE holiday tables remain a v1.5+ slice (see
+  [docs/SPEC-v1.4.md §2.5](docs/SPEC-v1.4.md)).
+- `DateEnvelope.Resolve(...)` — normalizes a caller-supplied
+  `yyyyMMdd` (or `null` = "latest") into `(DateOnly resolvedDate,
+  string resolution)` where `resolution` is one of `used` / `weekend` /
+  `holiday` / `future_date` / `pre_market`. The same shape is used by
+  every Mcp tool that adopts the envelope, so the model learns the
+  vocabulary once.
+- DI: `AddLsOpenApiCore()` registers `ITradingCalendar` →
+  `WeekendOnlyCalendar` as the default. Swap with a custom
+  registration to plug in a holiday-aware calendar.
+
+### Added — Catalog rows (Q-Click signal pair)
+
+- `t1825` — Q-Click 신호 종목 검색 (signal stocks for a saved
+  condition expression).
+- `t1826` — Q-Click 사용자 등록 신호 목록 (the user's saved Q-Click
+  conditions on the LS server side).
+
+Catalog count **62 → 64 TRs**.
+
+### Changed — Transient retry
+
+- `LsApiClient`'s Polly policy now retries HTTP 500 as transient
+  alongside the existing 408/429/502/503/504 set. The overseas chart
+  HTTP 500 v1.3 fixed via `comp_yn="N"` was one well-known cause, but
+  empirical traffic shows HTTP 500 also surfaces on rate-limited TRs
+  before LS hands back a proper 429 — retrying recovers the call
+  without surfacing a transient failure to the model.
+
+Versioned in lockstep with `RedoxNet.Mcp.LsOpenApi` 1.4.0.
+
 ## v1.3.0 (2026-05-24)
 
 Embedded TR catalog update for first-class overseas stock support in
