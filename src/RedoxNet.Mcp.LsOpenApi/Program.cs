@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -20,6 +21,24 @@ if (args.Length > 0 && IsCliCommand(args[0]))
         "help" or "--help" or "-h" => PrintUsage(),
         _ => PrintUsage(),
     };
+}
+
+// Opt-in HTTP transport for SEP-1865 verification against the ext-apps
+// basic-host (and other Streamable-HTTP MCP clients). Enable via `--http`
+// arg or LS_MCP_HTTP env. Port override via LS_MCP_HTTP_URL (default
+// http://localhost:3001). The published NuGet package keeps stdio as the
+// default — HTTP mode is only reached on explicit opt-in.
+//
+// This branch (spike/sep1865-verify) is the maintained home of the HTTP
+// transport feature. If a future release promotes HTTP to the default or
+// main-line surface, the stdio vs HTTP code paths should be unified via a
+// shared service-config extension method (the duplication in RunHttpAsync
+// below is intentional for opt-in scope).
+bool useHttp = args.Any(a => a == "--http") ||
+               !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("LS_MCP_HTTP"));
+if (useHttp)
+{
+    return await RunHttpAsync();
 }
 
 // MCP stdio server mode.
@@ -138,8 +157,126 @@ await app.RunAsync();
 return 0;
 
 static bool IsCliCommand(string arg) =>
-    arg.StartsWith('-') || string.Equals(arg, "version", StringComparison.OrdinalIgnoreCase)
+    (arg.StartsWith('-') && arg != "--http")
+                        || string.Equals(arg, "version", StringComparison.OrdinalIgnoreCase)
                         || string.Equals(arg, "help", StringComparison.OrdinalIgnoreCase);
+
+// HTTP transport mode for SEP-1865 verification with ext-apps basic-host and
+// other Streamable-HTTP MCP clients. Mirrors the stdio mode's service
+// registration; the duplication is intentional for opt-in scope — refactor
+// only if HTTP is promoted to the main-line surface.
+static async Task<int> RunHttpAsync()
+{
+    var webBuilder = WebApplication.CreateBuilder(Array.Empty<string>());
+
+    // HTTP mode: normal console logging (stdout is HTTP body, not protocol).
+    webBuilder.Logging.AddConsole();
+    string? logLevelEnv = Environment.GetEnvironmentVariable("LS_LOG_LEVEL");
+    if (!string.IsNullOrWhiteSpace(logLevelEnv) &&
+        Enum.TryParse(logLevelEnv, ignoreCase: true, out LogLevel minLevel))
+    {
+        webBuilder.Logging.SetMinimumLevel(minLevel);
+    }
+
+    webBuilder.Services
+        .AddLsOpenApiCore()
+        .ConfigureLsOptionsFromEnvironment();
+    webBuilder.Services.AddPortfolio();
+    webBuilder.Services.AddSingleton<IndustryDataCache>();
+
+    var toolProfile = ToolProfile.FromEnvironment();
+
+    webBuilder.Services
+        .AddMcpServer(options =>
+        {
+            options.ServerInfo = new()
+            {
+                Name = "mcp-lsopenapi",
+                Title = "RedoxNet LS OpenAPI",
+                Description = "LS Securities OpenAPI tools - read-only Korean stock market data (TR catalog, quotes, charts, indicators).",
+                Version = GetPublicVersion(),
+            };
+            options.ServerInstructions = ServerInstructions.Text;
+        })
+        // Q4 caveat (MCP-APPS-INTEROP.md): Stateless=true creates a fresh
+        // McpServer per HTTP request, so ctx.Server.ClientInfo is null on
+        // every tools/list and tools/call — ChartHostSupport.Resolve then
+        // always falls through to TextOnly. Stateless=false threads requests
+        // to the same instance via Mcp-Session-Id so clientInfo and
+        // capabilities survive. Stdio is implicitly stateful so this only
+        // affects HTTP transport.
+        .WithHttpTransport(o => o.Stateless = false)
+        .WithToolsFromAssembly()
+        .WithListResourcesHandler(UiResources.ListAsync)
+        .WithReadResourceHandler(UiResources.ReadAsync)
+        .WithRequestFilters(filters =>
+        {
+            filters.AddListToolsFilter(next => async (ctx, ct) =>
+            {
+                var result = await next(ctx, ct);
+                if (!toolProfile.IsAll)
+                    result.Tools = result.Tools.Where(t => toolProfile.IsVisible(t.Name)).ToList();
+                var chartMode = ChartHostSupport.Resolve(
+                    ctx.Server.ClientCapabilities, ctx.Server.ClientInfo);
+                foreach (var tool in result.Tools)
+                {
+                    SchemaNormalizer.NormalizeInputSchema(tool);
+                    UiResources.ApplyChartSurface(tool, chartMode);
+                }
+                return result;
+            });
+            filters.AddCallToolFilter(next => async (ctx, ct) =>
+            {
+                string? name = ctx.Params?.Name;
+                if (toolProfile.Strict && name is not null && !toolProfile.IsVisible(name))
+                    return McpJson.ErrorResult(
+                        "Tool not available in the current LS_TOOL_PROFILE.",
+                        new { tool = name, profile = "standard", hint = "set LS_TOOL_PROFILE=all to expose catalog tools" });
+
+                var result = await next(ctx, ct);
+
+                // Mirror the stdio path's v1.5 filter chain (SPEC v1.5
+                // §2.1): strip the chart payload on TextOnly hosts, then
+                // attach _meta.render_status so the model can narrate
+                // honestly regardless of which transport delivered the call.
+                var chartMode = ChartHostSupport.Resolve(
+                    ctx.Server.ClientCapabilities, ctx.Server.ClientInfo);
+                if (chartMode == ChartRenderingMode.TextOnly)
+                    UiResources.StripChartStructuredContent(result);
+
+                UiResources.AttachRenderStatus(result, chartMode, name);
+
+                return result;
+            });
+        });
+
+    // CORS for ext-apps basic-host (host on :8080, sandbox on :8081). The
+    // basic-host fetches /mcp from the host page origin. Streamable HTTP
+    // exposes Mcp-Session-Id for stateful sessions; we run stateless so it's
+    // harmless but matches the SDK sample convention.
+    webBuilder.Services.AddCors(options =>
+    {
+        options.AddPolicy("McpBrowserClient", policy =>
+            policy.WithOrigins(
+                    "http://localhost:8080",
+                    "http://localhost:8081",
+                    "http://127.0.0.1:8080",
+                    "http://127.0.0.1:8081")
+                  .AllowAnyMethod()
+                  .AllowAnyHeader()
+                  .WithExposedHeaders("Mcp-Session-Id"));
+    });
+
+    var webApp = webBuilder.Build();
+    webApp.UseCors("McpBrowserClient");
+    webApp.MapMcp("/mcp");
+
+    string url = Environment.GetEnvironmentVariable("LS_MCP_HTTP_URL") ?? "http://localhost:3001";
+    Console.Error.WriteLine($"[http] MCP HTTP server listening on {url}/mcp");
+    Console.Error.WriteLine($"[http] basic-host: SERVERS='[\"{url}/mcp\"]' npm run start");
+    await webApp.RunAsync(url);
+    return 0;
+}
 
 static int PrintVersion()
 {
@@ -151,6 +288,7 @@ static int PrintUsage()
 {
     Console.Error.WriteLine("Usage:");
     Console.Error.WriteLine("  mcp-lsopenapi              Start MCP server (stdio).");
+    Console.Error.WriteLine("  mcp-lsopenapi --http       Start MCP server (Streamable HTTP).");
     Console.Error.WriteLine("  mcp-lsopenapi version      Print package version.");
     Console.Error.WriteLine("  mcp-lsopenapi help         Print this message.");
     Console.Error.WriteLine();
@@ -163,6 +301,8 @@ static int PrintUsage()
     Console.Error.WriteLine("  LS_TOOL_PROFILE    'standard' (default — catalog tools hidden) or 'all'.");
     Console.Error.WriteLine("  LS_TOOL_PROFILE_STRICT  'true' rejects tools/call for profile-hidden tools (default: false).");
     Console.Error.WriteLine("  LSOPENAPI_DB_PATH  Override local portfolio SQLite path (optional).");
+    Console.Error.WriteLine("  LS_MCP_HTTP        Any non-empty value enables HTTP transport (same as --http).");
+    Console.Error.WriteLine("  LS_MCP_HTTP_URL    HTTP bind URL when --http is active (default: http://localhost:3001).");
     return 0;
 }
 
