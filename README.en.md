@@ -16,6 +16,7 @@ MCP server for **LS Securities OpenAPI** — ask an AI assistant for quotes, cha
 ## Why it works well in chat
 
 - **Market context in one place.** Quotes, order books, OHLCV charts, indicators, fundamentals, analyst opinions, investor / foreign flows, short-selling, market warnings, ETF data, and index / industry / theme screens.
+- **Q-Click signal screeners (v1.4+).** LS-curated saved conditions (~99 signals: MA alignment, breakouts, short-side trend, foreign-flow streaks, …) discovered by keyword, run by name, and *combined* with AND / OR — compound conditions no single HTS screen offers.
 - **Token-efficient by default.** Heavy responses are shaped for LLM conversations: charts return summary-first payloads and dataset handles; list tools cap rows with `limit`; reshaped defaults cut common responses by 66-97% compared with the pre-v0.9 shapes.
 - **A smaller routing surface.** The default `standard` profile exposes 34 semantic tools, while the 3 catalog escape-hatch tools stay hidden unless `LS_TOOL_PROFILE=all`.
 - **Local portfolio memory.** Track holdings, watchlists, watched themes, corporate actions, and JSON backup / restore without sending portfolio notes anywhere except your local SQLite database.
@@ -434,6 +435,16 @@ The write path is the `ls_holding` dispatcher; `shcode` is required for every ac
 | `ls_get_short_selling_trend(shcode, from?, to?, count?)` | Per-stock daily short-selling (공매도) trend via `t1927`. Short volume / value (백만원), short ratio, average short price, cumulative short volume, and the uptick-rule applied vs. exempt split. |
 | `ls_get_high_low_stocks(direction?, period?, maintained?, market?, limit?, exclude_etf?)` | New-high / new-low (신고가 / 신저가) screener via `t1442`. `direction` high/low, `period` look-back (52w default), `maintained` 돌파유지 vs 일시돌파; ETF/ETN dropped by default. |
 
+#### Saved-signal screeners — Q-Click (v1.4+)
+
+LS curates ~99 saved condition expressions ("Q-Click signals") spanning chart / indicator / market-pattern / investor-flow templates (golden-cross alignment, MA breakouts, short-side trend, foreign-flow streaks, etc.). The three tools below expose the catalog as discoverable, runnable, and *combinable* screeners — they accept an exact name, the 4-character `search_cd`, or a Korean keyword. Ambiguous keywords return a candidate list plus the matching group's full mini-catalog (beta policy) so a follow-up call can target an exact id without an extra discovery round trip.
+
+| Tool | TR | Purpose |
+| --- | --- | --- |
+| `ls_list_screeners(group?)` | `t1826` | Enumerate the Q-Click catalog (process-lifetime cached). Optional `group` filter: `core` / `indicator` / `market_trend` / `investor_trend` / `rapid_change`. |
+| `ls_run_screener(query, limit?)` | `t1825` | Run one signal and return matching stocks (default row cap via `limit`). Rapid-change names whose price reads `0` for thinly-traded stocks are tagged `rapid_change_noise` rather than silently dropped. |
+| `ls_combine_screeners(queries[], mode, limit?)` | `t1825` × N | Execute 2-8 signals and combine by shcode set operation — `mode=and` (intersection) or `mode=or` (union). Each row carries `signals_matched[]` so the model can narrate cross-signal confirmation. Duplicate inputs are deduped. This expresses compound conditions no single HTS screen offers. |
+
 #### Program trading
 
 | Tool | Purpose |
@@ -519,11 +530,12 @@ Current release line:
 - [x] **v1.0.0** — First stable release. Freezes the MCP tool surface, model-facing parameter names, and default response shapes, with reflection-based pin tests guarding them. Completes the row-cap `limit` normalization (`ls_get_etf_holdings` + `ls_get_industry_indices`), adds MCP server-instructions routing guidance, and ships NuGet credential metadata.
 - [x] **v1.1.0** — Program-trading support, additive on the v1.0 stable line. Adds `ls_get_program_trading` (market / ranking / stock scopes over t1662 / t1633 / t1636 / t1637, with inline Plotly charts) and `ls_analyze_program_flow` (deterministic program-trading footprint analysis). Tool surface 32 → 34 (`standard`) / 35 → 37 (`all`); no existing tool, parameter, or response shape changes.
 - [x] **v1.2.0** — MCP Apps capability negotiation. Chart-emitting tools now gate their inline Plotly payload on what the connected host can actually render — a correctness slice that stops chart-less hosts from receiving a payload they would bury in the model's context, and from being told a chart exists when none can be shown.
+- [x] **v1.3.0** — First-class overseas stock support: `ls_search_overseas_stock`, `ls_get_overseas_quote`, and `ls_get_overseas_chart`, plus catalog fallback for the nine g31xx/g32xx overseas-stock TRs.
+- [x] **v1.4.0** — Two additive slices: (A) **Date envelope** — date-bearing tools accept `query_date` and echo `data_as_of` + `query_date_resolution` (`used` / `weekend` / `holiday` / `future_date` / `pre_market`), so non-trading-day fallbacks are explicit to the model (wired on `ls_get_market_funds_trend` + `ls_get_short_selling_trend`; remaining ~10 follow in v1.5+). (B) **Q-Click signal screeners** — `ls_list_screeners` / `ls_run_screener` / `ls_combine_screeners` over t1825/t1826, exposing LS's ~99-signal curated catalog with AND/OR set combination.
 
 Planned:
 
-- [x] **v1.3.0** — First-class overseas stock support: `ls_search_overseas_stock`, `ls_get_overseas_quote`, and `ls_get_overseas_chart`, plus catalog fallback for the nine g31xx/g32xx overseas-stock TRs. Date envelope standardization remains a v1.4 candidate.
-- [ ] **v1.4** — Pre-defined screener access ("Q-Click" style scans — moving-average alignment, gap setups, swing entries, etc., browsable as a catalog and runnable by name).
+- [ ] **v1.5** — Daily-candle cache + saved screener macros + chart payload host adaptation (`show_widget` wrap). See [docs/SPEC-v1.5.md](docs/SPEC-v1.5.md).
 
 Major milestones:
 
