@@ -50,7 +50,7 @@ gating; no whitelist tightening was needed (see §3 Q6).
 | **Claude Desktop Chat** | `claude-ai` | ✅ yes | ✅ **yes** (PlotlyTemplate 3-fix) | Sep1865 | 2026-05-27 spike/sep1865-verify, `docs/claude_desktop_chat_chart_lgelectronics.png` |
 | **Claude Cowork** (chat panel) | `claude-ai` | ✅ yes | ✅ **yes** (PlotlyTemplate 3-fix) | Sep1865 | 2026-05-27 spike/sep1865-verify, `docs/claude_desktop_cowork_chart_lgelectronics.png` |
 | **ext-apps `basic-host`** (reference) | `MCP Apps Host` | ❌ no (intentional — see Q3) | ✅ yes | TextOnly (capability absent) | 2026-05-27 spike/sep1865-verify, end-to-end Plotly chart visible |
-| **VS Code Chat** | (varies) | ✅ yes | ✅ **yes** (PlotlyTemplate 3-fix) | Sep1865 | 2026-05-27 spike/sep1865-verify |
+| **VS Code Chat** (GitHub Copilot) | (varies) | ✅ yes | ✅ **yes** (PlotlyTemplate 3-fix) | Sep1865 | 2026-05-27 spike/sep1865-verify, `docs/vscode_copilot_chat_chart_nvidia.png` (NVDA daily — also exercises the v1.3 overseas chart path) |
 | **Codex Desktop / TUI** | `codex-mcp-client` | ❌ no (`enable_mcp_apps=true` is a separate client flag, Q7) | ❌ — TUI structurally can't | TextOnly | 2026-05-26 empirical test, user self-report |
 | **Claude Code CLI** | (TUI) | ❌ no | ❌ — TUI structurally can't | TextOnly | research agent + structural reasoning |
 | **Cursor 2.6+, ChatGPT, Goose, Postman, MCPJam** | unknown | ✅ per their changelogs | ⚠️ reported in changelogs, *not directly empirically verified by us* — but the v1.2 capability gate should hold given the Claude / VS Code / basic-host class verifications | Sep1865 | research agent (secondary sources) |

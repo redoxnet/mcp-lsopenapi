@@ -54,12 +54,13 @@ P1은 *모델 narration의 정직성*. P2는 *모델 행동의 자기-합성 충
 | 호스트 | capability 광고 | 실제 inline 렌더 | 우리 분류 | render_status |
 |---|---|---|---|---|
 | AssistStudio (WinUI 3) | ✅ SEP-1865 | ✅ (자체 Plotly) | StructuredContent | `delivered` |
-| Claude Desktop Chat | ✅ SEP-1865 | ✅ (PlotlyTemplate 3-fix 후) | Sep1865 | `delivered` |
-| Cowork (iframe + chat panel) | ✅ SEP-1865 | ✅ (PlotlyTemplate 3-fix 후) | Sep1865 | `delivered` |
+| Claude Desktop Chat | ✅ SEP-1865 | ✅ (PlotlyTemplate 3-fix 후 — `docs/claude_desktop_chat_chart_lgelectronics.png`) | Sep1865 | `delivered` |
+| Cowork (iframe + chat panel) | ✅ SEP-1865 | ✅ (PlotlyTemplate 3-fix 후 — `docs/claude_desktop_cowork_chart_lgelectronics.png`) | Sep1865 | `delivered` |
+| VS Code Chat (GitHub Copilot) | ✅ SEP-1865 | ✅ (PlotlyTemplate 3-fix 후 — `docs/vscode_copilot_chat_chart_nvidia.png`, NVDA 미장 차트로 v1.3 overseas 경로도 동시 확인) | Sep1865 | `delivered` |
 | ext-apps basic-host (reference) | ❌ 미광고 (구현 선택) | ✅ | TextOnly (capability 부재) | `stripped_text_only` |
 | Codex (Desktop / TUI) | ❌ 미광고 | ❌ (TUI 구조적) | TextOnly | `stripped_text_only` |
 | Claude Code CLI | ❌ (TUI) | ❌ | TextOnly | `stripped_text_only` |
-| Cursor 2.6+, VS Code, ChatGPT, Goose, Postman, MCPJam | ✅ (변동) | 광고대로 작동한다는 보고 (우리 실측 없음) | Sep1865 (capability 신뢰) | `delivered` |
+| Cursor 2.6+, ChatGPT, Goose, Postman, MCPJam | ✅ (변동) | 광고대로 작동한다는 보고 (우리 실측 없음) | Sep1865 (capability 신뢰) | `delivered` |
 
 총평: PlotlyTemplate fix 후 **capability 광고 = 실제 렌더가 거의 일치**. v1.2의 capability-based 분류가 신뢰 가능하다는 것이 empirical 결론이라, **`KnownIframeRenderingHosts` whitelist 도입은 보류**. basic-host 같은 "capability 미광고 + 실제 렌더" 케이스는 향후 발견되는 호스트별로 case-by-case로 보고 결정.
 
@@ -344,7 +345,7 @@ non-breaking response metadata + ServerInstructions text.
 - v1.5 디자인 세션 핵심 finding(Codex self-synthesis 우회): [[chart_self_synthesis_antipattern]] 메모리
 - 호스트 reality 보정 기록: [[render_hints_standardization]] 메모리
 - AssistStudio reference implementation: [[next_assiststudio_plotly]] 메모리
-- empirical 렌더 evidence: `docs/claude_desktop_chat_chart_lgelectronics.png`, `docs/claude_desktop_cowork_chart_lgelectronics.png`
+- empirical 렌더 evidence: `docs/claude_desktop_chat_chart_lgelectronics.png` (Claude Desktop Chat), `docs/claude_desktop_cowork_chart_lgelectronics.png` (Cowork), `docs/vscode_copilot_chat_chart_nvidia.png` (VS Code Copilot Chat — NVDA 미장 일봉으로 SEP-1865 iframe + v1.3 overseas chart 경로 동시 확인)
 
 ---
 
