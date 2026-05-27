@@ -11,7 +11,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 
-    <Version>1.4.0</Version>
+    <Version>1.5.0</Version>
     <PackageId>RedoxNet.LsOpenApi.Core</PackageId>
     <Authors>Jong Hyun Kim</Authors>
     <Company>RedoxNet</Company>
@@ -24,7 +24,7 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
 	<PackageIcon>icon.png</PackageIcon>
     <Copyright>Copyright (c) 2026 RedoxNet</Copyright>
-    <PackageReleaseNotes>v1.4.0 — trading-calendar + date-envelope primitives (ITradingCalendar, WeekendOnlyCalendar, DateEnvelope.Resolve) for the v1.4 query_date / data_as_of standardization, t1825 / t1826 Q-Click signal-screener TRs in the catalog (62 → 64), and HTTP 500 added to the transient-retry set. Surface additions only. Versioned in lockstep with RedoxNet.Mcp.LsOpenApi 1.4.0. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Core.md for full notes.</PackageReleaseNotes>
+    <PackageReleaseNotes>v1.5.0 — Lockstep release with RedoxNet.Mcp.LsOpenApi 1.5.0; no Core changes. The v1.5 work is entirely in the Mcp package (_meta.render_status / _meta.do_not_render response metadata + ServerInstructions narration-honesty paragraph). Core re-packaged at 1.5.0 only for NuGet alignment. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Core.md for full notes.</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>

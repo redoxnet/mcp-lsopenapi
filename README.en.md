@@ -323,10 +323,12 @@ A single `period_type` keeps the flat shape (`summary`, `context`, `dataset_id` 
 
 From **v1.2** the chart surface is gated on how the connected host consumes chart payloads — the host, not the model, decides whether a chart is shown:
 
-- **MCP Apps host** — advertises the SEP-1865 `io.modelcontextprotocol/ui` capability, or is a known legacy chart renderer: `include_chart` is offered, and passing `include_chart: true` / `output_mode: "display"` ships a Plotly v5 JSON spec under `structuredContent.chart`.
-- **Text-only host** — `include_chart` is dropped from the tool schema and `structuredContent.chart` is stripped from results, so the model only ever reads the analytical summary.
+- **MCP Apps host** — advertises the SEP-1865 `io.modelcontextprotocol/ui` capability, or is a known legacy chart renderer: `include_chart` is offered, and passing `include_chart: true` / `output_mode: "display"` ships a Plotly v5 JSON spec under `structuredContent.chart`. Verified on AssistStudio, Claude Desktop Chat, Claude Cowork, VS Code Chat, and the ext-apps `basic-host` reference (the last after the PlotlyTemplate handshake 3-fix that landed before v1.5).
+- **Text-only host** — `include_chart` is dropped from the tool schema and `structuredContent.chart` is stripped from results, so the model only ever reads the analytical summary. From **v1.5** the response also carries `_meta.render_status: "stripped_text_only"` so the model has a hard signal not to claim it drew a chart; `delivered` is shipped on the MCP-Apps side.
 
 `structuredContent.chart` is a UI side-channel — never duplicated into the model-facing text, which carries no "a chart exists" marker. The server emits the spec only — no server-side image rendering, no charting library dependency.
+
+**v1.5 self-synthesis ban.** Regardless of `render_status`, ServerInstructions forbids the model from routing around the server's chart by fetching raw OHLCV with `output_mode=export` and rendering a chart itself (Python / JavaScript / PNG) or forwarding the spec to a generic visualize MCP. Self-rendered indicators won't match `summary.moving_averages` because the server uses a specific adjustment mode, warm-up window, and formula. Layout-level requests (panel height, sizing) are identified as *host panel constraints* rather than routed around. Chart customization is constrained to `ls_add_indicator` / `ls_reframe_chart`. `output_mode=export` responses carry `_meta.data_purpose: "analysis_only"` + `_meta.do_not_render` as an inline reminder.
 
 ```jsonc
 // ls_get_chart shcode=005930 period_type=day count=60 indicators=["ma:5","ma:20"] include_chart=true
@@ -554,10 +556,11 @@ Current release line:
 - [x] **v1.2.0** — MCP Apps capability negotiation. Chart-emitting tools now gate their inline Plotly payload on what the connected host can actually render — a correctness slice that stops chart-less hosts from receiving a payload they would bury in the model's context, and from being told a chart exists when none can be shown.
 - [x] **v1.3.0** — First-class overseas stock support: `ls_search_overseas_stock`, `ls_get_overseas_quote`, and `ls_get_overseas_chart`, plus catalog fallback for the nine g31xx/g32xx overseas-stock TRs.
 - [x] **v1.4.0** — Two additive slices: (A) **Date envelope** — date-bearing tools accept `query_date` and echo `data_as_of` + `query_date_resolution` (`used` / `weekend` / `holiday` / `future_date` / `pre_market`), so non-trading-day fallbacks are explicit to the model (wired on `ls_get_market_funds_trend` + `ls_get_short_selling_trend`; remaining ~10 follow in v1.5+). (B) **Q-Click signal screeners** — `ls_list_screeners` / `ls_run_screener` / `ls_combine_screeners` over t1825/t1826, exposing LS's ~99-signal curated catalog with AND/OR set combination.
+- [x] **v1.5.0** — Fidelity-first chart narration. Chart-emitting tools now ship `_meta.render_status` (`delivered` / `stripped_text_only`) so the model has a hard signal whether the host received the chart; ServerInstructions forbids self-synthesis fallbacks (Python / JavaScript / PNG / visualize-MCP forward) regardless of `render_status`; chart customization is constrained to `ls_add_indicator` / `ls_reframe_chart`; layout-level requests are identified as host panel constraints. `output_mode=export` responses carry `_meta.data_purpose: "analysis_only"` + `_meta.do_not_render`. Surface unchanged (40/43). See [docs/SPEC-v1.5.md](docs/SPEC-v1.5.md).
 
 Planned:
 
-- [ ] **v1.5** — Daily-candle cache + saved screener macros + chart payload host adaptation (`show_widget` wrap). See [docs/SPEC-v1.5.md](docs/SPEC-v1.5.md).
+- [ ] **v1.5.1+** — Daily-candle SQLite cache (Appendix A) + saved screener macros (Appendix B) — both deferred until usage evidence justifies the permanent-state cost. See [docs/SPEC-v1.5.md §1.5](docs/SPEC-v1.5.md).
 
 Major milestones:
 

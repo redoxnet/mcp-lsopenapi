@@ -1,5 +1,14 @@
 ﻿# Release Notes — RedoxNet.LsOpenApi.Core
 
+## v1.5.0 (2026-05-27)
+
+**Lockstep release with `RedoxNet.Mcp.LsOpenApi` 1.5.0 — no Core
+changes.** The v1.5 work is entirely in the Mcp package
+(`_meta.render_status` / `_meta.do_not_render` response metadata +
+ServerInstructions narration-honesty paragraph; SPEC v1.5). Core is
+re-packaged at v1.5.0 only so the two NuGet packages remain
+version-aligned for the MCP Registry publish.
+
 ## v1.4.0 (2026-05-26)
 
 Trading-calendar + date-envelope primitives for the v1.4 `query_date` /

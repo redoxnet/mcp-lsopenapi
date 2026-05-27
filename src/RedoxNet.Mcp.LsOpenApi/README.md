@@ -89,7 +89,11 @@ LS_MARKET=real
 
 AssistStudio renders the optional Plotly chart spec from `ls_get_chart` / `ls_get_overseas_chart`
 inline in the chat — call either with `include_chart=true` (single timeframe) to get a
-candlestick chart directly in the conversation.
+candlestick chart directly in the conversation. Inline chart rendering also works on
+**Claude Desktop Chat**, **Claude Cowork**, **VS Code Chat**, and any other SEP-1865 host
+that advertises the `io.modelcontextprotocol/ui` capability (v1.5 verified end-to-end).
+Text-only hosts (Codex, Claude Code CLI) receive `_meta.render_status: "stripped_text_only"`
+on the response so the model can narrate honestly that no chart was shown.
 
 ## Environment variables
 
@@ -112,6 +116,7 @@ Local data lives at `%LOCALAPPDATA%\RedoxNet\LsOpenApi\` on Windows and `~/.loca
 
 Recent surface highlights (full history in [RELEASENOTES.Mcp.md](https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Mcp.md)):
 
+- **v1.5** — **Fidelity-first chart narration.** Every chart-emitting tool response now carries `_meta.render_status` (`delivered` / `stripped_text_only`) so the model has a hard signal whether the host rendered the chart and can narrate honestly. ServerInstructions forbids self-synthesis fallbacks regardless of `render_status` — no rendering raw OHLCV in Python / JavaScript / PNG, no forwarding the spec to a generic visualize MCP. Chart customization is constrained to `ls_add_indicator` / `ls_reframe_chart`; layout-level requests (panel height, sizing) are identified as host panel constraints. `output_mode=export` responses ship `_meta.data_purpose: "analysis_only"` + `_meta.do_not_render`. Tool surface unchanged.
 - **v1.4** — (a) **date envelope** (`query_date` input + `data_as_of` / `query_date_resolution` response fields) so non-trading-day fallbacks are explicit — wired on `ls_get_market_funds_trend` and `ls_get_short_selling_trend`; (b) **LS Q-Click signal screeners**: `ls_list_screeners`, `ls_run_screener`, `ls_combine_screeners` over `t1825` / `t1826`.
 - **v1.3** — first-class **US/overseas stocks** (Nasdaq / NYSE / AMEX): `ls_search_overseas_stock`, `ls_get_overseas_quote`, `ls_get_overseas_chart`. `ls_add_indicator` / `ls_reframe_chart` accept overseas `dataset_id`s through the shared handle cache.
 - **v1.2** — chart side-channel adapts per host via MCP Apps capability negotiation (SEP-1865 `io.modelcontextprotocol/ui` + a `clientInfo` allowlist). Text-only hosts get neither `include_chart` nor `structuredContent.chart`; chart-rendering hosts get the Plotly spec.

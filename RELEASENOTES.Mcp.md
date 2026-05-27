@@ -1,5 +1,100 @@
 ﻿# Release Notes — RedoxNet.Mcp.LsOpenApi
 
+## v1.5.0 (2026-05-27)
+
+**Fidelity-first chart narration.** Chart-emitting tools now ship a hard
+signal to the model about how the host received the chart, and
+ServerInstructions forbids the model from routing around the server's
+chart by synthesizing one of its own. Single-slice release — no new
+tools, no surface change (40 standard / 43 all).
+
+### Added — `_meta.render_status` on every chart-emitting tool
+
+`ls_get_chart`, `ls_reframe_chart`, `ls_add_indicator`,
+`ls_get_overseas_chart`, `ls_get_etf_holdings`, and
+`ls_get_program_trading` now ship `_meta.render_status` on every
+`CallToolResult`:
+
+- `delivered` — the server emitted `structuredContent.chart.spec` and
+  the host shows it inline. Verified hosts: AssistStudio,
+  Claude Desktop Chat, Claude Cowork, VS Code Chat, ext-apps
+  `basic-host`.
+- `stripped_text_only` — the chart payload was withheld because the
+  host has no SEP-1865 / structured-chart path (Codex, Claude Code
+  CLI, and other text-only hosts). The model receives only the
+  analytical summary.
+
+ServerInstructions reads this signal explicitly: on
+`stripped_text_only` the model must not claim it drew / rendered /
+표시 the chart — it states the limitation and provides the analytical
+summary only.
+
+### Changed — ServerInstructions chart-routing paragraph replaced
+
+The v1.4 *"wrap the Plotly spec in an HTML scaffold and forward to a
+peer visualize MCP"* paragraph is gone. The v1.5 paragraph
+forbids self-synthesis fallbacks **regardless of `render_status`**:
+
+- No fetching raw OHLCV via `output_mode=export` and rendering the
+  chart in Python / JavaScript / PNG / SVG / HTML.
+- No forwarding the chart spec or raw OHLCV to a generic
+  visualization MCP (`mcp__visualize__show_widget`, `create_artifact`,
+  etc.).
+- No recomputing indicators from raw bars — `summary.moving_averages`
+  / `summary.ma60_slope` / `summary.drawdown_from_peak_pct` / `context.*`
+  are authoritative.
+
+Chart customization is tool-mediated: indicator add/remove ⇒
+`ls_add_indicator` on the `dataset_id`; range / period / count adjust
+⇒ `ls_reframe_chart`. Layout-level requests (panel height, sizing,
+colors) are identified as **host panel constraints** and answered
+honestly rather than routed around with a self-synthesized chart.
+
+The Codex 2026-05-26 "render_samsung_chart.py 248-line self-synthesis"
+case and the Cowork height-customization workaround both motivated
+this paragraph.
+
+### Added — `_meta.do_not_render` guard on `output_mode=export` chart responses
+
+`ls_get_chart` and `ls_get_overseas_chart` in `output_mode=export`
+mode now ship an additional inline reminder on the result:
+
+```jsonc
+"_meta": {
+  "data_purpose": "analysis_only",
+  "do_not_render": "Server-computed indicators (MA / RSI / Bollinger / drawdown) are not included in this payload. ... Use this data for analysis (pandas, numpy, statistical work, custom backtests), not for chart synthesis. ..."
+}
+```
+
+This is a brake the model sees every time it's tempted to use the
+OHLCV for chart synthesis. `output_mode=export` is legitimate only for
+data analysis pipelines (pandas / numpy / custom backtests).
+
+### Not shipped — `KnownIframeRenderingHosts` allowlist
+
+An earlier draft of the v1.5 spec planned to tighten Sep1865 mode
+behind a hand-curated allowlist on top of the v1.2 capability check.
+The 2026-05-27 `spike/sep1865-verify` session against ext-apps
+`basic-host` exposed three real bugs in our own
+`PlotlyTemplate.html` (postMessage stringify, missing `appInfo`,
+missing `ui/notifications/size-changed`). Once those landed on
+`main` as `38d4dc2` / `46e20f0` / `01d74e3`, Claude Desktop Chat /
+Cowork / VS Code Chat all rendered the SEP-1865 iframe correctly —
+the original *"advertise but don't render"* diagnosis was *our bug*,
+not a host shortcoming. v1.5 therefore keeps the v1.2
+capability-based gate unchanged. The hook point in
+`ChartHostSupport.Resolve` remains in place if a *capability not
+advertised but iframe-capable* host (basic-host class) ever needs
+explicit opt-in.
+
+### Tool surface
+
+**40 standard / 43 all — unchanged.** All additions are non-breaking
+response metadata + ServerInstructions text.
+
+Versioned in lockstep with `RedoxNet.LsOpenApi.Core` 1.5.0 (no Core
+changes — version bump only for release alignment).
+
 ## v1.4.0 (2026-05-26)
 
 Two independent additive slices: (A) a standardized **date envelope**
