@@ -38,11 +38,19 @@
       gap: 10px;
       padding: 10px 12px;
     }
-    .chart { order: 1; width: 100%; min-height: 360px; }
+    /* Default chart height tuned for chat panels in iframe-capable hosts
+       (Cowork, VS Code Chat, basic-host). A candlestick chart with a
+       volume subplot and MA overlays needs ~500px+ to be readable;
+       360px (the pre-2026-05-27 default) felt cramped in Cowork chats.
+       Hosts that auto-fit iframe to content (per SEP-1865 body-size
+       notifications) will grow to this. Hosts with fixed iframe height
+       will scroll. */
+    .chart { order: 1; width: 100%; min-height: 520px; }
     .panel { order: 2; }
-    /* Narrow widths (Claude side panel, tablets): list becomes primary. */
+    /* Narrow widths (Claude side panel, tablets): list becomes primary,
+       chart shrinks but keeps a readable floor. */
     @container (max-width: 600px) {
-      .chart { order: 2; min-height: 280px; }
+      .chart { order: 2; min-height: 360px; }
       .panel { order: 1; }
     }
     .panel-header {
