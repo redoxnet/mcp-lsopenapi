@@ -11,7 +11,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 
-    <Version>1.5.0</Version>
+    <Version>1.5.1</Version>
     <PackageId>RedoxNet.Mcp.LsOpenApi</PackageId>
 	<Authors>Jong Hyun Kim</Authors>
     <Company>RedoxNet</Company>
@@ -24,7 +24,7 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>icon.png</PackageIcon>
     <Copyright>Copyright (c) 2026 RedoxNet</Copyright>
-    <PackageReleaseNotes>v1.5.0 — Fidelity-first chart narration. Chart-emitting tools ship _meta.render_status (delivered / stripped_text_only) so the model has a hard signal whether the host received the chart; ServerInstructions forbids self-synthesis fallbacks (Python / JavaScript / PNG / visualize-MCP forward) regardless of render_status; chart customization is constrained to ls_add_indicator / ls_reframe_chart; layout requests identified as host panel constraints. output_mode=export responses carry _meta.data_purpose=analysis_only + _meta.do_not_render. Tool surface unchanged (40 standard / 43 all). Lockstep with RedoxNet.LsOpenApi.Core 1.5.0. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Mcp.md.</PackageReleaseNotes>
+    <PackageReleaseNotes>v1.5.1 — Chart theme propagation across SEP-1865 hosts. PlotlyTemplate.html iframe body and applyTheme() defaults switch to transparent backgrounds (paper_bgcolor / plot_bgcolor / body background); CandlestickChartBuilder joins the other builders in emitting transparent layout backgrounds, so the host card shows through and dark hosts no longer render a white chart card. Chart-emitting tools (ls_get_chart / ls_get_overseas_chart / ls_add_indicator / ls_reframe_chart) gain an optional theme="auto|light|dark" parameter that pins the chart palette; the hint persists on the dataset so follow-up calls inherit it. Added a [theme] diagnostic console.log in the iframe to enable per-host empirical investigation. Tool surface unchanged (40 standard / 43 all). Lockstep with RedoxNet.LsOpenApi.Core 1.5.1. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Mcp.md.</PackageReleaseNotes>
 
     <PackageType>McpServer</PackageType>
     <PackAsTool>true</PackAsTool>

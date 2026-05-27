@@ -1,5 +1,18 @@
 ﻿# Release Notes — RedoxNet.LsOpenApi.Core
 
+## v1.5.1 (2026-05-27)
+
+Chart theme propagation slice. `CandlestickChartBuilder.Build` accepts
+an optional `themeHint` parameter (`"light"` / `"dark"` / `null`); when
+non-null and recognized, the value is embedded in
+`layout._themeHint` so `PlotlyTemplate.applyTheme()` can override
+`hostContext.theme` / iframe `prefers-color-scheme`.
+`CandlestickChartBuilder` also now emits transparent layout
+backgrounds (`paper_bgcolor` / `plot_bgcolor` = `"rgba(0,0,0,0)"`) to
+match the other builders, so the host card shows through regardless of
+theme signal. Full context in
+[`RELEASENOTES.Mcp.md`](RELEASENOTES.Mcp.md) v1.5.1.
+
 ## v1.5.0 (2026-05-27)
 
 **Lockstep release with `RedoxNet.Mcp.LsOpenApi` 1.5.0 — no Core

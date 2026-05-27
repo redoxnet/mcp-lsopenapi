@@ -1,5 +1,71 @@
 ﻿# Release Notes — RedoxNet.Mcp.LsOpenApi
 
+## v1.5.1 (2026-05-27)
+
+**Chart theme propagation across SEP-1865 hosts.** Follow-up to v1.5
+addressing a v1.5 hosts empirical: hosts that don't propagate
+`hostContext.theme` into the iframe (observed in VS Code Copilot Chat
+dark mode) showed white chart cards on dark hosts, breaking visual
+fidelity. Three fixes, none of them surface-breaking:
+
+### Changed — `PlotlyTemplate.html` defaults to transparent
+
+The iframe `<body>` and `applyTheme()` defaults now use
+`paper_bgcolor: "rgba(0,0,0,0)"` / `plot_bgcolor: "rgba(0,0,0,0)"` /
+`background: transparent`. The host card's background shows through
+regardless of theme signal, so even when a host omits
+`hostContext.theme` and the iframe's `prefers-color-scheme` disagrees
+with the host (the actual root cause), the chart blends with the
+surrounding panel.
+
+`CandlestickChartBuilder` — the one builder that previously did **not**
+set explicit backgrounds — now also emits transparent layout
+backgrounds, closing the gap that left dark Cowork / VS Code Chat
+sessions with a white candlestick card.
+
+CSS variables for foreground / grid colors still follow the resolved
+theme (`hostContext.theme` ↦ `_themeHint` ↦ iframe
+`prefers-color-scheme`), and `applyTheme()` toggles a
+`body.theme-dark` / `body.theme-light` class so panel / table / badge
+styles override the iframe's unreliable `@media` match.
+
+### Added — `theme` parameter on chart-emitting tools
+
+`ls_get_chart`, `ls_get_overseas_chart`, `ls_add_indicator`,
+`ls_reframe_chart` now accept `theme = "auto" | "light" | "dark"`
+(default `auto`). When set to `light` or `dark`, the spec embeds a
+`layout._themeHint` field that overrides `hostContext.theme` /
+`prefers-color-scheme` in the iframe. Use it when the user explicitly
+asks for a dark / light chart ("다크 차트로", "use light theme").
+
+The hint persists on the dataset, so follow-up
+`ls_add_indicator` / `ls_reframe_chart` calls on the same `dataset_id`
+inherit the theme without re-passing it; pass `theme` again to flip it
+mid-conversation.
+
+### Added — diagnostic `console.log` in `PlotlyTemplate.html`
+
+`applyTheme()` now emits one `[theme]` line per render with the
+resolved theme, the value of `hostContext.theme`, the iframe's
+`matchMedia("(prefers-color-scheme: dark)").matches`, and the
+spec-level `_themeHint`. This is the Track A empirical lever — open
+dev tools in any host and the answer to *"did the host send
+`hostContext.theme`, and does my iframe's `prefers-color-scheme`
+actually follow the parent?"* prints on every render.
+
+### Documentation
+
+- `ServerInstructions` chart-customization paragraph names `theme`
+  alongside `ls_add_indicator` / `ls_reframe_chart` as the tool-mediated
+  customization surface.
+- New `docs/MCP-APPS-INTEROP.md` §3 Q8 records the host-by-host theme
+  propagation matrix.
+
+### Surface
+
+40 standard / 43 all (unchanged). Chart-emitting tool descriptors gain
+the optional `theme` parameter.
+
 ## v1.5.0 (2026-05-27)
 
 **Fidelity-first chart narration.** Chart-emitting tools now ship a hard
