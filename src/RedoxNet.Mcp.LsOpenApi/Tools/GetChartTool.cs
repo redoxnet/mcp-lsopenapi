@@ -236,7 +236,10 @@ public static class GetChartTool
                             shcode, only.PeriodType, only.Candles, only.Indicators, parsedIndicators, name),
                     };
                 }
-                return McpJson.OkResult(singleText, structured);
+                CallToolResult singleResult = McpJson.OkResult(singleText, structured);
+                if (outputMode == "export")
+                    McpJson.AttachExportGuard(singleResult);
+                return singleResult;
             }
 
             // Multi-timeframe: structuredContent stays null — the iframe template
@@ -314,7 +317,10 @@ public static class GetChartTool
             }
 
             string multiText = JsonSerializer.Serialize(multi, McpJson.Tool);
-            return McpJson.OkResult(multiText);
+            CallToolResult multiResult = McpJson.OkResult(multiText);
+            if (outputMode == "export")
+                McpJson.AttachExportGuard(multiResult);
+            return multiResult;
         }
         catch (LsAuthException ex)
         {

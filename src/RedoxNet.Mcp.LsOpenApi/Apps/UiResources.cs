@@ -185,6 +185,57 @@ internal static class UiResources
     }
 
     /// <summary>
+    /// Whether <paramref name="toolName"/> is one of the chart-emitting tools
+    /// gated by <see cref="ApplyChartSurface"/>. Public so the
+    /// <c>tools/call</c> filter can decide whether to attach
+    /// <see cref="AttachRenderStatus"/> (v1.5 Sub-change 1).
+    /// </summary>
+    public static bool IsChartEmittingTool(string? toolName) =>
+        toolName is not null && PlotlyEmittingToolNames.Contains(toolName);
+
+    /// <summary>
+    /// Attaches the v1.5 <c>_meta.render_status</c> signal to a chart-emitting
+    /// tool's result, so the model can tell whether the host actually received
+    /// the chart payload.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <list type="bullet">
+    /// <item><description><see cref="ChartRenderingMode.Sep1865"/> or
+    /// <see cref="ChartRenderingMode.StructuredContent"/> →
+    /// <c>"delivered"</c> — <c>structuredContent.chart</c> survived the
+    /// filter and the host can render it inline.</description></item>
+    /// <item><description><see cref="ChartRenderingMode.TextOnly"/> →
+    /// <c>"stripped_text_only"</c> — <c>structuredContent.chart</c> was
+    /// removed by <see cref="StripChartStructuredContent"/>; the model
+    /// must not claim a chart was drawn (SPEC v1.5 §2.2).</description></item>
+    /// </list>
+    /// </para>
+    /// <para>No-op for non-chart tools so the field doesn't leak into other
+    /// tool responses where the model might over-read it.</para>
+    /// </remarks>
+    public static void AttachRenderStatus(
+        CallToolResult result,
+        ChartRenderingMode mode,
+        string? toolName)
+    {
+        if (!IsChartEmittingTool(toolName))
+            return;
+
+        string status = mode switch
+        {
+            ChartRenderingMode.Sep1865 => "delivered",
+            ChartRenderingMode.StructuredContent => "delivered",
+            ChartRenderingMode.TextOnly => "stripped_text_only",
+            _ => "stripped_text_only",
+        };
+
+        JsonObject meta = result.Meta ?? new JsonObject();
+        meta["render_status"] = status;
+        result.Meta = meta;
+    }
+
+    /// <summary>
     /// Strips the UI-only chart payload (the <c>chart</c> and <c>panel</c> keys)
     /// from a tool result's <c>structuredContent</c> in a <c>tools/call</c>
     /// filter, for hosts that can't render it.

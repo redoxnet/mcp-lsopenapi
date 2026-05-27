@@ -621,7 +621,14 @@ public static class OverseasStockTools
                 };
             }
 
-            return McpJson.OkResult(JsonSerializer.Serialize(textPayload, McpJson.Tool), structured);
+            CallToolResult overseasResult = McpJson.OkResult(
+                JsonSerializer.Serialize(textPayload, McpJson.Tool), structured);
+            // SPEC v1.5 §2.4: export-mode responses carry the
+            // anti-synthesis guard meta so the model has a hard signal not
+            // to render a self-synthesized chart from raw OHLCV.
+            if (outputMode == "export")
+                McpJson.AttachExportGuard(overseasResult);
+            return overseasResult;
         }
         catch (LsAuthException ex)
         {

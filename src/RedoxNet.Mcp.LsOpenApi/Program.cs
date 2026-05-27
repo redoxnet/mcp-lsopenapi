@@ -117,12 +117,17 @@ builder.Services
             // text-only host feeds it into the model context. Strip the chart
             // payload for those hosts so the text summary the model actually
             // reads survives intact (Spike B, SPEC §6).
-            if (ChartHostSupport.Resolve(
-                    ctx.Server.ClientCapabilities, ctx.Server.ClientInfo)
-                == ChartRenderingMode.TextOnly)
-            {
+            var chartMode = ChartHostSupport.Resolve(
+                ctx.Server.ClientCapabilities, ctx.Server.ClientInfo);
+            if (chartMode == ChartRenderingMode.TextOnly)
                 UiResources.StripChartStructuredContent(result);
-            }
+
+            // SPEC v1.5 §2.1: emit a render_status signal on every
+            // chart-emitting tool's result so the model can distinguish a
+            // delivered chart from one that was stripped. The model uses
+            // this to gate narration honesty (no "I drew the chart" on a
+            // stripped_text_only response).
+            UiResources.AttachRenderStatus(result, chartMode, name);
 
             return result;
         });

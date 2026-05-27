@@ -71,4 +71,35 @@ internal static class McpJson
             IsError = true,
         };
     }
+
+    /// <summary>
+    /// SPEC v1.5 §2.4 anti-synthesis guard text shipped on
+    /// <c>output_mode=export</c> chart responses. Public so tests can pin
+    /// the wording (model behavior depends on the phrasing reaching the
+    /// model context unmodified).
+    /// </summary>
+    public const string ExportDoNotRenderText =
+        "Server-computed indicators (MA / RSI / Bollinger / drawdown) are not " +
+        "included in this payload. Rendering a chart from this OHLCV will " +
+        "produce different indicator values than the server computes " +
+        "(different adjustment mode, warm-up window, formula choice). Use " +
+        "this data for analysis (pandas, numpy, statistical work, custom " +
+        "backtests), not for chart synthesis. For inline charts, the " +
+        "original tool call already delivered (or stripped) the chart; do " +
+        "not synthesize a replacement.";
+
+    /// <summary>
+    /// Attaches the v1.5 export-mode anti-synthesis guard to a chart-tool
+    /// result: <c>_meta.data_purpose = "analysis_only"</c> + a
+    /// <c>_meta.do_not_render</c> reminder phrasing (SPEC v1.5 §2.4).
+    /// Called by chart tools when <c>output_mode=export</c>; idempotent on
+    /// the rare case the helper runs twice.
+    /// </summary>
+    public static void AttachExportGuard(CallToolResult result)
+    {
+        JsonObject meta = result.Meta ?? new JsonObject();
+        meta["data_purpose"] = "analysis_only";
+        meta["do_not_render"] = ExportDoNotRenderText;
+        result.Meta = meta;
+    }
 }

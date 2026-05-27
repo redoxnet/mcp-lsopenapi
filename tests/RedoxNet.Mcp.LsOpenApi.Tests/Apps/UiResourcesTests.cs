@@ -160,4 +160,102 @@ public class UiResourcesTests
 
         result.StructuredContent.Should().BeNull();
     }
+
+    // ── AttachRenderStatus (SPEC v1.5 §2.1) ─────────────────────────────────
+
+    static CallToolResult EmptyResult() => new()
+    {
+        Content = new List<ContentBlock> { new TextContentBlock { Text = "{}" } },
+    };
+
+    [Fact]
+    public void AttachRenderStatus_Sep1865_SetsDelivered()
+    {
+        var result = EmptyResult();
+
+        UiResources.AttachRenderStatus(result, ChartRenderingMode.Sep1865, "ls_get_chart");
+
+        result.Meta.Should().NotBeNull(
+            "v1.5 chart-emitting tools always carry render_status so the model has a hard signal");
+        result.Meta!["render_status"]!.GetValue<string>().Should().Be("delivered");
+    }
+
+    [Fact]
+    public void AttachRenderStatus_StructuredContent_SetsDelivered()
+    {
+        var result = EmptyResult();
+
+        UiResources.AttachRenderStatus(result, ChartRenderingMode.StructuredContent, "ls_get_chart");
+
+        result.Meta!["render_status"]!.GetValue<string>().Should().Be("delivered");
+    }
+
+    [Fact]
+    public void AttachRenderStatus_TextOnly_SetsStrippedTextOnly()
+    {
+        var result = EmptyResult();
+
+        UiResources.AttachRenderStatus(result, ChartRenderingMode.TextOnly, "ls_get_chart");
+
+        result.Meta!["render_status"]!.GetValue<string>().Should().Be("stripped_text_only");
+    }
+
+    [Fact]
+    public void AttachRenderStatus_NonChartTool_LeavesMetaUntouched()
+    {
+        // A non-chart tool result must NOT acquire render_status — leaking
+        // the field elsewhere would invite the model to over-read it as a
+        // generic "did the host show something" signal.
+        var result = EmptyResult();
+
+        UiResources.AttachRenderStatus(result, ChartRenderingMode.TextOnly, "ls_get_quote");
+
+        result.Meta.Should().BeNull();
+    }
+
+    [Fact]
+    public void AttachRenderStatus_NullToolName_LeavesMetaUntouched()
+    {
+        var result = EmptyResult();
+
+        UiResources.AttachRenderStatus(result, ChartRenderingMode.Sep1865, null);
+
+        result.Meta.Should().BeNull();
+    }
+
+    [Fact]
+    public void AttachRenderStatus_PreservesExistingMetaKeys()
+    {
+        // Coexist with the export guard (data_purpose / do_not_render) and any
+        // future meta — render_status must merge, not replace.
+        var result = EmptyResult();
+        result.Meta = new JsonObject { ["data_purpose"] = "analysis_only" };
+
+        UiResources.AttachRenderStatus(result, ChartRenderingMode.Sep1865, "ls_get_chart");
+
+        result.Meta.Should().NotBeNull();
+        result.Meta!["render_status"]!.GetValue<string>().Should().Be("delivered");
+        result.Meta["data_purpose"]!.GetValue<string>().Should().Be("analysis_only");
+    }
+
+    [Theory]
+    [InlineData("ls_get_chart")]
+    [InlineData("ls_add_indicator")]
+    [InlineData("ls_reframe_chart")]
+    [InlineData("ls_get_overseas_chart")]
+    [InlineData("ls_get_etf_holdings")]
+    [InlineData("ls_get_program_trading")]
+    public void IsChartEmittingTool_AllSixPlotlyTools_ReturnsTrue(string toolName)
+    {
+        UiResources.IsChartEmittingTool(toolName).Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsChartEmittingTool_NonChartTools_ReturnsFalse()
+    {
+        UiResources.IsChartEmittingTool("ls_get_quote").Should().BeFalse();
+        UiResources.IsChartEmittingTool("ls_search_stock").Should().BeFalse();
+        UiResources.IsChartEmittingTool(null).Should().BeFalse();
+        UiResources.IsChartEmittingTool("").Should().BeFalse();
+    }
 }

@@ -30,6 +30,19 @@ namespace RedoxNet.Mcp.LsOpenApi.Server;
 /// registered data and is queryable without LS credentials, so a "no live
 /// balances" boundary must not be read as "cannot show the user's holdings".
 /// </para>
+/// <para>
+/// v1.5 replaces the v1.4 "wrap-and-route to a peer visualize MCP" paragraph
+/// with a fidelity-first chart-rendering paragraph (SPEC v1.5 §2.2 + §2.3).
+/// The model is given an explicit <c>_meta.render_status</c> signal so it
+/// can tell whether the host received the chart, and is forbidden from
+/// self-synthesizing charts via <c>output_mode=export</c> or generic
+/// visualize MCP forwards regardless of render_status. Chart customization
+/// is constrained to <c>ls_add_indicator</c> / <c>ls_reframe_chart</c>;
+/// layout-level requests (panel height, sizing) are identified as host
+/// panel constraints rather than routed around. The 2026-05-27 Codex
+/// self-synthesis case and the Cowork height-customization case both
+/// motivated this paragraph.
+/// </para>
 /// </remarks>
 internal static class ServerInstructions
 {
@@ -53,7 +66,11 @@ internal static class ServerInstructions
 
         Tool responses for daily-snapshot data carry a `data_as_of` field (the actual latest row date) plus `query_date_resolution` describing how the user's query day was interpreted (`used` | `weekend` | `holiday` | `future_date` | `pre_market`). When the resolution is anything other than `used`, surface that to the user in your answer -- "the latest available is Friday because today is Saturday", "deposit data lags by 2-3 business days so this is from <date>", "your future date was clamped to the latest trading day". Do not state "today's data" when `data_as_of` actually trails today.
 
-        Chart rendering on hosts without a built-in Plotly renderer: when a chart-emitting tool (ls_get_chart / ls_reframe_chart / ls_add_indicator / ls_get_overseas_chart / ls_get_etf_holdings / ls_get_program_trading) returns a `structuredContent.chart.spec` but the host shows only text in its chat surface, check whether the host exposes a generic visualization MCP tool (commonly mcp__visualize__show_widget or similar HTML-widget tool from a peer MCP server). If yes, wrap the Plotly spec in a minimal self-contained HTML scaffold -- "<div id='chart'></div><script src='https://cdn.plot.ly/plotly-2.35.2.min.js'></script><script>Plotly.newPlot('chart', spec.data, spec.layout, {responsive: true});</script>" with the spec inlined -- and hand it to that widget tool. The chart will then render inline. Hosts with a native renderer (AssistStudio) consume `chart.spec` directly and need no wrapping; hosts that advertise the SEP-1865 UI capability get the full iframe app from this server. Only fall back to the manual wrap-and-route pattern when neither path is available.
+        Chart rendering honesty. A chart-emitting tool (ls_get_chart / ls_reframe_chart / ls_add_indicator / ls_get_overseas_chart / ls_get_etf_holdings / ls_get_program_trading) returns `_meta.render_status` indicating how the host received the chart: `delivered` means the server emitted `structuredContent.chart.spec` and the host shows it inline (AssistStudio class with own Plotly; or a SEP-1865 host with iframe app -- Claude Desktop Chat, Cowork, VS Code Chat, Cursor 2.6+, ChatGPT, ext-apps basic-host class); narrate normally ("삼성전자 일봉 차트입니다, 최근 흐름은…"). `stripped_text_only` means the chart spec was NOT delivered -- the host has no SEP-1865 or structured-chart path and you received only the analytical summary. Do NOT claim you "drew", "rendered", "표시", "그렸", or otherwise visualized the chart -- the user sees no chart. State the limitation explicitly: "이 호스트에서는 inline 차트가 표시되지 않습니다. 데이터 요약: ..." or "I can't render inline here -- here's the analytical summary: ...".
+
+        Do not self-synthesize charts -- regardless of `render_status`. Do NOT re-call the chart tool with `output_mode=export` to fetch raw OHLCV and then render the chart yourself in Python (matplotlib / plotly / mplfinance), JavaScript (Plotly / Chart.js / D3), HTML / SVG / PNG, or any other path. A self-synthesized chart looks plausible but its indicators (MA / RSI / Bollinger) will NOT match `summary.moving_averages` -- different adjustment mode (raw vs ADJ), different warm-up window, different formula. The user sees a chart that LOOKS authoritative but disagrees with the analytical summary on the same screen. Do NOT forward the chart spec or the raw OHLCV to a generic visualization MCP (mcp__visualize__show_widget, create_artifact, mcp__chart__render, or any other rendering helper) -- the server's chart is the authoritative render path for hosts that can show it; on hosts that can't, the analytical summary is the honest answer. Do NOT recompute any indicator yourself from raw bars -- the server's MAs, slope, drawdown, and context.* are authoritative.
+
+        Chart customization is tool-mediated. Indicator add / remove / change -> ls_add_indicator against the dataset_id. Time range / period / count adjust -> ls_reframe_chart against the dataset_id. Panel height, sizing, colors, font, layout tweaks are host panel constraints, not chart parameters -- state the limitation honestly ("차트 패널 높이는 이 호스트가 결정합니다, 서버 쪽에서 키울 수 없어요. 더 큰 차트가 필요하시면 패널이 더 큰 호스트에서 같은 질문을 주세요"). Do NOT route around the constraint by synthesizing your own chart or calling a visualization MCP. `output_mode=export` is legitimate ONLY for data analysis (pandas / numpy / statistical tests / custom backtests); export responses carry `_meta.data_purpose: "analysis_only"` and `_meta.do_not_render` reminding you it is NOT a workaround to render charts.
 
         When the user asks about their OWN positions -- "my holdings", "my portfolio", "my balance", "my positions", or the Korean equivalents -- answer from this server's local portfolio, which the user registers themselves: call ls_holdings_list. Do NOT refuse for lack of brokerage access. Registered holdings need no LS credentials; a missing or expired LS key only drops live-price enrichment, never the holdings themselves.
 

@@ -1,11 +1,15 @@
 # SPEC: v1.5.0 — Fidelity-first chart narration
 
-- **상태**: Draft (final 2026-05-26) — empirical Codex 테스트로 디자인 확정
+- **상태**: Final (2026-05-27) — `spike/sep1865-verify` empirical evidence와 main에 cherry-pick된 PlotlyTemplate fix 3 commits (`38d4dc2` / `46e20f0` / `01d74e3`)로 디자인 확정.
 - **대상 버전**: v1.5.0
-- **선행**: [SPEC-v1.4.md](./SPEC-v1.4.md), [SPEC-v1.2-mcp-apps-capability.md](./SPEC-v1.2-mcp-apps-capability.md), v1.4 commit `6d7d3a0` (ServerInstructions chart-routing hint)
-- **범위**: 단일 슬라이스 — chart-emitting 도구의 *모델 narration 정직성* 강제. (1) ServerInstructions narration honesty + self-synthesis 명시 금지, (2) `_meta.render_status` 응답 필드, (3) Sep1865 진입 엄격화(`KnownIframeRenderingHosts` whitelist), (4) `output_mode=export` 응답에 anti-synthesis 가드 메타.
-- **이전 draft에서 묶었거나 본문이었던 항목들**: candle cache(§Appendix A), saved screener macros(§Appendix B), `_meta.render_hints.wrap_template`(§Appendix C — 본문에서 *부록으로 강등*), empirical host matrix(§Appendix D — 이번 세션 finding).
-- **메시지**: v1.5는 *기능 추가*가 아니라 *모델 거짓말 차단*. 사용자가 받는 것: "차트 못 봤는데 그렸다고 한다"의 종료.
+- **선행**: [SPEC-v1.4.md](./SPEC-v1.4.md), [SPEC-v1.2-mcp-apps-capability.md](./SPEC-v1.2-mcp-apps-capability.md), [MCP-APPS-INTEROP.md](./MCP-APPS-INTEROP.md), v1.4 commit `6d7d3a0` (ServerInstructions chart-routing hint, v1.5에서 교체).
+- **범위**: 단일 슬라이스 — chart-emitting 도구의 *모델 narration 정직성* 강제. 네 sub-change:
+  1. `_meta.render_status` 응답 필드 (`delivered` | `stripped_text_only`) — 모델에 명시적 신호.
+  2. ServerInstructions chart-routing 단락 *교체* (commit `6d7d3a0` 대체) — TextOnly 호스트에서 "그렸/rendered/표시" narration 금지.
+  3. **호스트 분류 무관 self-synthesis 금지** — Cowork 케이스(iframe 정상 렌더에서도 height 등 customization 요청 시 show_widget / create_artifact / output_mode=export 우회 발화)로 확장. 차트 변경은 `ls_reframe_chart` / `ls_add_indicator`만, height 같은 호스트 패널 제약은 정직 안내.
+  4. `output_mode=export` 응답에 `_meta.do_not_render` 가드 (self-synthesis 충동을 한 번 더 받는 brake).
+- **이전 draft에서 묶었거나 본문이었던 항목들**: candle cache(§Appendix A), saved screener macros(§Appendix B), `_meta.render_hints.wrap_template`(§Appendix C — 본문에서 *부록으로 강등*).
+- **메시지**: v1.5는 *기능 추가*가 아니라 *모델 거짓말 차단*. 사용자가 받는 것: "차트 못 봤는데 그렸다고 한다" + "차트 정상 렌더돼도 customization 요청에 자체 합성 우회" 두 종료.
 
 ---
 
@@ -15,32 +19,54 @@
 
 v1.4는 두 슬라이스 ship(date envelope + Q-Click). v1.5는 *기능*이 아니라 *fidelity*에 좁게 집중 — v1.4-dev Cowork E2E 회귀(commit `0ce0507`)와 v1.5 디자인 세션 중 2026-05-26 Codex 실측에서 동일한 패턴이 *호스트를 바꿔도 재현*되며 *prompt 강도가 아니라 디자인 변경이 필요*함을 확인.
 
-### 1.2 v1.5가 푸는 *세 가지 empirical 문제*
+### 1.2 v1.5 직전: empirical evidence가 디자인을 바꾼 두 사건
+
+**(a) 2026-05-26 Codex 실측 — TextOnly 호스트에서의 거짓 narration + self-synthesis**
+
+`include_chart` 파라미터가 schema에서 스트립된 상태(=우리 v1.2 TextOnly 분류 정확)에서 모델이 `output_mode=display`로 호출만 한 사실로 "그려뒀습니다" narration. 후속 "실제로 안 그려졌네요" 발화에 4분 9초 우회 작업 — `output_mode=export` 재호출 → OHLCV → `render_samsung_chart.py` (+248 lines, 자체 MA 합성) → PNG. 서버 indicator와 *불일치하는* 자체 합성 차트가 chat에 등장.
+
+**(b) 2026-05-27 `spike/sep1865-verify` — Claude Desktop + Cowork도 실제로 iframe을 렌더한다**
+
+이전 디자인의 Sub-change 1 (whitelist) 근거였던 "Claude Desktop frame-ancestors CSP block / Cowork advertise 후 미렌더" 진단이 *우리 측 버그*였음 입증. PlotlyTemplate.html에 잠재해 있던 세 핸드셰이크 버그를 ext-apps basic-host 환경에서 발견하고 fix:
+
+- Q1: `postMessage(JSON.stringify(msg), "*")` — basic-host 트랜스포트가 string 페이로드를 silently drop. 객체 리터럴이어야 함. (commit `38d4dc2`)
+- Q2: `ui/initialize.params`에 `appInfo` 누락 — schema 검증 실패로 silently drop. (commit `38d4dc2`)
+- Q3: `ui/notifications/size-changed` 누락으로 iframe height가 0/default로 잡힘 → "렌더 안 됨"처럼 보임. (commit `46e20f0`)
+- 추가로 chat panel용 default frame height bump. (commit `01d74e3`)
+
+세 fix가 main에 cherry-pick된 후 *동일 실측에서* Claude Desktop Chat / Cowork / basic-host / VS Code Chat 모두 ✅ iframe 렌더 확인. **원 진단이 *우리 버그*였고, 호스트 capability 광고는 신뢰 가능했음**.
+
+증거 보존: `docs/claude_desktop_chat_chart_lgelectronics.png`, `docs/claude_desktop_cowork_chart_lgelectronics.png` (둘 다 LG전자 일봉, 같은 PlotlyTemplate fix 후).
+
+### 1.3 v1.5가 푸는 *두 empirical 문제*
 
 | # | 문제 | 출처 |
 |---|---|---|
-| P1 | 호스트가 SEP-1865 capability를 *광고*하지만 iframe을 *렌더하지 않음* → 우리 서버는 chart 페이로드 보내고 모델은 "그렸다"고 narration → 사용자는 차트 없음 | Claude Desktop frame-ancestors CSP 관찰(메모리 `next_mcp_apps_capability` 2026-05-22) |
-| P2 | TextOnly 호스트에서 chart spec이 *전송조차 안 됐는데도* 모델이 `output_mode=display`를 호출한 사실만 보고 "그렸다" 거짓 narration | **2026-05-26 Codex 실측** — `include_chart` 파라미터 schema에 없었음(=우리 v1.2 TextOnly 분류 정확), spec 미전송에도 모델 "그려뒀습니다" |
-| P3 | 호스트 분류가 *정확해도* 모델이 `output_mode=export`로 OHLCV 재요청 후 Python/JS로 *자체 차트 합성* → server-computed indicators(우리가 보낸 MA5/20/60 값) *완전 무시* → 시각적으로 그럴듯하지만 *우리가 보장하는 fidelity가 아닌* 차트가 사용자에게 표시됨 | **2026-05-26 Codex 실측** — `render_samsung_chart.py` +248 lines 생성, OHLCV에서 자체 MA 계산해 PNG inline 표시. 사용자가 chart에서 보는 MA값과 우리 summary의 MA값이 *다른* 상태 |
+| P1 | 호스트가 TextOnly로 분류된 상태에서 chart spec이 *전송조차 안 됐는데도* 모델이 `output_mode=display`를 호출한 사실만 보고 "그렸다" 거짓 narration | 2026-05-26 Codex 실측 |
+| P2 | 호스트가 iframe 차트를 *정상 렌더*하는 상태(Claude Desktop / Cowork / basic-host)에서도 height customization 요청 등 차트 변경 발화에 모델이 `show_widget` / `create_artifact` / `output_mode=export`로 우회해 자체 합성. server-computed indicators(우리가 보낸 MA5/20/60 값) 무시 → 시각적으로 그럴듯하지만 *우리가 보장하는 fidelity가 아닌* 차트가 사용자에게 표시됨 | 2026-05-27 Cowork 세션 관찰 (cherry-pick 직전 회귀) + 2026-05-26 Codex 실측 |
 
-P1은 *광고와 능력의 갈림*. P2는 *모델 narration의 정직성*. P3는 *모델 행동의 자기-합성 충동*. 셋 다 *prompt 강도*로 해결 안 되며, *response shape과 instructions의 명시*로 차단해야 함.
+P1은 *모델 narration의 정직성*. P2는 *모델 행동의 자기-합성 충동 — 호스트 분류 무관*. 둘 다 *prompt 강도*로 해결 안 되며, *response shape과 instructions의 명시*로 차단해야 함.
 
-### 1.3 Empirical host matrix (요약, 자세한 건 §Appendix D)
+원래 디자인 draft가 가정한 P3 ("Claude Desktop / Cowork가 capability를 *광고*하지만 iframe을 *렌더하지 않음*") 는 §1.2 (b)의 PlotlyTemplate 3-fix로 *해소* — empirical 증거가 들어오면 디자인이 바뀐다.
 
-| 호스트 | capability 광고 | 실제 inline 렌더 | 우리 분류 | 모델 narration |
+### 1.4 Empirical host matrix (요약, 자세한 건 [MCP-APPS-INTEROP.md §2](./MCP-APPS-INTEROP.md))
+
+| 호스트 | capability 광고 | 실제 inline 렌더 | 우리 분류 | render_status |
 |---|---|---|---|---|
-| AssistStudio (WinUI 3) | ✅ SEP-1865 | ✅ (자체 Plotly) | StructuredContent | OK |
-| Claude Desktop | ✅ SEP-1865 | ❌ (frame-ancestors CSP) | Sep1865 (현 분기) → **v1.5에서 TextOnly로 강등** | 미확인 (광고만) |
-| Codex Desktop/TUI | ❌ 미광고 (`enable_mcp_apps=true`여도 capability는 별개) | ❌ (TUI 구조적; Desktop도 플래그) | TextOnly ✅ | **거짓 "그렸다" 관찰** |
-| Claude Code CLI | ❌ (TUI) | ❌ | TextOnly | 미확인 |
-| Cowork 3P (Bedrock/Vertex/Foundry) | ✅ SEP-1865 | ❌ (광고 후 미렌더, [claude-ai-mcp#236](https://github.com/anthropics/claude-ai-mcp/issues/236)) | Sep1865 (현 분기) → **v1.5에서 TextOnly로 강등** | 미확인 |
-| Cursor 2.6+, VS Code, ChatGPT, Goose, Postman, MCPJam | ✅ (변동) | 광고대로 작동한다는 *보고만* 있음, 우리는 *실측 안 함* | Sep1865 (현 분기) → **v1.5에서 TextOnly로 보수적 강등, empirical verify 후 whitelist 추가** | 미확인 |
+| AssistStudio (WinUI 3) | ✅ SEP-1865 | ✅ (자체 Plotly) | StructuredContent | `delivered` |
+| Claude Desktop Chat | ✅ SEP-1865 | ✅ (PlotlyTemplate 3-fix 후) | Sep1865 | `delivered` |
+| Cowork (iframe + chat panel) | ✅ SEP-1865 | ✅ (PlotlyTemplate 3-fix 후) | Sep1865 | `delivered` |
+| ext-apps basic-host (reference) | ❌ 미광고 (구현 선택) | ✅ | TextOnly (capability 부재) | `stripped_text_only` |
+| Codex (Desktop / TUI) | ❌ 미광고 | ❌ (TUI 구조적) | TextOnly | `stripped_text_only` |
+| Claude Code CLI | ❌ (TUI) | ❌ | TextOnly | `stripped_text_only` |
+| Cursor 2.6+, VS Code, ChatGPT, Goose, Postman, MCPJam | ✅ (변동) | 광고대로 작동한다는 보고 (우리 실측 없음) | Sep1865 (capability 신뢰) | `delivered` |
 
-총평: **광고만으로는 신뢰 못 함**. v1.5의 Sub-change 3(Sep1865 진입 엄격화)이 이 매트릭스에 직접 응답.
+총평: PlotlyTemplate fix 후 **capability 광고 = 실제 렌더가 거의 일치**. v1.2의 capability-based 분류가 신뢰 가능하다는 것이 empirical 결론이라, **`KnownIframeRenderingHosts` whitelist 도입은 보류**. basic-host 같은 "capability 미광고 + 실제 렌더" 케이스는 향후 발견되는 호스트별로 case-by-case로 보고 결정.
 
-### 1.4 비범위
+### 1.5 비범위
 
-- **`_meta.render_hints.wrap_template` (이전 draft 본문)** → Appendix C로 강등. Codex empirical에서 *호스트 분류가 정확해도* 모델이 자기-합성 우회를 *능동적으로* 수행함을 확인 → wrap_template은 *또 다른 합성 표면을 열어줄* 위험이 있어 v1.5에서 *제거*. 진짜로 필요한 사용자가 발견되면 Appendix C에서 재오픈.
+- **`KnownIframeRenderingHosts` whitelist 도입** → 2026-05-27 empirical evidence(§1.2 b)로 *필요 없음*이 입증. capability advertisement가 신뢰 가능. ext-apps basic-host 같은 capability 미광고+렌더 사례는 v1.5.1+에서 case-by-case로 결정.
+- **`_meta.render_hints.wrap_template`** → Appendix C로 강등. 또 다른 합성 표면을 열어줄 위험이 v1.5의 self-synthesis 금지 메시지와 충돌.
 - **SQLite 일봉 캐시** → Appendix A 유지.
 - **Saved screener macros** → Appendix B 유지.
 - **PNG 폴백(server-side render)** → AssistStudio가 이미 client-side `Plotly.toImage` 사용 — server-side 불필요. v1.6+ 보류.
@@ -50,33 +76,9 @@ P1은 *광고와 능력의 갈림*. P2는 *모델 narration의 정직성*. P3는
 
 ## 2. 디자인
 
-### 2.1 Sub-change 1 — `ChartRenderingMode.Sep1865` 진입 엄격화
+### 2.1 Sub-change 1 — `_meta.render_status` 응답 필드
 
-**현 동작** ([ChartHostSupport.cs:63](../src/RedoxNet.Mcp.LsOpenApi/Apps/ChartRenderingMode.cs)):
-```
-if (HasUiCapability(capabilities)) return Sep1865;  // capability 광고만 보고
-if (clientInfo?.Name in KnownChartRenderers) return StructuredContent;
-return TextOnly;
-```
-
-**v1.5 변경**: capability 광고 + *empirical-verified 렌더 호스트 whitelist* 둘 다 충족해야 Sep1865:
-
-```
-if (HasUiCapability(capabilities) && clientInfo?.Name in KnownIframeRenderingHosts) return Sep1865;
-if (clientInfo?.Name in KnownChartRenderers) return StructuredContent;
-return TextOnly;  // capability 광고만 있는 호스트는 여기로 (보수)
-```
-
-**`KnownIframeRenderingHosts` 초기 상태**: *빈 set*. 정확히 한 시점에 한 호스트씩 empirical verify 후 추가. Cursor 2.6+, VS Code, ChatGPT 등은 *코드를 우리가 돌려 실제 iframe 렌더를 본 다음* 추가. 그 전까지는 TextOnly로 강등.
-
-**효과**:
-- Claude Desktop / Cowork 3P / Codex / Claude Code CLI → 모두 TextOnly → chart 페이로드 자체가 안 감 → 모델이 "그렸다" 할 spec이 처음부터 없음
-- 호스트가 광고와 다르게 실제 렌더 못해도 *우리는 페이로드 낭비 없음*
-- AssistStudio: 기존 `KnownChartRenderers` 화이트리스트 그대로 → StructuredContent 분류 유지
-
-### 2.2 Sub-change 2 — `_meta.render_status` 응답 필드
-
-chart-emitting 도구 응답에 모드 신호:
+chart-emitting 도구 응답의 `CallToolResult.Meta`에 모드 신호:
 
 ```jsonc
 "_meta": {
@@ -84,48 +86,61 @@ chart-emitting 도구 응답에 모드 신호:
 }
 ```
 
-- `delivered`: Sep1865(verified) 또는 StructuredContent 모드 — chart 페이로드가 응답에 *포함*되어 호스트에 전달됨
-- `stripped_text_only`: TextOnly 모드 — chart 페이로드가 `UiResources.StripChartStructuredContent`로 *제거*됨. 호스트와 모델 모두에게 명시.
+- `delivered`: `Sep1865` 또는 `StructuredContent` 모드 — chart 페이로드가 응답에 *포함*되어 호스트에 전달됨. 호스트가 inline 차트를 사용자에게 표시한다.
+- `stripped_text_only`: `TextOnly` 모드 — chart 페이로드가 `UiResources.StripChartStructuredContent`로 *제거*됨. 호스트와 모델 모두에게 명시.
 
-모델은 이 필드를 보고 narration 결정 (Sub-change 3에서 contract 명시).
+`Program.cs`의 `AddCallToolFilter`에서 strip 단계 *직후* 부착. `PlotlyEmittingToolNames`에 속한 도구의 응답만 대상. 그 외 도구 응답은 영향 없음.
 
-### 2.3 Sub-change 3 — ServerInstructions narration honesty
+모델은 이 필드를 보고 narration 결정 (Sub-change 2에서 contract 명시).
 
-현 ServerInstructions의 chart-routing 단락(commit `6d7d3a0`)을 *완전히 교체*. 새 문안:
+### 2.2 Sub-change 2 — ServerInstructions chart-routing 단락 *교체* (narration honesty)
 
-> **Chart rendering honesty.** A chart-emitting tool (ls_get_chart / ls_reframe_chart / ls_add_indicator / ls_get_overseas_chart / ls_get_etf_holdings / ls_get_program_trading) returns `_meta.render_status` indicating how the host will receive the chart:
+현 ServerInstructions의 chart-routing 단락(commit `6d7d3a0` — "wrap-and-route to visualize MCP" 가이드)을 *완전히 교체*. 새 단락은 두 contract을 명시:
+
+> **Chart rendering honesty.** A chart-emitting tool (ls_get_chart / ls_reframe_chart / ls_add_indicator / ls_get_overseas_chart / ls_get_etf_holdings / ls_get_program_trading) returns `_meta.render_status` indicating how the host received the chart:
 >
-> - `delivered`: the server emitted `structuredContent.chart.spec` and the host can render it inline (AssistStudio class with own Plotly; or a verified SEP-1865 host with iframe app). Narrate normally — e.g. "삼성전자 일봉 차트입니다, 최근 흐름은…".
-> - `stripped_text_only`: the chart spec was NOT delivered. The host has no native renderer and no verified iframe path. You received only the analytical summary (closes, MAs, key turns). Do NOT claim you "drew", "rendered", "표시", "그렸", or otherwise visualized the chart. The user sees no chart. State the limitation explicitly: e.g. "이 호스트에서는 inline 차트가 표시되지 않습니다. 데이터 요약: ..." or "I can't render inline here — here's the analytical summary: ...".
+> - `delivered`: the server emitted `structuredContent.chart.spec` and the host shows it inline (AssistStudio class with own Plotly; or a SEP-1865 host with iframe app — Claude Desktop, Cowork, Cursor 2.6+, VS Code, ChatGPT, ext-apps basic-host class). Narrate normally — "삼성전자 일봉 차트입니다, 최근 흐름은…".
+> - `stripped_text_only`: the chart spec was NOT delivered. The host has no SEP-1865 / structured-chart path. You received only the analytical summary (closes, MAs, key turns). Do NOT claim you "drew", "rendered", "표시", "그렸", or otherwise visualized the chart. The user sees no chart. State the limitation explicitly: e.g. "이 호스트에서는 inline 차트가 표시되지 않습니다. 데이터 요약: ..." or "I can't render inline here — here's the analytical summary: ...".
 
-### 2.4 Sub-change 4 — ServerInstructions self-synthesis 금지 (P3 직접 응답)
+### 2.3 Sub-change 3 — *호스트 분류 무관* self-synthesis 금지
 
-같은 단락에 *강한 어조로* 이어 붙임:
+§2.2 단락에 *강한 어조로* 이어 붙임. **P2 직접 응답: render_status가 `delivered`인 경우에도 self-synthesis 금지.**
 
-> **Do not self-synthesize charts when render_status is `stripped_text_only`.** Specifically, do NOT:
+> **Do not self-synthesize charts — regardless of `render_status`.** Specifically, do NOT:
 >
-> - Re-call the same tool with `output_mode=export` to fetch raw OHLCV, then render a chart yourself in Python (matplotlib / plotly / mplfinance), JavaScript (Plotly / Chart.js / D3), HTML/SVG, or any other path. A self-synthesized chart looks plausible but its indicators (MA / RSI / Bollinger / etc.) will NOT match the server's `summary.moving_averages` values — different adjustment mode (raw vs ADJ), different warm-up window, different formula (SMA vs EMA vs weighted), different bar count. The user sees a chart that LOOKS authoritative but disagrees with the analytical summary on the same screen.
+> - Re-call the chart tool with `output_mode=export` to fetch raw OHLCV, then render a chart yourself in Python (matplotlib / plotly / mplfinance), JavaScript (Plotly / Chart.js / D3), HTML/SVG, or any other path. A self-synthesized chart looks plausible but its indicators (MA / RSI / Bollinger / etc.) will NOT match the server's `summary.moving_averages` values — different adjustment mode (raw vs ADJ), different warm-up window, different formula (SMA vs EMA vs weighted), different bar count. The user sees a chart that LOOKS authoritative but disagrees with the analytical summary on the same screen.
+> - Forward the chart spec or the raw OHLCV to a generic visualization MCP (`mcp__visualize__show_widget`, `create_artifact`, `mcp__chart__render`, or any other rendering helper). The server's chart is already the authoritative render path for hosts that can show it; on hosts that can't, the analytical summary is the honest answer.
 > - Recompute any indicator yourself from raw bars. The server's `summary.moving_averages.MA{5,20,60,120,200}`, `summary.ma60_slope`, `summary.drawdown_from_peak_pct`, and `context.*` are the authoritative values; your re-computation will diverge.
 > - Write a PNG / SVG / HTML chart file "to show the user something". A self-rendered chart with mismatched indicators is *worse* than no chart, because users trust what they see.
 >
-> Instead, when `render_status` is `stripped_text_only`:
-> 1. Report the analytical summary verbatim from the tool response (closes, MA values, key turning points, drawdown).
-> 2. Name the limitation: "this host does not render inline charts".
-> 3. Offer the `dataset_id` so the user can ask for *data analysis* (export to pandas / etc.) without rendering, or switch to a chart-capable host (AssistStudio, verified iframe hosts) for the actual visualization.
-> 4. `output_mode=export` is legitimate ONLY for handing OHLCV to a data analysis pipeline (statistical tests, custom backtesting, passing to pandas). It is NOT a workaround to render charts.
+> **Chart customization is tool-mediated.** When the user asks to change something about an already-rendered chart:
+>
+> - Indicator add / remove / change → call `ls_add_indicator` against the `dataset_id`.
+> - Time range / period / count adjust → call `ls_reframe_chart` against the `dataset_id`.
+> - **Panel height, sizing, colors, font, layout tweaks** → these are *host panel constraints*, not chart parameters. State the limitation honestly — e.g. "차트 패널 높이는 이 호스트(Cowork chat panel)가 결정합니다, 서버 쪽에서 키울 수 없어요. 더 큰 차트가 필요하시면 Claude Desktop 일반 채팅이나 AssistStudio처럼 패널이 더 큰 호스트에서 같은 질문을 주세요." Do NOT route around the constraint by synthesizing your own chart or calling a visualization MCP.
+>
+> `output_mode=export` is legitimate ONLY for handing OHLCV to a data analysis pipeline (statistical tests, custom backtesting, passing to pandas). It is NOT a workaround to render charts.
 
-### 2.5 Sub-change 5 — `output_mode=export` 응답에 anti-synthesis 가드 메타
+> Instead, when `render_status` is `stripped_text_only` *or* when a `delivered` chart can't be customized the way the user wants:
+>
+> 1. Report the analytical summary verbatim from the tool response (closes, MA values, key turning points, drawdown).
+> 2. Name the limitation: "this host does not render inline charts" / "this panel can't be resized from the server".
+> 3. Offer the `dataset_id` so the user can ask for *follow-up indicators* (`ls_add_indicator`) or *reframing* (`ls_reframe_chart`) without re-fetching, or switch to a more capable host for the visualization itself.
+
+### 2.4 Sub-change 4 — `output_mode=export` 응답에 anti-synthesis 가드 메타
 
 export 모드 응답의 `_meta`에 명시 신호(모델이 합성 충동을 느낄 때 한 번 더 보는 brake):
 
 ```jsonc
 "_meta": {
   "data_purpose": "analysis_only",
-  "do_not_render": "Server-computed indicators (MA / RSI / Bollinger / drawdown) are not included in this payload. Rendering a chart from this OHLCV will produce different indicator values than the server computes (different adjustment mode, warm-up window, formula choice). Use this data for analysis (pandas, numpy, statistical work, custom backtests), not for chart synthesis. For inline charts, switch to a chart-capable host (AssistStudio, verified iframe hosts)."
+  "do_not_render": "Server-computed indicators (MA / RSI / Bollinger / drawdown) are not included in this payload. Rendering a chart from this OHLCV will produce different indicator values than the server computes (different adjustment mode, warm-up window, formula choice). Use this data for analysis (pandas, numpy, statistical work, custom backtests), not for chart synthesis. For inline charts, the original tool call already delivered (or stripped) the chart; do not synthesize a replacement."
 }
 ```
 
-Sub-change 3·4의 ServerInstructions 텍스트와 함께 작용 — *export 사용처마다* 모델에 정직성 reminder.
+Sub-change 2·3의 ServerInstructions 텍스트와 함께 작용 — *export 사용처마다* 모델에 정직성 reminder.
+
+대상 도구: `ls_get_chart`, `ls_get_overseas_chart` (둘 다 `output_mode` 파라미터를 지원하는 차트 도구). 다른 chart-emitting 도구(`ls_add_indicator` / `ls_reframe_chart` / `ls_get_etf_holdings` / `ls_get_program_trading`)는 `output_mode=export`를 지원하지 않으므로 영향 없음.
 
 ---
 
@@ -133,31 +148,27 @@ Sub-change 3·4의 ServerInstructions 텍스트와 함께 작용 — *export 사
 
 - **신규 도구 0개**
 - **standard / all 표면 변동 없음** — 40 / 43 그대로
-- 응답 페이로드에 `_meta.render_status` (모든 chart-emitting 도구), `_meta.data_purpose` + `_meta.do_not_render` (export 모드 응답) 추가
-- ServerInstructions chart-routing 단락 교체 + 확장 (현 ~250자 → ~600자)
-- `ChartHostSupport.Resolve`에 whitelist 체크 1줄 추가
+- 응답 페이로드에 `_meta.render_status` (모든 chart-emitting 도구 — `Program.cs` filter), `_meta.data_purpose` + `_meta.do_not_render` (export 모드 응답 — chart 도구 두 개)
+- ServerInstructions chart-routing 단락 교체 + 확장 (현 ~1100자 → ~2200자)
+- `ChartHostSupport.Resolve` 변경 없음 (v1.2 capability-based 분류 그대로 신뢰)
 - `ToolSurfaceFreezeTests` 카운트 영향 없음
-- ServerInstructions length budget 6000 → 7000자로 한 단계 증가 (현 commit `6d7d3a0`이 4800 → 6000 했음)
+- ServerInstructions length budget 6000 → 7000자로 한 단계 증가
 
 ---
 
 ## 4. 테스트 전략
 
-- **`ChartHostSupport.Resolve` 테스트**:
-  - Claude Desktop 시뮬레이션 (capability 광고 + name "claude-ai") → **TextOnly** 강등 검증 (이전엔 Sep1865)
-  - Codex 시뮬레이션 (no capability + name "codex-mcp-client") → **TextOnly** (기존 동작 회귀 보호)
-  - AssistStudio 시뮬레이션 (capability 광고 + name "AssistStudio") → **StructuredContent** (whitelist 외이지만 `KnownChartRenderers`에 있어 StructuredContent로)
-  - 가상 verified iframe host 시뮬레이션 (capability + name in `KnownIframeRenderingHosts`) → **Sep1865**
-- **`RenderStatusBuilder` 단위 테스트**: mode → status 매핑 (`Sep1865`/`StructuredContent` → `delivered`, `TextOnly` → `stripped_text_only`)
-- **chart-emitting 도구 응답 어셔션**: `_meta.render_status` 필드 존재 + 값 정확성
-- **export 모드 응답 어셔션**: `_meta.data_purpose == "analysis_only"`, `_meta.do_not_render` 키워드 포함 (`"indicators"`, `"different"`, `"analysis"`, `"not for chart synthesis"`)
-- **ServerInstructions 키워드 어셔션** (Sub-change 3·4 문안 검증):
-  - 긍정 키워드: `"render_status"`, `"stripped_text_only"`, `"delivered"`
-  - 부정 narration 금지 키워드: `"do not claim"`, `"do not render"`, `"do not self-synthesize"`, `"output_mode=export"` (금지 맥락)
-  - self-synthesis 금지 구체화: `"Python"`, `"JavaScript"`, `"PNG"`, `"recompute"`
-- **회귀**: 기존 chart-emitting 도구 테스트가 새 `_meta` 필드를 *허용*하도록 매칭 완화
+- **`RenderStatusBuilder`(또는 `UiResources.AttachRenderStatus`) 단위 테스트**: mode → status 매핑 (`Sep1865` / `StructuredContent` → `delivered`, `TextOnly` → `stripped_text_only`)
+- **chart-emitting 도구 응답 어셔션**: `_meta.render_status` 필드 존재 + 값 정확성. non-chart 도구에는 부착 안 됨.
+- **export 모드 가드 어셔션** (`McpJson.AttachExportGuard`): `_meta.data_purpose == "analysis_only"`, `_meta.do_not_render` 키워드 포함 (`indicators`, `different`, `analysis`, `not for chart synthesis` 등).
+- **ServerInstructions 키워드 어셔션** (Sub-change 2·3 문안 검증):
+  - 긍정 키워드: `render_status`, `stripped_text_only`, `delivered`
+  - 부정 narration 금지 키워드: `Do not self-synthesize`, `Do NOT`, `output_mode=export`(금지 맥락), `host panel constraint`(또는 동등 표현)
+  - self-synthesis 금지 구체화: `Python`, `JavaScript`, `PNG`, `recompute`
+  - tool-mediated 변경: `ls_add_indicator`, `ls_reframe_chart`
+- **회귀**: 기존 chart-emitting 도구 테스트가 새 `_meta` 필드를 *허용*하도록 매칭 완화. `Plotly.newPlot` 키워드 어셔션 제거 (v1.4에서 추가했던 wrap-and-route 문안과 함께 v1.5에서 사라짐).
 
-추가 테스트 수 ≈ **12-15개**.
+추가 테스트 수 ≈ **10-12개**.
 
 ---
 
@@ -165,35 +176,38 @@ Sub-change 3·4의 ServerInstructions 텍스트와 함께 작용 — *export 사
 
 | 항목 | 시간 |
 |---|---|
-| `ChartHostSupport.Resolve`에 `KnownIframeRenderingHosts` whitelist 추가 + Sep1865 분기 조건 강화 | 1h |
-| `RenderStatusBuilder` + 6개 chart 도구 통합 | 1.5h |
-| export 모드 응답 `_meta` 가드 추가 | 30분 |
-| ServerInstructions chart-routing 단락 교체 + 확장 (Sub-change 3·4 문안) | 1h |
-| 테스트 12-15개 (resolution / render_status / export meta / ServerInstructions keywords) | 2.5h |
-| SPEC-v1.5.md 마무리 + README hero / RELEASENOTES | 1h |
-| Release prep (사용자 commit) | 30분 |
-| **소계** | **~8h ≈ 1 work day** |
+| `AttachRenderStatus` + `AttachExportGuard` 헬퍼 + `Program.cs` filter 통합 | 1h |
+| GetChartTool / OverseasStockTools에 export 가드 부착 | 30분 |
+| ServerInstructions 단락 교체 + budget bump | 1h |
+| 테스트 10-12개 | 1.5h |
+| SPEC-v1.5.md + INTEROP doc 정리 | 1h |
+| README hero / RELEASENOTES.Mcp.md + Core release notes 갱신 | 30분 |
+| Release prep (csproj / server.json — 사용자 commit) | 30분 |
+| **소계** | **~6h ≈ 0.75 work day** |
 
-이전 wrap-only(7.5h)와 거의 동일. wrap_template emission 작업이 빠지고 narration honesty / whitelist / export meta가 추가됨.
+이전 draft(~8h) 대비 whitelist 코드 + ChartHostSupport 변경 작업이 빠지면서 2h 단축.
 
 ---
 
 ## 6. 작업 순서
 
-1. **킥오프** (15분): `KnownIframeRenderingHosts` 초기 상태(빈 set) 확정, render_status enum 두 값 확정, ServerInstructions 신규 문안 확정.
-2. **`ChartHostSupport` 변경** (1h): whitelist 도입 + 테스트.
-3. **`RenderStatusBuilder` + 6 chart 도구 통합** (1.5h).
-4. **export 모드 `_meta` 가드** (30분).
-5. **ServerInstructions chart-routing 단락 교체** (1h): 현 commit `6d7d3a0` paragraph를 v1.5 새 paragraph로. 토큰 budget 6000 → 7000.
-6. **테스트 통합 통과** (2h).
-7. **수동 E2E** (30분): Codex에서 *같은 prompt* ("삼성전자 일봉 그려줘") 재실행 → `render_status=stripped_text_only` 응답 → 모델이 "그렸다" 안 하고 한계 명시 + self-synthesis 시도 안 함 검증.
-8. **문서 + release prep** (1.5h).
+1. **킥오프 (15분)**: render_status enum 두 값 확정, ServerInstructions 신규 문안 확정, export 가드 문구 확정.
+2. **`UiResources.AttachRenderStatus` + `McpJson.AttachExportGuard` 추가 (45분)**.
+3. **`Program.cs` AddCallToolFilter 통합 (15분)**: strip 단계 직후 render_status 부착.
+4. **GetChartTool / OverseasStockTools export 가드 부착 (30분)**.
+5. **ServerInstructions chart-routing 단락 교체 + budget 7000 bump (1h)**.
+6. **테스트 통합 통과 (1.5h)**.
+7. **수동 E2E (30분)**:
+   - basic-host(또는 Codex/Claude Code) TextOnly 호스트에서 `render_status=stripped_text_only` 응답 → 모델이 "그렸다" 안 함 검증.
+   - Claude Desktop Chat / Cowork에서 `render_status=delivered` 응답 → 차트 렌더 + height customization 요청 시 모델이 "호스트 패널 제약" 안내 + show_widget/export 우회 안 함 검증.
+   - export 응답에서 `_meta.do_not_render`가 model context에 잡히는지 확인.
+8. **문서 + release prep (1.5h)**.
 
 ---
 
 ## 7. 사용자 검증 — E2E 시나리오
 
-### Codex (TextOnly, P2+P3 재현 차단 검증)
+### TextOnly 호스트 (Codex / Claude Code CLI) — P1 차단 검증
 
 ```
 [v1.4 production — 회귀 발생]
@@ -204,8 +218,7 @@ Sub-change 3·4의 ServerInstructions 텍스트와 함께 작용 — *export 사
 사용자: "실제로는 안 그려졌네요"
   → 모델: 4분 9초 우회 작업
   → output_mode=export 재호출 → OHLCV
-  → render_samsung_chart.py 248 lines 작성
-  → PNG 생성 (server-computed MA와 다른 자체 합성 MA로)
+  → render_samsung_chart.py 248 lines 작성 + PNG (서버 indicator 불일치)
 
 [v1.5 — 회귀 차단]
 사용자: "삼성전자 일봉 그려줘"
@@ -213,13 +226,39 @@ Sub-change 3·4의 ServerInstructions 텍스트와 함께 작용 — *export 사
   → 응답: summary + context + _meta.render_status="stripped_text_only"
   → 모델: render_status 확인 → "이 호스트에서는 inline 차트가 표시되지 않습니다.
         2026-05-26 종가 299,000원 (+2.22%), MA5 288,500 / MA20 264,475 / MA60 219,083
-        정배열입니다. 차트가 필요하시면 AssistStudio 같은 호스트에서 같은 질문을
-        주시거나, output_mode=export로 데이터를 받아 pandas로 분석하실 수 있습니다.
-        dataset_id: ds_xxxx"
+        정배열입니다. dataset_id: ds_xxxx — 다른 지표를 추가하려면 ls_add_indicator,
+        기간을 바꾸려면 ls_reframe_chart로 호출하실 수 있습니다. 차트 자체가
+        필요하시면 AssistStudio / Claude Desktop Chat / Cowork 같은 호스트에서
+        같은 질문을 주세요."
 사용자: "차트 보고 싶은데 우회 안 돼?"
   → 모델: "OHLCV로 차트를 직접 그릴 수는 있지만, 그 경우 제가 계산한 MA가 서버
-        측 MA와 달라져서 잘못된 그림이 됩니다. inline 차트는 chart-capable 호스트가
-        필요합니다 — 그 외에는 데이터 분석만 가능합니다."
+        측 MA와 달라져서 잘못된 그림이 됩니다. inline 차트는 chart-capable
+        호스트가 필요합니다."
+```
+
+### Sep1865 호스트 (Claude Desktop Chat / Cowork) — P2 차단 검증
+
+```
+[v1.4 production — 회귀 발생]
+사용자: "삼성전자 일봉 그려줘" → 차트 정상 렌더
+사용자: "차트 좀 더 크게 보고 싶어"
+  → 모델: 호스트 panel 제약을 인식 못 함
+  → output_mode=export로 OHLCV 재요청
+  → mcp__visualize__show_widget으로 자체 합성 차트 push
+  → 사용자: server-rendered 차트 + self-synthesized 차트 두 개가 동시에 보임,
+            indicator 값 불일치
+
+[v1.5 — 회귀 차단]
+사용자: "삼성전자 일봉 그려줘" → 차트 정상 렌더 (_meta.render_status="delivered")
+사용자: "차트 좀 더 크게 보고 싶어"
+  → 모델: render_status가 delivered, height는 host panel constraint
+  → "차트 패널 높이는 이 호스트(Cowork chat panel)가 결정합니다, 서버
+       쪽에서 키울 수 없어요. 더 큰 차트가 필요하시면 Claude Desktop
+       일반 채팅 / AssistStudio처럼 패널이 더 큰 호스트에서 같은
+       질문을 주세요."
+사용자: "MA200도 추가해줘"
+  → 모델: ls_add_indicator(dataset_id, "ma:200") — 정상 customization 경로
+  → 추가된 차트 inline 갱신
 ```
 
 ### AssistStudio (StructuredContent — 회귀 없음)
@@ -232,23 +271,23 @@ Sub-change 3·4의 ServerInstructions 텍스트와 함께 작용 — *export 사
   → 모델: "삼성전자 일봉 차트입니다. ..." (정상 narration)
 ```
 
-성공 기준: Codex 환경에서 *v1.4 회귀의 4분 9초 우회 작업이 발생하지 않음*. 모델이 즉시 한계를 명시하고 정확한 요약만 제공.
+성공 기준:
+- Codex 환경에서 *v1.4 회귀의 4분 9초 우회 작업이 발생하지 않음*. 모델이 즉시 한계를 명시하고 정확한 요약만 제공.
+- Cowork 환경에서 *height customization 요청에 모델이 호스트 패널 제약 안내*. show_widget / create_artifact / export 우회 발화 없음.
 
 ---
 
 ## 8. Resolved Decisions
 
-Codex 2026-05-26 실측으로 모든 결정 확정.
-
 | # | 항목 | 결정 | 근거 |
 |---|---|---|---|
-| Q1 | wrap_template 본문 포함 여부 | **제외, Appendix C로 강등** | Codex empirical: 호스트 분류가 정확해도 모델이 자기-합성 우회 → wrap_template은 *또 다른 합성 표면을 열어줄* 위험. 진짜 필요 사용자가 나타나면 Appendix C에서 재오픈. |
-| Q2 | Sep1865 진입 조건 | **capability 광고 + `KnownIframeRenderingHosts` whitelist 둘 다** | Claude Desktop frame-ancestors CSP 관찰 + Codex 광고-실제렌더 갈림 패턴. 광고만으로는 신뢰 불가. |
+| Q1 | wrap_template 본문 포함 여부 | **제외, Appendix C로 강등** | 또 다른 합성 표면을 열어줄 위험. Sub-change 3(self-synthesis 금지)과 메시지 충돌. 진짜 필요 사용자가 나타나면 Appendix C에서 재오픈. |
+| Q2 | Sep1865 진입 조건 | **v1.2 capability-based 분류 그대로 신뢰 (whitelist 도입 안 함)** | 2026-05-27 `spike/sep1865-verify` empirical: Claude Desktop / Cowork / basic-host / VS Code Chat 모두 ✅ iframe 렌더 (PlotlyTemplate 3-fix 후). capability 광고와 실제 렌더가 거의 일치 — whitelist는 over-engineering. |
 | Q3 | TextOnly 모드 모델 narration | **chart 렌더 주장 명시 금지** | Codex 실측 "그려뒀습니다" 거짓 narration. ServerInstructions에 강한 어조로 명시. |
-| Q4 | export 모드 self-synthesis | **명시 금지 + `_meta.do_not_render` 가드** | Codex 실측 render_samsung_chart.py 248 lines 자체 합성. server-computed indicators 무시. |
-| Q5 | `render_status` enum 값 | **`delivered` / `stripped_text_only` 두 가지만** | 모델 narration 결정에 필요한 신호의 최소 집합. `iframe_advertised_unverified` 등 세분화는 Sub-change 1로 흡수(보수적 TextOnly 강등). |
-| Q6 | Cursor 2.6+, VS Code 등 화이트리스트 등록 | **v1.5에는 등록 안 함** — empirical verify 후 별 패치(v1.5.1+) | 조사 보고서가 "production 작동" 보고했지만 우리 책상에서 직접 확인 안 됨. Codex 케이스에서 보고-실측 갈림이 한 번 드러난 이상 보수적으로. |
-| Q7 | wrap_template 옵션을 env-opt-in으로라도 남기기 | **아니오, 완전 제외** | Sub-change 4(self-synthesis 금지)와 메시지 충돌. opt-in이라도 *합성 표면 제공*이라는 패턴은 동일. Appendix C로 보존하면 충분. |
+| Q4 | self-synthesis 금지 적용 범위 | **호스트 분류 무관** | render_status=delivered에서도 height customization 요청 시 모델이 show_widget / export로 우회 — Sub-change 3가 양쪽 모드를 다 커버. |
+| Q5 | export 모드 self-synthesis | **명시 금지 + `_meta.do_not_render` 가드** | Codex 실측 render_samsung_chart.py 248 lines 자체 합성. server-computed indicators 무시. |
+| Q6 | `render_status` enum 값 | **`delivered` / `stripped_text_only` 두 가지만** | 모델 narration 결정에 필요한 신호의 최소 집합. 호스트 분류 세분화는 INTEROP doc의 reference matrix에 충분. |
+| Q7 | basic-host 같은 capability 미광고 + 실제 렌더 케이스 | **v1.5에는 자동 처리 없음** | TextOnly로 분류되어 `stripped_text_only` 응답 — 사용자 입장에서는 honest narration. 사용자가 basic-host 같은 호스트를 직접 운영하면 향후 explicit opt-in 가능. |
 
 ---
 
@@ -260,31 +299,31 @@ Codex 2026-05-26 실측으로 모든 결정 확정.
 **Fidelity-first chart narration.** Chart-emitting tools (ls_get_chart,
 ls_reframe_chart, ls_add_indicator, ls_get_overseas_chart,
 ls_get_etf_holdings, ls_get_program_trading) now ship `_meta.render_status`
-on every response — `delivered` when the host can render the chart spec,
+on every response — `delivered` when the host receives the chart spec,
 `stripped_text_only` when the chart payload was withheld because the host
-has no verified renderer. ServerInstructions tells the model to read this
-signal: when `stripped_text_only`, the model must not claim to have drawn /
-rendered / 표시 the chart — it states the limitation explicitly and
-provides only the analytical summary.
+has no SEP-1865 / structured-chart path. ServerInstructions tells the
+model to read this signal: when `stripped_text_only`, the model must not
+claim to have drawn / rendered / 표시 the chart — it states the limitation
+explicitly and provides only the analytical summary.
 
-The same paragraph also forbids self-synthesis fallbacks: the model must
-NOT fetch raw OHLCV via `output_mode=export` and render the chart
-yourself in Python / JavaScript / PNG. Self-rendered indicators (MA / RSI /
-Bollinger) do not match the server's authoritative values — different
-adjustment mode, warm-up window, formula choice. A self-rendered chart
-that looks plausible but disagrees with the analytical summary on the
-same screen is worse than no chart. `output_mode=export` responses now
-carry `_meta.data_purpose: "analysis_only"` and `_meta.do_not_render`
+The same paragraph forbids self-synthesis fallbacks *regardless of
+`render_status`*: the model must NOT route around the server's render
+path by fetching raw OHLCV via `output_mode=export` and rendering the
+chart in Python / JavaScript / PNG, or by forwarding the chart spec to a
+generic visualize MCP tool. Chart customization requests (indicator add,
+reframe) go through `ls_add_indicator` / `ls_reframe_chart`; layout-level
+requests (panel height, sizing) are honestly identified as host panel
+constraints rather than routed around. `output_mode=export` responses
+now carry `_meta.data_purpose: "analysis_only"` and `_meta.do_not_render`
 guard text reinforcing this contract.
 
-The `ChartRenderingMode.Sep1865` branch is tightened: capability
-advertisement alone is no longer enough — the host must also be on the
-`KnownIframeRenderingHosts` whitelist (initially empty; entries added
-only after we empirically verify a host actually renders the iframe).
-Hosts that advertise SEP-1865 but don't actually render (Claude Desktop
-frame-ancestors CSP, Claude Cowork 3P inference, others) cleanly fall
-back to TextOnly — the chart payload is stripped, the model gets honest
-narration signal, no wasted bandwidth.
+v1.2 capability-based host classification is preserved — no
+`KnownIframeRenderingHosts` allowlist is needed. The 2026-05-27
+`spike/sep1865-verify` session empirically verified that Claude Desktop
+Chat, Claude Cowork, ext-apps basic-host, and VS Code Chat all render
+the SEP-1865 iframe correctly once three PlotlyTemplate.html handshake
+bugs were fixed (`38d4dc2`, `46e20f0`, `01d74e3`, cherry-picked to main
+before v1.5).
 
 Tool surface unchanged (40 standard / 43 all). All additions are
 non-breaking response metadata + ServerInstructions text.
@@ -297,12 +336,15 @@ non-breaking response metadata + ServerInstructions text.
 - v1.4 ServerInstructions chart-routing hint (v1.5가 *교체*): commit `6d7d3a0`
 - v1.4-dev artifact-fidelity 회귀(Cowork E2E): commit `0ce0507`
 - slice C가 wrap-only로 collapse된 결정: commit `532d61d`
+- PlotlyTemplate handshake 3-fix (v1.5 직전 main cherry-pick): `38d4dc2`, `46e20f0`, `01d74e3`
 - chart-emitting tool 집합: [UiResources.cs:62](../src/RedoxNet.Mcp.LsOpenApi/Apps/UiResources.cs) `PlotlyEmittingToolNames`
 - 호스트 렌더링 모드 분기: [ChartRenderingMode.cs](../src/RedoxNet.Mcp.LsOpenApi/Apps/ChartRenderingMode.cs)
 - v1.2 MCP Apps capability negotiation: [SPEC-v1.2-mcp-apps-capability.md](./SPEC-v1.2-mcp-apps-capability.md)
+- empirical host matrix + interop quirks: [MCP-APPS-INTEROP.md](./MCP-APPS-INTEROP.md)
 - v1.5 디자인 세션 핵심 finding(Codex self-synthesis 우회): [[chart_self_synthesis_antipattern]] 메모리
 - 호스트 reality 보정 기록: [[render_hints_standardization]] 메모리
-- AssistStudio reference implementation: [next_assiststudio_plotly](../../../Users/diluc/.claude/projects/D--Codes-mcp-lsopenapi/memory/next_assiststudio_plotly.md)
+- AssistStudio reference implementation: [[next_assiststudio_plotly]] 메모리
+- empirical 렌더 evidence: `docs/claude_desktop_chat_chart_lgelectronics.png`, `docs/claude_desktop_cowork_chart_lgelectronics.png`
 
 ---
 
@@ -380,7 +422,7 @@ non-breaking response metadata + ServerInstructions text.
 ### 트리거 조건 (재오픈)
 
 - *Cowork 3P 사용자가 "wrap_template이 있으면 visualize MCP로 차트가 표시될 텐데 없어서 불편하다"는 구체 불평*. 추측이 아닌 실 사용자 발화.
-- 그리고 동시에 — Sub-change 4 self-synthesis 금지가 *작동하고 있어서* wrap_template을 *제어된 표면*으로 도입할 수 있다는 신뢰.
+- 그리고 동시에 — Sub-change 3 self-synthesis 금지가 *작동하고 있어서* wrap_template을 *제어된 표면*으로 도입할 수 있다는 신뢰.
 
 ### 보존 자료 (이전 본문 draft)
 
@@ -391,36 +433,10 @@ non-breaking response metadata + ServerInstructions text.
 
 ### 보류 이유 요약
 
-- 실측 사용자(Codex)가 *호스트가 wrap_template을 받았어도* 자기 Python 합성으로 우회할 가능성 — wrap이 fidelity를 *구조적으로* 보장하지 않음 (이전엔 보장한다고 봤지만 self-synthesis 충동은 wrap 우회까지 능동적)
+- 실측 사용자(Codex)가 *호스트가 wrap_template을 받았어도* 자기 Python 합성으로 우회할 가능성 — wrap이 fidelity를 *구조적으로* 보장하지 않음
 - 직접 수혜자는 Anthropic Cowork 3P + visualize MCP 셋업 한 가지 niche
 - 메인 메시지(fidelity-first, self-synthesis 금지)와 *반대 방향* 신호
 
 ### 관련 메모리
 
 [[render_hints_standardization]] — wrap_template 표준화 추적 + edge case 보존
-
----
-
-## Appendix D — Empirical host render matrix (2026-05-26 기준)
-
-향후 host 추가/변경 시 *empirical verify*해서 업데이트할 reference.
-
-| 호스트 | 버전 / 식별 | capability 광고 | 실제 inline 렌더 | 우리 분류 (v1.5) | render_status (v1.5) | 관찰 출처 |
-|---|---|---|---|---|---|---|
-| AssistStudio | WinUI 3, `clientInfo.name="AssistStudio"` | ✅ SEP-1865 (advertise, 자체 미사용) | ✅ (자체 Plotly v2.35.2 bundle, `chat.html:2233`) | StructuredContent | `delivered` | [[next_assiststudio_plotly]] + 직접 코드 검증 |
-| Claude Desktop | `clientInfo.name="claude-ai"` | ✅ SEP-1865 | ❌ frame-ancestors CSP block (2026-05-14 관찰) | **TextOnly** (Sep1865에서 강등) | `stripped_text_only` | [[next_mcp_apps_capability]] |
-| Cowork 3P (Bedrock/Vertex/Foundry inference) | `clientInfo.name="claude-ai"` (same) | ✅ SEP-1865 | ❌ ([claude-ai-mcp#236](https://github.com/anthropics/claude-ai-mcp/issues/236)) | **TextOnly** (Sep1865에서 강등) | `stripped_text_only` | 조사 보고서 |
-| Codex (Desktop / TUI) | `clientInfo.name="codex-mcp-client"` (TUI 확인) | ❌ capability 미광고 (`enable_mcp_apps=true`여도 별개) | ❌ (TUI 구조적; Desktop 플래그 뒤) | TextOnly (기존 동작 유지) | `stripped_text_only` | **2026-05-26 직접 실측** — `include_chart` 파라미터 부재 + spec 미전송 + self-synthesis 우회 시도 |
-| Claude Code CLI (this session) | `clientInfo.name="claude-code"` (추정) | ❌ (TUI) | ❌ (구조적) | TextOnly | `stripped_text_only` | TUI structural, 조사 보고서 |
-| Cursor 2.6+ | `clientInfo.name` 미확인 | ✅ MCP Apps 지원 보고 ([changelog](https://cursor.com/changelog/2-6)) | 보고만 있음 *우리 실측 없음* | **TextOnly (보수)** until verify | `stripped_text_only` | 조사 보고서 (간접) |
-| VS Code, ChatGPT, Goose, Postman, MCPJam | 미확인 | ✅ (변동) | 보고만 있음 *우리 실측 없음* | **TextOnly (보수)** | `stripped_text_only` | 조사 보고서 (간접) |
-
-### 확장 절차 (`KnownIframeRenderingHosts` whitelist에 호스트 추가)
-
-1. 해당 호스트로 `ls_get_chart` 호출
-2. 응답에 `structuredContent.chart.spec`이 포함된 상태(`Sep1865`로 임시 분기 후) chart가 *실제로* inline 렌더되는지 시각 확인
-3. 모델 narration이 정확한지 확인 (실 렌더면 "차트 표시" narration, 미렌더면 거짓말)
-4. 둘 다 통과 → `clientInfo.name`을 `KnownIframeRenderingHosts`에 추가 + commit + Appendix D 행 갱신
-5. 통과 못하면 TextOnly로 유지
-
-이 절차를 README나 CONTRIBUTING에 한 문단 추가 권장 (호스트 등록 contract을 외부에 노출).
