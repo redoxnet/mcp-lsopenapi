@@ -76,6 +76,32 @@ ServerInstructions에 명시:
 - default 없고 등록 계좌 2개+ → `AmbiguousAccount` envelope + candidates 배열
 - 위 패턴은 v0.7 portfolio 도구의 account 처리 규약과 동일 — 새 컨벤션 안 만듦.
 
+**⚠ 중요 — Virtual vs Real 계좌 분리**:
+LS에서 모의투자 계좌와 실투 계좌는 *완전히 다른 entity* — 다른 계좌번호, 다른 token scope, 다른 holdings/거래내역. 우리 portfolio.db도 이를 인지해야 함:
+
+- 같은 사용자가 real `123-456789-01` ("주식") + virtual `999-111222-01` ("모의 실험용") 보유 가능
+- `ls_account_*` 호출 시 *현재 mode에 맞는 계좌*로 자동 라우팅 필요 — env `LSOPENAPI_VIRTUAL=1` 이면 virtual 계좌만 candidates에 등장
+- default account도 *mode별로 분리* — virtual default ≠ real default
+
+스키마 옵션 두 가지 (구현 시 결정):
+
+**Option A — 단일 테이블 + mode column** (conventional):
+```sql
+ALTER TABLE accounts ADD COLUMN mode TEXT NOT NULL DEFAULT 'real';
+-- account_no UNIQUE → (account_no, mode) composite UNIQUE
+-- is_default semantics: per-mode (한 mode에 하나의 default)
+-- holdings.account_id FK 그대로
+```
+
+**Option B — 별도 테이블** (clearer separation):
+```sql
+-- accounts → real_accounts (기존 데이터 migration)
+-- 신규 virtual_accounts (동일 schema)
+-- holdings 가 어느 mode인지 알아야 → composite FK 또는 mode 컬럼 추가
+```
+
+Option A가 작업량 적음, B가 멘탈 모델 명확. 구현 시 A 선호 (holdings 테이블 영향 최소), 단 B로 가는 명분이 발견되면 변경 가능. **§4 Schema 변경 항목 영향** ([§4](#4-schema-변경) 참조).
+
 ### 2.4 응답 envelope
 
 모든 `ls_account_*` 응답에:
@@ -207,7 +233,41 @@ v1.4가 추가한 *date envelope 해석 가이드* 단락은 *교체* — `query
 
 ## 6. Schema 변경
 
-**없음**. portfolio.db 스키마 v1 그대로 유지. v1.7에서 `order_audit` 테이블 추가 (migration v2).
+**Minor — accounts 테이블에 mode awareness 추가** ([§2.3](#23-account-인자-처리) 참조).
+
+기본 결정 (Option A — 단일 테이블):
+- `accounts` 테이블에 `mode TEXT NOT NULL DEFAULT 'real'` 컬럼 추가
+- UNIQUE 제약: `(account_no)` → `(account_no, mode)` composite
+- `(nickname)` UNIQUE도 → `(nickname, mode)` composite (같은 nickname을 virtual/real에서 다른 의미로 쓸 수 있게)
+- `is_default` 의미: per-mode (한 mode에 하나의 default — 현재 default가 다른 mode면 mode 전환 시 candidate 자동 promote)
+- 기존 v1 데이터: 모두 `mode='real'`로 자동 backfill (사용자 명시적 declare가 없을 땐 real이 안전한 default)
+
+Migration:
+```sql
+-- migration v1 → v1.5 (account mode awareness — v1.6 일환)
+ALTER TABLE accounts ADD COLUMN mode TEXT NOT NULL DEFAULT 'real';
+DROP INDEX IF EXISTS ix_accounts_account_no;
+DROP INDEX IF EXISTS ix_accounts_nickname;
+CREATE UNIQUE INDEX ix_accounts_account_no_mode ON accounts(account_no, mode);
+CREATE UNIQUE INDEX ix_accounts_nickname_mode ON accounts(nickname, mode);
+-- is_default 보존 (기존 default = real default 자동 부여)
+```
+
+Holdings 테이블 무영향 (FK는 `account_id`로 유지 — mode는 accounts에서 lookup).
+
+v1.7에서 `order_audit` / `order_preview` / `trading_policy` 3개 테이블 추가 (migration v2).
+
+(만약 Option B로 가면 — `real_accounts` 테이블 rename + 신규 `virtual_accounts` + holdings의 mode 추적 → 더 큰 migration. 현재 Option A 권장.)
+
+---
+
+## 6.5. 위험 / 구현 시 결정 필요
+
+1. **Virtual vs Real schema 옵션 — A vs B** ([§2.3](#23-account-인자-처리), [§6](#6-schema-변경)). Option A 권장이나 holdings 테이블에 *mode 단위 분리 필요성*이 발견되면 B 검토 (구현 첫 PR에서 결정).
+2. **LS token scope** — `/stock/accno` + `/stock/order`가 시세 token과 다른 권한 token을 요구할 가능성. 첫 inquiry 도구 (`ls_account_holdings`) 구현 시 실측. 분리되면 `LsTokenCache` cache key에 scope 추가 (mode와 scope의 cartesian — 최대 4개 token).
+3. **TR 응답 정규화** — 각 TR의 한글 필드명 + numeric type을 영어 snake_case + 명시적 type으로 변환. 도구별 mapping을 wrapper 안에 captured + unit-pinned.
+4. **`sunikrt` 같은 % 필드 단위 모호성** — LS가 raw decimal vs %×100 반환하는지 확인 필요 ([LS-API-QUIRKS §3](./LS-API-QUIRKS.md) 패턴과 일치하는지).
+5. **모드 전환 시 default 자동 promote** — virtual default가 없는데 mode를 virtual로 전환 시 첫 등록된 virtual account 자동 promote? 또는 명시적 set 요구? UX 결정 필요.
 
 ---
 
