@@ -12,9 +12,18 @@ MCP server for the **LS 증권 OpenAPI** — exposes Korean and US/overseas (Nas
 
 `dnx` fetches the latest published version from NuGet on every launch — no separate install step. Wire it into your MCP host:
 
-### Claude Desktop / Claude Code
+### MCP standard config — Claude Desktop / Claude Code / Cursor / Google Antigravity
 
-`claude_desktop_config.json` (Claude Desktop) or `.mcp.json` at your workspace root (Claude Code):
+These hosts share the same `mcpServers` JSON schema. Paste the block below into the matching config file and restart the host.
+
+| Host | Config path |
+|---|---|
+| Claude Desktop (Windows)   | `%APPDATA%\Claude\claude_desktop_config.json` |
+| Claude Desktop (macOS)     | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Claude Code                | `.mcp.json` (workspace) or `~/.claude.json` (user) |
+| Cursor                     | `.cursor/mcp.json` (workspace) or `~/.cursor/mcp.json` (user) |
+| Google Antigravity (Win)   | `%USERPROFILE%\.gemini\antigravity\mcp.config.json` |
+| Google Antigravity (macOS / Linux) | `~/.gemini/antigravity/mcp.config.json` |
 
 ```jsonc
 {
@@ -25,12 +34,14 @@ MCP server for the **LS 증권 OpenAPI** — exposes Korean and US/overseas (Nas
       "env": {
         "LS_APPKEY": "...",
         "LS_APPSECRETKEY": "...",
-        "LS_MARKET": "real"  // default if omitted; use "virtual" only for LS mock accounts
+        "LS_MARKET": "real"   // default if omitted; use "virtual" only for LS mock accounts
       }
     }
   }
 }
 ```
+
+Among these hosts, the inline chart surface (Plotly v5 spec rendered in chat) lights up on every host that advertises the SEP-1865 `io.modelcontextprotocol/ui` capability — empirically verified on Claude Desktop / Claude Cowork (and reported by Cursor's changelog). Google Antigravity currently advertises no UI capability, so the server classifies it as text-only: `include_chart` drops out of the tool schema, the chart spec is stripped, and `_meta.render_status: "stripped_text_only"` steers the model into honest narration (no false "I drew the chart" claim).
 
 ### Codex CLI
 
@@ -49,7 +60,7 @@ LS_MARKET = "real"  # default if omitted; use "virtual" only for LS mock account
 
 ### VS Code
 
-Workspace `.vscode/mcp.json`:
+Workspace `.vscode/mcp.json` — VS Code uses a `servers` top-level key (not `mcpServers`) and an explicit `"type": "stdio"`:
 
 ```jsonc
 {
@@ -67,28 +78,6 @@ Workspace `.vscode/mcp.json`:
   }
 }
 ```
-
-### Google Antigravity
-
-`%USERPROFILE%\.gemini\antigravity\mcp.config.json` (Windows) or `~/.gemini/antigravity/mcp.config.json` (macOS / Linux):
-
-```jsonc
-{
-  "mcpServers": {
-    "lsopenapi": {
-      "command": "dnx",
-      "args": ["RedoxNet.Mcp.LsOpenApi", "--yes"],
-      "env": {
-        "LS_APPKEY": "...",
-        "LS_APPSECRETKEY": "...",
-        "LS_MARKET": "real"  // default if omitted; use "virtual" only for LS mock accounts
-      }
-    }
-  }
-}
-```
-
-Antigravity currently advertises no SEP-1865 UI capability, so the server classifies it as a text-only host: the `include_chart` parameter is dropped from the schema and chart specs are stripped from responses. The model receives the analytical summary and `_meta.render_status: "stripped_text_only"` so it narrates the limitation honestly (no false "I drew the chart" claim).
 
 ### FieldCure AssistStudio
 

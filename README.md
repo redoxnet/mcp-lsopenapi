@@ -118,7 +118,7 @@ LS증권 OpenAPI 키 한 쌍(`AppKey` + `AppSecretKey`)이 필요합니다 — [
 }
 ```
 
-Codex CLI · VS Code · Google Antigravity · FieldCure AssistStudio 등 다른 호스트의 설정 예시와 환경 변수 전체 목록은 [영문 README](README.en.md#quick-start)에 있습니다.
+Cursor · Google Antigravity는 Claude Desktop과 같은 `mcpServers` JSON 스키마를 쓰므로 위 블록을 그대로 쓰고 *파일 경로만* 호스트별 위치로 바꾸시면 됩니다. Codex CLI (TOML) · VS Code (`servers` 키) · FieldCure AssistStudio (GUI 다이얼로그)는 형식이 달라 별도 예시 — 전체 호스트별 설정 예시와 환경 변수 목록은 [영문 README](README.en.md#quick-start)에 있습니다.
 
 **차트 인라인 렌더링은 호스트별로 다릅니다.** **[AssistStudio](https://github.com/fieldcure/fieldcure-assiststudio)**(v1.1 이상), **Claude Desktop Chat**, **Claude Cowork**, **VS Code Chat** 등 SEP-1865 호스트는 차트를 대화창에 인라인 그래프로 렌더링합니다(v1.5에서 PlotlyTemplate 핸드셰이크를 다듬어 광고만 하던 호스트도 실제 렌더하도록). Codex CLI / Claude Code CLI 같은 텍스트 전용 호스트에서는 차트 spec이 자동 제거되고 분석 요약만 전달됩니다 — 모델은 `_meta.render_status`("delivered" / "stripped_text_only") 신호를 읽어 "그렸다"고 거짓말하지 않습니다(v1.5). 어느 경우든 차트 스펙이 텍스트 컨텍스트를 오염시키지 않습니다(v1.2).
 

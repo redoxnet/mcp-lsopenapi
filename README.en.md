@@ -47,29 +47,18 @@ When using the API, please review the [LS OpenAPI usage guide](https://openapi.l
 
 Wire it into your MCP host:
 
-### Claude Desktop / Claude Code
+### MCP standard config — Claude Desktop / Claude Code / Cursor / Google Antigravity
 
-`claude_desktop_config.json` (Claude Desktop) or `.mcp.json` at your workspace root (Claude Code):
+These hosts share the same `mcpServers` JSON schema. Paste the block below into the matching config file and restart the host.
 
-```jsonc
-{
-  "mcpServers": {
-    "lsopenapi": {
-      "command": "dnx",
-      "args": ["RedoxNet.Mcp.LsOpenApi", "--yes"],
-      "env": {
-        "LS_APPKEY": "...",
-        "LS_APPSECRETKEY": "...",
-        "LS_MARKET": "real"  // default if omitted; use "virtual" only for LS mock accounts
-      }
-    }
-  }
-}
-```
-
-### Cursor
-
-`~/.cursor/mcp.json` (global) or `.cursor/mcp.json` at your workspace root:
+| Host | Config path |
+|---|---|
+| Claude Desktop (Windows)   | `%APPDATA%\Claude\claude_desktop_config.json` |
+| Claude Desktop (macOS)     | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Claude Code                | `.mcp.json` (workspace) or `~/.claude.json` (user) |
+| Cursor                     | `.cursor/mcp.json` (workspace) or `~/.cursor/mcp.json` (user) |
+| Google Antigravity (Windows)        | `%USERPROFILE%\.gemini\antigravity\mcp.config.json` |
+| Google Antigravity (macOS / Linux)  | `~/.gemini/antigravity/mcp.config.json` |
 
 ```jsonc
 {
@@ -80,12 +69,14 @@ Wire it into your MCP host:
       "env": {
         "LS_APPKEY": "...",
         "LS_APPSECRETKEY": "...",
-        "LS_MARKET": "real"  // default if omitted; use "virtual" only for LS mock accounts
+        "LS_MARKET": "real"   // default if omitted; use "virtual" only for LS mock accounts
       }
     }
   }
 }
 ```
+
+Among these hosts, the inline chart surface (Plotly v5 spec rendered in chat) lights up on every host that advertises the SEP-1865 `io.modelcontextprotocol/ui` capability — empirically verified on Claude Desktop and Claude Cowork; Cursor advertises the capability per its changelog (not yet directly verified by us). Google Antigravity currently advertises no UI capability, so chart-emitting tools fall through to the text-only path: `include_chart` drops out of the tool schema, the chart spec is stripped, and `_meta.render_status: "stripped_text_only"` steers the model into honest narration (per `ServerInstructions` it must not claim it drew the chart and must not synthesize one of its own). See [`docs/MCP-APPS-INTEROP.md`](docs/MCP-APPS-INTEROP.md) §2 for the empirical host matrix.
 
 ### Codex CLI
 
@@ -104,7 +95,7 @@ LS_MARKET = "real"  # default if omitted; use "virtual" only for LS mock account
 
 ### VS Code (`mcp.json`)
 
-Workspace `.vscode/mcp.json`:
+Workspace `.vscode/mcp.json` — VS Code uses a `servers` top-level key (not `mcpServers`) and an explicit `"type": "stdio"`:
 
 ```jsonc
 {
@@ -122,28 +113,6 @@ Workspace `.vscode/mcp.json`:
   }
 }
 ```
-
-### Google Antigravity
-
-`%USERPROFILE%\.gemini\antigravity\mcp.config.json` (Windows) or `~/.gemini/antigravity/mcp.config.json` (macOS / Linux):
-
-```jsonc
-{
-  "mcpServers": {
-    "lsopenapi": {
-      "command": "dnx",
-      "args": ["RedoxNet.Mcp.LsOpenApi", "--yes"],
-      "env": {
-        "LS_APPKEY": "...",
-        "LS_APPSECRETKEY": "...",
-        "LS_MARKET": "real"  // default if omitted; use "virtual" only for LS mock accounts
-      }
-    }
-  }
-}
-```
-
-Antigravity currently advertises no SEP-1865 UI capability, so chart-emitting tools fall through to the text-only path: the `include_chart` parameter is dropped from the tool schema and the chart spec is stripped from results. The response carries `_meta.render_status: "stripped_text_only"` so the model narrates honestly (per `ServerInstructions` it must not claim it drew the chart and must not synthesize one of its own) — see [`docs/MCP-APPS-INTEROP.md`](docs/MCP-APPS-INTEROP.md) §2 for the empirical host matrix.
 
 ## Getting an API Key
 
