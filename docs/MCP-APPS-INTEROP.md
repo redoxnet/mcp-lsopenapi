@@ -53,6 +53,7 @@ gating; no whitelist tightening was needed (see §3 Q6).
 | **VS Code Chat** (GitHub Copilot) | (varies) | ✅ yes | ✅ **yes** (PlotlyTemplate 3-fix) | Sep1865 | 2026-05-27 spike/sep1865-verify, `docs/vscode_copilot_chat_chart_nvidia.png` (NVDA daily — also exercises the v1.3 overseas chart path) |
 | **Codex Desktop / TUI** | `codex-mcp-client` | ❌ no (`enable_mcp_apps=true` is a separate client flag, Q7) | ❌ — TUI structurally can't | TextOnly | 2026-05-26 empirical test, user self-report |
 | **Claude Code CLI** | (TUI) | ❌ no | ❌ — TUI structurally can't | TextOnly | research agent + structural reasoning |
+| **Google Antigravity** (Gemini 3.5 Flash) | (unknown — TBD inspect) | ❌ no (inferred from observed TextOnly mode) | n/a — GUI app, *not structurally blocked*, simply no SEP-1865 path today | TextOnly | 2026-05-27 empirical, `docs/antigravity_chart_nvidia.png` — model narrates limitation honestly per v1.5 ServerInstructions, server-computed MAs (MA20/60/120/200) + `bullish_alignment` + `ma60_slope` + `drawdown_from_peak_pct` used verbatim, no self-synthesis attempt. **First non-TUI empirical evidence of v1.5 narration honesty firing on a TextOnly host.** |
 | **Cursor 2.6+, ChatGPT, Goose, Postman, MCPJam** | unknown | ✅ per their changelogs | ⚠️ reported in changelogs, *not directly empirically verified by us* — but the v1.2 capability gate should hold given the Claude / VS Code / basic-host class verifications | Sep1865 | research agent (secondary sources) |
 
 **Reading guide**: after the PlotlyTemplate handshake 3-fix
