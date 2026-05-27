@@ -123,6 +123,28 @@ Workspace `.vscode/mcp.json`:
 }
 ```
 
+### Google Antigravity
+
+`%USERPROFILE%\.gemini\antigravity\mcp.config.json` (Windows) or `~/.gemini/antigravity/mcp.config.json` (macOS / Linux):
+
+```jsonc
+{
+  "mcpServers": {
+    "lsopenapi": {
+      "command": "dnx",
+      "args": ["RedoxNet.Mcp.LsOpenApi", "--yes"],
+      "env": {
+        "LS_APPKEY": "...",
+        "LS_APPSECRETKEY": "...",
+        "LS_MARKET": "real"  // default if omitted; use "virtual" only for LS mock accounts
+      }
+    }
+  }
+}
+```
+
+Antigravity currently advertises no SEP-1865 UI capability, so chart-emitting tools fall through to the text-only path: the `include_chart` parameter is dropped from the tool schema and the chart spec is stripped from results. The response carries `_meta.render_status: "stripped_text_only"` so the model narrates honestly (per `ServerInstructions` it must not claim it drew the chart and must not synthesize one of its own) — see [`docs/MCP-APPS-INTEROP.md`](docs/MCP-APPS-INTEROP.md) §2 for the empirical host matrix.
+
 ## Getting an API Key
 
 You need an **AppKey** and **AppSecretKey** pair issued by LS Securities to use this MCP server.

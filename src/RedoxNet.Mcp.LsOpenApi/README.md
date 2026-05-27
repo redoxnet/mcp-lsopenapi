@@ -68,6 +68,28 @@ Workspace `.vscode/mcp.json`:
 }
 ```
 
+### Google Antigravity
+
+`%USERPROFILE%\.gemini\antigravity\mcp.config.json` (Windows) or `~/.gemini/antigravity/mcp.config.json` (macOS / Linux):
+
+```jsonc
+{
+  "mcpServers": {
+    "lsopenapi": {
+      "command": "dnx",
+      "args": ["RedoxNet.Mcp.LsOpenApi", "--yes"],
+      "env": {
+        "LS_APPKEY": "...",
+        "LS_APPSECRETKEY": "...",
+        "LS_MARKET": "real"  // default if omitted; use "virtual" only for LS mock accounts
+      }
+    }
+  }
+}
+```
+
+Antigravity currently advertises no SEP-1865 UI capability, so the server classifies it as a text-only host: the `include_chart` parameter is dropped from the schema and chart specs are stripped from responses. The model receives the analytical summary and `_meta.render_status: "stripped_text_only"` so it narrates the limitation honestly (no false "I drew the chart" claim).
+
 ### FieldCure AssistStudio
 
 **Settings → Connect → Add MCP Server**, then fill the dialog:
