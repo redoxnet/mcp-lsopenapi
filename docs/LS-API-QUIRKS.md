@@ -6,9 +6,10 @@ Recorded so the same surprises are not re-investigated every session.
 
 Each entry: **symptom → cause (as understood) → workaround → status**.
 
-Status legend: ✅ handled · ⚠️ partially handled · 🔲 open (backlog).
+Status legend: ✅ handled · ⚠️ partially handled · 🔲 open (backlog) ·
+💭 investigated but not productized (kept here so the investigation is not repeated).
 
-Last updated: 2026-05-26.
+Last updated: 2026-05-27.
 
 ---
 
@@ -362,3 +363,405 @@ TRs already do, this just brings body-paged TRs in line.
 **Status:** ✅ for `g3190` since v1.3.0. 🔲 broader audit deferred — the
 v1.3 wrapper that hit it is currently the only paging path that loops
 in production.
+
+---
+
+## 7. WebSocket realtime & news (NWS / t3102)
+
+The findings in this section come from a v1.6 design exploration
+(2026-05-27) that ultimately decided **not to productize NWS in v1.x**
+— see §7.9 for the rationale. Everything else here is recorded so a
+future session that revisits WebSocket realtime — should one ever be
+warranted under the conditions in [DESIGN-PRINCIPLES.md §1.2](./DESIGN-PRINCIPLES.md)
+— does not re-investigate the same protocol surface from scratch.
+
+### 7.1 WebSocket protocol basics 💭
+
+**Endpoints:**
+- Production: `wss://openapi.ls-sec.co.kr:9443/websocket`
+- Mock investing: `wss://openapi.ls-sec.co.kr:29443/websocket`
+
+**Auth — token format differs from REST.** REST sends
+`Authorization: Bearer <token>`. WebSocket sends the **raw token**
+inside the message header (no `Bearer ` prefix):
+
+```json
+{ "header": { "token": "<raw access_token>", "tr_type": "3" },
+  "body":   { "tr_cd": "NWS", "tr_key": "NWS001" } }
+```
+
+A façade that reuses the same `LsTokenCache` must strip `Bearer ` on
+the WebSocket path, or the connection authenticates as guest and
+returns nothing.
+
+**`tr_type` codes:**
+- `1` — 계좌등록 (no `tr_key` required)
+- `2` — 계좌해제
+- `3` — 실시간 시세 등록 (`tr_key` required)
+- `4` — 실시간 시세 해제 (`tr_key` required)
+
+**Heartbeat & reconnect (k-ebest-im pattern, presumed production-tested):**
+- `socket.ping()` every **5 s**.
+- `onclose` → reconnect after **1 s** (no exponential backoff).
+- On reconnect, **all subscriptions must be re-sent** — LS does not
+  preserve session state server-side.
+
+**Status:** 💭 documented for future reference. No daemon or wrapper
+exists today; catalog-only TRs (NWS, JIF, etc.) are reachable only as
+schema.
+
+### 7.2 NWS frame carries fields beyond the spec ⚠️
+
+**TR:** `NWS` (실시간뉴스제목패킷).
+
+The published spec lists `date / time / id / realkey / title / code /
+bodysize`. Live frames (2026-05-27) consistently include **two
+additional fields**:
+
+| Field | Observed values | Meaning (best guess) |
+|---|---|---|
+| `categoryid` | `99`, `06`, `05`, ... | News category bucket — see §7.3 |
+| `codeaccu` | `"C"` or `""` | Unknown. Possibly an accumulator/continuation flag |
+
+`categoryid` is the only practical handle for client-side noise
+reduction (§7.3). `codeaccu` semantics remain unconfirmed — preserve
+it in `raw_payload` rather than expose it as a typed field.
+
+**Status:** 💭 documented. A future NWS implementation must accept
+unknown extra fields gracefully.
+
+### 7.3 NWS is a global mixed stream — `"NWS001"` is an alias ⚠️
+
+**TR:** `NWS`.
+
+The spec describes `tr_key` as "단축코드 6자리 또는 8자리" but the
+example payload sends `"NWS001"`, which is not a valid ticker. Live
+testing (2026-05-27, real-trading WebSocket, KST 20:30) with
+`tr_key="NWS001"` returns a **fully global, multi-category stream** —
+not per-symbol news.
+
+Observed in a 2-minute window:
+
+| Headline (excerpt) | `code` | `categoryid` | Kind |
+|---|---|---|---|
+| `SKIET, 폴란드 중심으로 생산체계 개편` | `000000096770` | `99` | KR stock news |
+| `요약-애플랩, 라비쉬 N. 모디를 CFO로 임명` | `""` | `06` | Overseas (Reuters translation) |
+| `중국 남부 전력망, 기록적인 전력 소비량 기록` | `""` | `06` | Overseas general |
+| `NHC 열대 날씨 전망` | `""` | `06` | Overseas weather (!) |
+| `동작구 써밋더힐·아크로리버스카이 1순위 두자릿수 경쟁률` | `""` | `05` | Korean real-estate auction |
+
+The `code` field (240 chars) is empty for most frames — it carries
+12-char zero-padded ticker codes only when the news is attributable to
+specific Korean stocks, up to 20 packed (`240 / 12`).
+
+**Implication:** any consumer must filter on `categoryid` (or `code`
+non-empty) to extract trading-relevant news; otherwise the stream is
+polluted with weather, real-estate auctions, and unrelated
+international briefs.
+
+**Observed volume** (single 2-minute sample, KST 20:30, after market
+close): ~7-8 frames/minute with a bursty pattern — ~90 s of silence
+then 10+ frames in <1 s. Intraday volume is presumed higher but not
+yet measured.
+
+**`tr_key=""` also works** (k-ebest-im uses an empty string) and
+appears to be equivalent to `"NWS001"` for the "everything" channel.
+Other `"NWSxxx"` aliases (002, 003, ...) may select narrower channels
+— not yet enumerated.
+
+**Status:** 💭 documented. Per-symbol news, if it exists at all, would
+likely be `tr_key=<6-char ticker>` but this was never verified.
+
+### 7.4 NWS `realkey` ↔ t3102 `sNewsno` — same ID namespace ✅
+
+**TRs:** `NWS` (WebSocket push), `t3102` (REST body fetch).
+
+Verified empirically (2026-05-27): a 24-char `realkey` from a live NWS
+frame, passed verbatim as `t3102.sNewsno`, returns the full body for
+that headline.
+
+**Format note — two coexisting forms.** Live 2026 frames use 24
+**all-numeric** characters: `YYYYMMDD HHmmss + 10-char sequence` —
+e.g. `202605272032312300009798`. The spec example
+(`"2023051510383935PL7HQ87D"`) shows an older **alphanumeric** form
+ending in 8 letters. **Both forms are accepted by t3102** — the 2023
+example still returned its body in 2026 (LS retention is ≥3 years).
+
+**Status:** ✅ confirmed. A future NWS pipeline can use NWS `realkey`
+directly as the body cache key with no transformation.
+
+### 7.5 t3102 response shape varies by whether news has stock mapping ⚠️
+
+**TR:** `t3102` (뉴스본문).
+
+The spec declares three output blocks: `t3102OutBlock` (sJongcode),
+`t3102OutBlock1` (sBody chunks), `t3102OutBlock2` (sTitle). Live
+responses (2026-05-27) **omit either `t3102OutBlock` or `t3102OutBlock2`
+depending on news type** — they are effectively mutually exclusive:
+
+| News kind | `t3102OutBlock` | `t3102OutBlock1` | `t3102OutBlock2` |
+|---|---|---|---|
+| Korean stock news (`code` populated in NWS) | ✅ (sJongcode array) | ✅ | ❌ **missing** |
+| Overseas / real-estate / general (`code` empty in NWS) | ❌ **missing** | ✅ | ✅ (sTitle — *but see §7.6*) |
+
+`out_block_names` reflects this — a consumer must inspect
+`out_block_names` rather than assume all three blocks exist.
+
+Body is always returned in a single response: `continuation.has_more`
+was `false` for every observed call. No paging needed.
+
+**Status:** ⚠️ documented but no wrapper exists; `ls_call_tr` callers
+must branch on `out_block_names`.
+
+### 7.6 t3102 server-side buffer pollution in non-stock news 🔴
+
+**TR:** `t3102` for news without stock mapping (§7.5 second row).
+
+Two distinct corruption patterns, both consistent with **uninitialized
+server-side buffers**:
+
+**(a) Block name leaked into data prefix.** The first body chunk and
+the title field carry their own block name as a literal prefix:
+
+```
+sBody[0]:  "t3102OutBlock1  BRIEF-Aplab Ltd Appointed Ravish..."
+sTitle:    "t3102OutBlock2  요약-애플랩, 라비쉬 N. 모디를 CFO로 임명하다..."
+```
+
+A consumer must strip `^t3102OutBlock[12]  ` if present.
+
+**(b) `sTitle` contains fragments of other news titles.** Past the
+expected headline, the field continues with what looks like cross-news
+contamination from a shared server buffer:
+
+```
+sTitle: "t3102OutBlock2  요약-애플랩, 라비쉬 N. 모디를 CFO로 임명하다
+         입� � �이 s晫sco, 5일 0~6� � 04 하루 -6.0mcm 정전 예정
+         � 인 H, 유 힌� � 폐 s晫 처� 계약 체결 � s晫� 나..."
+```
+
+`sTitle` cannot be trusted past the first headline. **Workaround:
+use the NWS frame's `title` field as the authoritative source** — that
+field is delivered cleanly. `t3102OutBlock2.sTitle` should only be a
+fallback when no NWS frame is available, and even then must be
+truncated heuristically (e.g. cut at the first `  ` double-space after
+the legitimate headline, or simply ignore everything past 300 chars).
+
+Korean-stock responses (the `t3102OutBlock` shape) do **not** exhibit
+this corruption — their body chunks and the absent title field don't
+have the buggy code path.
+
+**Status:** 🔴 LS server-side bug. Not fixable client-side beyond
+strip-and-truncate. Recorded so a future wrapper does not surface
+contaminated titles to the LLM.
+
+### 7.7 t3102 "not found" returns success codes 🔴
+
+**TR:** `t3102`.
+
+Calls with malformed (`"abc"`) or merely nonexistent
+(`"000000000000000000000000"`) `sNewsno` return:
+
+```json
+{ "status": 200,
+  "rsp_cd": "00000",
+  "is_success": true,
+  "rsp_msg": "해당자료가 없습니다. 다시 조회 바랍니다.",
+  "out_block_names": [],
+  "body": { "rsp_cd": "00000", "rsp_msg": "해당자료가 없습니다..." } }
+```
+
+`rsp_cd`, `is_success`, and HTTP status all signal **success** for what
+is clearly a not-found. **The only reliable signal is
+`out_block_names.Count == 0`.** A wrapper that trusts `is_success`
+will treat a missing news ID as a valid empty body.
+
+LS also does no input validation — `"abc"` (3 chars, vs spec-required
+24) gets the same soft-failure as a well-formed-but-nonexistent ID.
+
+**Status:** 🔴 LS API contract bug. A future wrapper must guard with
+`out_block_names` check.
+
+### 7.8 t3102 body chunks split at byte boundaries, corrupting Korean ⚠️
+
+**TR:** `t3102`.
+
+`t3102OutBlock1[].sBody` is the body split into ~100-byte chunks. LS
+splits at **byte** boundaries, ignoring UTF-8 multi-byte character
+boundaries, so 2- or 3-byte Korean characters straddling a chunk
+boundary arrive as `U+FFFD` (`�`) on **both sides** of the split:
+
+```
+sBody[2]: "...국내 충북 공장 상업 생산도 중단하는 대신 폴란드를 중심으로 \r\n한 생산체계 재편에 나선다. 북미·유럽"
+sBody[3]: "전기차 시장 대응에 집중하기 위한 공급망 \r\n재편 차원이다.</p>..."
+                                                                          ^ clean join here
+
+sBody[2]: "...SKIET는 중국 공장 운영법인인 SK하이�"
+sBody[3]: "淪㈇蕁섯�얼즈 지분 100%를 중국 분리막 업\r\n체 셈코프에..."
+                ^^^^^^^^^^^ broken char straddles the boundary
+```
+
+By the time the JSON arrives the bytes have already been decoded to
+strings with replacement characters; **byte-level reassembly is not
+possible** — the original bytes are gone.
+
+**Workaround:** concat chunks verbatim, leave the `U+FFFD`
+replacement characters in place. LLM context usually disambiguates
+(`높여잡� 있다` is obviously `높여잡고 있다`). Any attempt at
+heuristic restoration risks hallucination.
+
+Body also carries HTML markup (`<p>`, `<br/>`, `<a href>`, `<img>`,
+`<span stockcode='192820'>`), Thomson Reuters disclaimers, related-
+article links, and reporter bylines. Preserve verbatim — the markup
+carries useful signal (stockcode tagging especially).
+
+**Status:** ⚠️ LS API quirk, no client-side fix possible. Document
+in any future wrapper's tool description so the LLM knows broken
+characters are source-side.
+
+### 7.9 Strategic note — NWS not productized in v1.x 💭
+
+A v1.6 daemon slice for NWS was designed in detail
+(2026-05-27 session) and **rejected**. Recording the rationale so a
+future revisit starts from the right baseline rather than re-running
+the same analysis:
+
+1. **NWS is push-only.** No REST news search TR exists in the
+   catalog. If the daemon misses frames (host off, daemon restart,
+   reconnect gap), those headlines are **permanently unrecoverable**
+   — the value proposition of "managed news feed" has no safety net.
+2. **No alternative discovery path for t3102.** WTS/MTS apps do not
+   expose `sNewsno`. Naver/Daum finance use their own ID namespace.
+   Without NWS WebSocket, t3102 has no realistic input source — the
+   body-fetch tool would be unreachable from a user's perspective.
+3. **Stream content is mixed and noisy.** §7.3 documents that NWS
+   carries Korean stock news + Reuters translations + real-estate
+   auctions + weather forecasts in one channel. A useful tool would
+   require curating the `categoryid` catalog (not provided by LS) and
+   shipping client-side filters — meaningful ongoing maintenance.
+4. **LS ecosystem signal.** ProgramGarden (the LS-backed Python quant
+   platform) has no news nodes. k-ebest-im wraps NWS at the rawest
+   possible level (callback registration only, no managed
+   processing). The absence of any second-party investment in news
+   suggests low ROI in this corner of the API.
+5. **Server-side bugs** (§7.6, §7.7) push a non-trivial fraction of
+   any wrapper's code into "uninitialized buffer cleanup" — adds
+   complexity disproportionate to delivered value.
+6. **Daemon infrastructure investment** (sidecar process + named
+   pipe IPC + schtasks install) is more cleanly justified by **JIF
+   market state** as the v1.6 use case, where the data is unique,
+   small, and free of these problems.
+
+**Conditions under which to revisit:**
+- LS publishes a news search REST TR (would solve #1, #2).
+- A `categoryid` catalog becomes available, ideally with a
+  Korean-stock-only channel alias (would solve #3).
+- Server-side `sTitle` corruption is fixed (would solve #5 partially).
+- User demand emerges from production telemetry showing LLM sessions
+  routinely failing on news questions (none observed as of v1.5.1).
+
+Until then: t3102 remains catalog-only and reachable via
+`ls_call_tr`; NWS has no wrapper. The `ServerInstructions` line
+`"t3102 (뉴스본문) is catalog-only and unusable as a news tool
+without NWS WebSocket number discovery"` stays accurate.
+
+**Status:** 💭 closed (until conditions above change).
+
+### 7.10 JIF is transition-only push — silent in steady state ⚠️
+
+**TR:** `JIF` (장운영정보 WebSocket).
+
+Subscribing to JIF on the real-trading WebSocket (`tr_key="1"` = KOSPI)
+at KST 20:30 (well after market close) returns **zero frames** for the
+entire 2-minute test window. JIF emits **only on state transitions** —
+the jstatus codes (`11` 장전동시호가, `21` 장시작, `41` 장마감, `61`
+서킷브레이크1단계, etc.) are a list of *events*, not a snapshot.
+
+**Implication for any consumer that wants "current state":** JIF
+*cannot* answer "what is the market doing right now?" unless the
+consumer has been listening continuously since the last relevant
+transition. A daemon started mid-session sees an **empty state** until
+the next transition arrives. Worse, a daemon that misses one
+transition (laptop closed during 사이드카 발동, host restart between
+장시작 and 장마감) keeps serving *stale-but-confidently-wrong* state
+indefinitely until the next transition corrects it.
+
+**Asymmetry with NWS:** NWS frames are append-only headline events —
+missing frames means "fewer recent headlines", never wrong state. JIF
+is the opposite — missing transitions means *actively wrong* current
+state. The two streams have inverted failure modes.
+
+**Practical takeaway:** Do not productize JIF as "current market
+state" without (a) guaranteed always-on capture **and** (b) a startup
+backfill mechanism. No REST equivalent for JIF state was found, so (b)
+is unsolvable. Without both, the LLM ends up with confidently wrong
+context, which is *worse* than no context (the LLM's own
+clock + holiday-calendar knowledge would have been more accurate by
+default).
+
+**Status:** 💭 documented. v1.6 design (2026-05-27) considered JIF for
+a `_meta.session_now` field and rejected it for this reason — see
+§7.11 for the broader rejection of WebSocket as an MCP transport.
+
+### 7.11 WebSocket as a whole adds little for MCP use cases 💭
+
+A v1.6 design session (2026-05-27) examined every WebSocket category
+exposed by LS — news (NWS, §7.9), market state (JIF, §7.10), order
+events (SC0–SC4 주문접수/체결/정정/취소/거부), and market data push
+(체결 `S3_`/`K3_`, 호가 `H1_`/`HA_`, VI `VI_`, 프로그램매매
+`PH_`/`PM_`, NXT `NS3`/`NBT`, ...) — and concluded that **none of
+them justify daemon/sidecar infrastructure under the MCP-server use
+case**.
+
+The recurring reasons:
+
+1. **LLMs are episodic.** They execute when the user prompts, not
+   continuously. Sub-second push value evaporates while nobody is
+   listening for sub-second windows. The MCP-chat cadence is "user
+   asks → tool calls → LLM responds, then idle for minutes" —
+   incompatible with streaming-bot patterns.
+2. **Most push data is also pollable.** Order fills (SC1) → REST
+   `t0425` / `CSPAQ13700`. Account balance → `t0424`. Current price →
+   any quote TR. The WebSocket version is a *latency optimization*
+   for bots, not a *capability* unlocking otherwise-inaccessible data.
+3. **Push with downtime is actively dangerous.** Anything stateful
+   (JIF, SCx fills) gives the LLM *confidently wrong* context when
+   the daemon misses frames (§7.10). REST polling returns a fresh
+   snapshot every call — the wrongness window is bounded by call
+   frequency, not by daemon uptime.
+4. **The few push-only signals** (NWS headlines §7.9, VI 발동/해제
+   for halts) are either covered by general LLM web tooling (news →
+   web search) or too rare per session to justify always-on capture.
+5. **Ecosystem signal.** ProgramGarden (LS-backed Python quant
+   platform) wraps WebSocket *inside its workflow engine* — for
+   automated bots, not assistants. k-ebest-im exposes raw WebSocket
+   as a callback registry with no managed processing. Neither
+   provides a reference model for MCP-style push handling, because
+   the use case doesn't naturally exist in the LS Python ecosystem
+   either.
+
+**Strategic implication:** mcp-lsopenapi can remain **daemon-less,
+stdio-friendly, single-binary indefinitely**. A future trading slice
+is a pure REST wrapper around `/stock/order`
+(CSPAT00601/00701/00801) + `/stock/accno` (`t0424`, `t0425`,
+`CSPAQ13700`, `CSPAQ12200`, ...). No WebSocket. No sidecar. No
+installed service. No `schtasks` integration. No named-pipe IPC.
+
+**Conditions to revisit (any one):**
+- A push-only signal emerges that has *no* REST equivalent **and**
+  matches a recurring LLM use case (not an automation use case).
+- The MCP spec gains first-class push primitives that hosts
+  consistently implement (resources/subscribe in MCP 1.4+ is
+  promising but host support remains spotty as of 2026-05).
+- Production telemetry shows monitor-mode demand ("alert me when X
+  happens") — but that pattern itself may belong in a workflow tool
+  (cron/Routines/Cowork), not inside an MCP server.
+
+This insight is also recorded as a memory ([[mcp-realtime-skeptic]])
+so future sessions inherit it without re-deriving it.
+
+**Status:** 💭 closed (until conditions above change). Supersedes the
+earlier daemon framing in older drafts of [[next-nxt-realtime]] —
+that memory now points back here. See also [DESIGN-PRINCIPLES.md §1](./DESIGN-PRINCIPLES.md)
+for the generalized form of this conclusion.
+

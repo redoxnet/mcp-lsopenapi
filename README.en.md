@@ -551,7 +551,9 @@ Current release line:
 
 Planned:
 
-- [ ] **v1.5.1+** — Daily-candle SQLite cache (Appendix A) + saved screener macros (Appendix B) — both deferred until usage evidence justifies the permanent-state cost. See [docs/SPEC-v1.5.md §1.5](docs/SPEC-v1.5.md).
+- [ ] **v1.6.0** — Read-only access to your actual LS Securities account: current holdings, balance, order history, daily P&L, performance, and more. New `ls_account_*` tool family pulls live broker state on every call — never cached. Separate from the existing `ls_holding*` portfolio notes (paper portfolio / multi-broker tracking) so the two can coexist by design. See [docs/SPEC-v1.6.md](docs/SPEC-v1.6.md).
+- [ ] **v1.7.0** — Order placement (place / modify / cancel) with multi-layer safety. Paper-trading is the default; live trading requires explicit consent across multiple gates. Every order requires a `ls_preview_order` step first that validates against your balance, holdings, market state, and your own trading rules — the LLM cannot place an order without a valid preview ID. Optional user-defined trading rules (`ls_trading_policy`) act as a hard block (e.g. "never place orders above 5 million KRW"). Every order attempt is logged locally. See [docs/SPEC-v1.7.md](docs/SPEC-v1.7.md).
+- [ ] **Daily-candle SQLite cache + saved screener macros** — deferred until usage evidence justifies the permanent-state cost. See [docs/SPEC-v1.5.md §1.5](docs/SPEC-v1.5.md) Appendix A / B.
 
 Major milestones:
 
@@ -560,7 +562,7 @@ Major milestones:
 - [x] **v0.8.0** — Overseas index / FX / futures snapshots, analyst opinions, short-selling, new-high / new-low, and market-funds wrappers.
 - [x] **v0.9.0** — Response-shape / token-economy refactor: `ls_get_index_history`, `ls_get_stock_info`, and `ls_holdings_list` defaults cut common payloads by 66-97%.
 - [x] **v0.10.0** — Tool-surface compression: 48 tools collapsed to 32 in the default `standard` profile / 35 in `all`; portfolio writes moved to action-routed dispatchers; list/screener caps standardized on `limit`.
-- [ ] **v2.x** — Deferred by design: realtime WebSocket feeds, live brokerage balances/accounts, and order placement.
+Realtime WebSocket feeds are not currently planned.
 
 Full changelog: [RELEASENOTES.Mcp.md](RELEASENOTES.Mcp.md) · [RELEASENOTES.Core.md](RELEASENOTES.Core.md).
 
