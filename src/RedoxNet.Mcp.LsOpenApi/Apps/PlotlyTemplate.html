@@ -125,6 +125,48 @@
       send({ jsonrpc: "2.0", method, params: params || {} });
     }
 
+    // SEP-1865 auto-resize. Without this, hosts (Cowork at minimum, probably
+    // others) keep the iframe at their default size and ignore our CSS
+    // min-height — so a 520px-min-height chart still appears in a 200-300px
+    // frame. The reference App.setupSizeChangedNotifications (ext-apps
+    // src/app.ts:1859) uses a ResizeObserver + requestAnimationFrame debounce
+    // and the `max-content` height-measurement trick to send accurate
+    // dimensions; we port the same pattern here. Observed 2026-05-27 in
+    // Cowork: bumping CSS min-height alone didn't grow the iframe — sending
+    // ui/notifications/size-changed is the actual lever.
+    let _sizeScheduled = false;
+    let _lastWidth = 0;
+    let _lastHeight = 0;
+    function sendBodySizeChanged() {
+      if (_sizeScheduled) return;
+      _sizeScheduled = true;
+      requestAnimationFrame(() => {
+        _sizeScheduled = false;
+        const html = document.documentElement;
+        // max-content trick: measure content's natural height instead of being
+        // clamped to the current iframe height. fit-content would clamp;
+        // setting html.style.width destroys horizontal scroll positions, so
+        // width uses window.innerWidth verbatim.
+        const originalHeight = html.style.height;
+        html.style.height = "max-content";
+        const height = Math.ceil(html.getBoundingClientRect().height);
+        html.style.height = originalHeight;
+        const width = Math.ceil(window.innerWidth);
+        if (width !== _lastWidth || height !== _lastHeight) {
+          _lastWidth = width;
+          _lastHeight = height;
+          notify("ui/notifications/size-changed", { width, height });
+        }
+      });
+    }
+    function setupAutoResize() {
+      sendBodySizeChanged();
+      const ro = new ResizeObserver(sendBodySizeChanged);
+      ro.observe(document.documentElement);
+      ro.observe(document.body);
+      return () => ro.disconnect();
+    }
+
     function isVeryNarrow() {
       const w = hostContext.containerDimensions?.width
             ?? hostContext.containerDimensions?.maxWidth
@@ -234,6 +276,7 @@
       if (msg.id === INIT_REQUEST_ID && msg.result) {
         hostContext = msg.result.hostContext || {};
         notify("ui/notifications/initialized");
+        setupAutoResize();
         render();
         return;
       }
