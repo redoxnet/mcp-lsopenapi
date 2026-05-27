@@ -63,6 +63,8 @@ public sealed class ServerInstructionsTests
     [InlineData("JavaScript")]                  // ditto (v1.5)
     [InlineData("PNG")]                         // ditto (v1.5)
     [InlineData("recompute")]                   // server-side indicator authority is non-negotiable (v1.5)
+    // v1.5.1 chart theme override surface — see docs/MCP-APPS-INTEROP.md §3 Q8.
+    [InlineData("theme=\"dark\"")]               // explicit tool-mediated theme override (v1.5.1)
     public void Text_CarriesTheRoutingBoundaryPhrase(string phrase)
     {
         ServerInstructions.Text.Should().Contain(phrase);

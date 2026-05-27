@@ -120,7 +120,8 @@ internal sealed record ChartDataset(
     string? Name,
     IReadOnlyList<string> PeriodTypes,
     IReadOnlyList<ChartDatasetFrame> Frames,
-    DateTimeOffset CreatedAtUtc);
+    DateTimeOffset CreatedAtUtc,
+    string? ThemeHint = null);
 
 /// <summary>
 /// One cached chart frame.

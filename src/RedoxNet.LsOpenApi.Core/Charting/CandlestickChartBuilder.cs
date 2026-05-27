@@ -74,6 +74,14 @@ internal static class CandlestickChartBuilder
     /// substitute a matching symbol (<c>$</c>, <c>¥</c>, …) or fall through
     /// to the raw code so overseas tools can be wired in without a code change.
     /// </param>
+    /// <param name="themeHint">
+    /// Optional tool-side theme override (<c>"light"</c>, <c>"dark"</c>, or
+    /// <see langword="null"/>/<c>"auto"</c>). When non-null and not auto, the
+    /// value is embedded in <c>layout._themeHint</c> so
+    /// <c>PlotlyTemplate.applyTheme()</c> overrides <c>hostContext.theme</c> and
+    /// the iframe <c>prefers-color-scheme</c>. Lets the user pin a chart palette
+    /// regardless of host signal — see docs/MCP-APPS-INTEROP.md §3 Q8.
+    /// </param>
     /// <returns>
     /// <c>{ "type": "plotly", "version": "5", "spec": { "data": [...], "layout": {...} } }</c>
     /// </returns>
@@ -84,7 +92,8 @@ internal static class CandlestickChartBuilder
         IReadOnlyDictionary<string, IReadOnlyList<double?>> indicators,
         IReadOnlyList<IndicatorSpec> specs,
         string? name = null,
-        string? currency = null)
+        string? currency = null,
+        string? themeHint = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(shcode);
         ArgumentException.ThrowIfNullOrWhiteSpace(periodType);
@@ -99,6 +108,11 @@ internal static class CandlestickChartBuilder
         AddOverlays(data, xAxis, indicators, specs);
         data.Add(BuildVolume(candles, xAxis));
 
+        JsonObject layout = BuildLayout(shcode, name, periodType, candles, xAxis, currency);
+        string? normalized = NormalizeThemeHint(themeHint);
+        if (normalized is not null)
+            layout["_themeHint"] = normalized;
+
         return new JsonObject
         {
             ["type"] = ChartType,
@@ -106,8 +120,27 @@ internal static class CandlestickChartBuilder
             ["spec"] = new JsonObject
             {
                 ["data"] = data,
-                ["layout"] = BuildLayout(shcode, name, periodType, candles, xAxis, currency),
+                ["layout"] = layout,
             },
+        };
+    }
+
+    /// <summary>
+    /// Accepts <c>light</c>/<c>dark</c>/<c>auto</c>/<see langword="null"/>
+    /// (case-insensitive). Returns the lowercased value for the two explicit
+    /// modes, or <see langword="null"/> when the hint should be omitted (auto
+    /// or unrecognized — iframe falls through to hostContext.theme).
+    /// </summary>
+    public static string? NormalizeThemeHint(string? themeHint)
+    {
+        if (string.IsNullOrWhiteSpace(themeHint))
+            return null;
+        string lower = themeHint.Trim().ToLowerInvariant();
+        return lower switch
+        {
+            "light" => "light",
+            "dark" => "dark",
+            _ => null, // "auto" or anything else → no hint, host-driven
         };
     }
 
@@ -378,6 +411,14 @@ internal static class CandlestickChartBuilder
             {
                 ["l"] = 40, ["r"] = 60, ["t"] = 76, ["b"] = 40,
             },
+            // Transparent backgrounds let the host card show through, so dark
+            // hosts that don't propagate hostContext.theme into the iframe
+            // (observed 2026-05-27 in VS Code Copilot Chat) still render a
+            // chart that visually integrates with the surrounding panel.
+            // PlotlyTemplate.applyTheme() still drives axis/grid/font colors
+            // off hostContext.theme || prefers-color-scheme.
+            ["paper_bgcolor"] = "rgba(0,0,0,0)",
+            ["plot_bgcolor"] = "rgba(0,0,0,0)",
         };
 
         JsonArray annotations = BuildExtremaAnnotations(candles, xAxis, periodType);

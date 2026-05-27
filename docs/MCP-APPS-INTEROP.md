@@ -222,6 +222,80 @@ release can add a small whitelist if a real user actually runs into it.
   verified Sep1865 host.
 - Documented in (`openai/codex#21019`).
 
+### Q8. `hostContext.theme` propagation is host-by-host and partial
+
+- **Discovered**: 2026-05-27 (v1.5 post-ship), VS Code Copilot Chat
+  empirical: dark host, white chart card. Same pattern likely on other
+  dark-mode hosts.
+- **Symptom**: even when the host is in dark mode, the chart card
+  inside our iframe renders with a light palette (white paper, dark
+  text, light grid lines on dark surroundings) — visually breaks
+  identification.
+- **Root cause** (two-part):
+  1. The host doesn't send `hostContext.theme` on `ui/initialize` and
+     doesn't emit `ui/notifications/host-context-changed` when the
+     theme flips. The SEP-1865 schema (`spec.types.ts:351`) marks
+     `theme` as optional, so no host is *required* to send it.
+  2. The iframe's own `prefers-color-scheme` does *not* reliably
+     follow the parent. A `:root { color-scheme: light dark; }`
+     declaration alone is not enough — sandboxed iframes in
+     `basic-host`-class proxies, and several production hosts, see
+     `prefers-color-scheme: light` regardless of the parent's actual
+     scheme.
+- **Reference behavior**: ext-apps `basic-host` *does* send
+  `hostContext.theme = getTheme()` from its `prefers-color-scheme`
+  detection on the initial `hostContext`, and emits
+  `sendHostContextChange({ theme })` on toggle
+  (`examples/basic-host/src/implementation.ts:292, 306`). So a
+  reference-faithful host should work.
+- **v1.5.1 mitigation** (three additive fixes):
+  1. **Transparent layout backgrounds.** Every builder now sets
+     `paper_bgcolor: "rgba(0,0,0,0)"` / `plot_bgcolor:
+     "rgba(0,0,0,0)"`; `PlotlyTemplate.applyTheme()` also defaults
+     transparent; the iframe `<body>` background is `transparent`.
+     The host card's background shows through regardless of theme
+     signal, so even on a host that omits `hostContext.theme` the
+     chart visually integrates with the panel.
+  2. **Tool-side `theme` param.** `ls_get_chart` /
+     `ls_get_overseas_chart` / `ls_add_indicator` / `ls_reframe_chart`
+     accept `theme = "auto" | "light" | "dark"`. When set, the value
+     is embedded as `layout._themeHint` and overrides
+     `hostContext.theme` / `prefers-color-scheme` in
+     `applyTheme()`. Persists on the dataset, so follow-up calls
+     inherit it.
+  3. **`[theme]` diagnostic log.** `applyTheme()` prints the
+     resolved theme + raw signals on every render, enabling
+     per-host Track A inspection in dev tools without recompiling.
+- **Host empirical matrix** (Track A, partial — 2026-05-27 v1.5.1 dev build):
+
+  | Host | Sends `hostContext.theme`? | iframe `prefers-color-scheme` follows parent? | Evidence |
+  |---|---|---|---|
+  | ext-apps `basic-host` | ✅ (verified in source) | n/a (basic-host classifies as TextOnly on our gate; if forced, host's own `getTheme()` covers it) | source read |
+  | **VS Code Copilot Chat** | **✅ yes** — sends `theme=dark` on dark host | **❌ no** — `matchMedia("(prefers-color-scheme: dark)")` returns `false` even on dark parent | 2026-05-27 dev tools `[theme]` log: `resolved=dark hostContext.theme=dark matchMedia dark=false spec hint=(none)` |
+  | Claude Desktop Chat | unknown | unknown | TBD |
+  | Claude Cowork | unknown | unknown | TBD |
+  | Cursor 2.6+ / ChatGPT / Goose / Postman / MCPJam | unknown | unknown | TBD |
+
+  **Surprise**: the original v1.5.0 "white chart card on VS Code Copilot
+  Chat dark" diagnosis assumed the host *wasn't* sending
+  `hostContext.theme`. The 2026-05-27 empirical *refutes* that —
+  VS Code Copilot Chat does send `theme=dark` correctly. The actual root
+  cause of the original symptom remains uncertain (likely host update
+  added the signal between v1.5.0 ship and v1.5.1 measurement, or a
+  `host-context-changed` timing window we missed). Either way, the
+  v1.5.1 transparent default works as a safety net for *both*
+  signal-absent and signal-present cases.
+
+  **Confirmed** for iframe `prefers-color-scheme` unreliability: even
+  when the parent is dark, the iframe's `matchMedia` query returns
+  `false`. So the SEP-1865 `hostContext.theme` signal is the *only*
+  reliable path; relying on the iframe's own media query is broken.
+- **Future work**: 3-state UI toggle button (auto / light / dark) on
+  the chart card with best-effort `localStorage` persistence remains a
+  candidate if tool-side `theme` proves insufficient. Sandbox iframes
+  with `origin: null` will silently fail `localStorage`, which is
+  expected (`try { ... } catch {}` — non-fatal).
+
 ---
 
 ## 4. The "self-synthesis" anti-pattern (model behavior, not protocol)

@@ -506,6 +506,8 @@ public static class OverseasStockTools
         string? name = null,
         [Description("For day/week/month/year charts, apply adjusted prices. Default true.")]
         bool adjusted = true,
+        [Description("Optional chart theme override: \"light\", \"dark\", or \"auto\" (default). Pass when the user explicitly asks for a dark/light chart. Follow-up ls_add_indicator / ls_reframe_chart inherit this on the same dataset_id.")]
+        string? theme = null,
         CancellationToken cancellationToken = default)
     {
         if (!TryResolveOverseasSymbol(symbol, exchcd, keysymbol, out OverseasSymbol resolved, out string? error))
@@ -537,6 +539,7 @@ public static class OverseasStockTools
                 apiClient, resolved, name, period, cappedDisplay, from, to, unit, specs, adjusted, withWarmup: null, cancellationToken)
                 .ConfigureAwait(false);
 
+            string? themeHint = CandlestickChartBuilder.NormalizeThemeHint(theme);
             string datasetId = DatasetHandleCache.Add("overseas_chart", new OverseasChartDataset(
                 resolved,
                 name,
@@ -551,7 +554,8 @@ public static class OverseasStockTools
                 frame.Context,
                 frame.Summary,
                 adjusted,
-                DateTimeOffset.UtcNow));
+                DateTimeOffset.UtcNow,
+                themeHint));
 
             string? currency = CurrencyHint(resolved.Exchcd);
             string? barTimezone = BarTimezone(resolved.Exchcd);
@@ -617,7 +621,8 @@ public static class OverseasStockTools
                         frame.Indicators,
                         specs,
                         name,
-                        currency),
+                        currency,
+                        themeHint),
                 };
             }
 
@@ -654,6 +659,7 @@ public static class OverseasStockTools
         string datasetId,
         IndicatorSpec specToAdd,
         bool includeChart,
+        string? theme,
         CancellationToken cancellationToken)
     {
         if (!DatasetHandleCache.TryGet<OverseasChartDataset>(datasetId, out OverseasChartDataset? dataset) || dataset is null)
@@ -676,6 +682,9 @@ public static class OverseasStockTools
                 withWarmup: null,
                 cancellationToken).ConfigureAwait(false);
 
+            string? themeHint = string.IsNullOrWhiteSpace(theme)
+                ? dataset.ThemeHint
+                : CandlestickChartBuilder.NormalizeThemeHint(theme);
             OverseasChartDataset updated = dataset with
             {
                 Candles = refreshed.Candles,
@@ -683,6 +692,7 @@ public static class OverseasStockTools
                 IndicatorSpecs = specs,
                 Context = refreshed.Context,
                 Summary = refreshed.Summary,
+                ThemeHint = themeHint,
             };
             if (!DatasetHandleCache.TryUpdate(datasetId, updated))
                 return McpJson.ErrorResult("Unknown or expired dataset_id.", new { dataset_id = datasetId });
@@ -712,7 +722,8 @@ public static class OverseasStockTools
                         updated.Indicators,
                         specs,
                         dataset.Name,
-                        CurrencyHint(dataset.Symbol.Exchcd)),
+                        CurrencyHint(dataset.Symbol.Exchcd),
+                        themeHint),
                 }
                 : null;
 
@@ -742,6 +753,7 @@ public static class OverseasStockTools
         string? to,
         int unit,
         bool includeChart,
+        string? theme,
         CancellationToken cancellationToken)
     {
         if (!DatasetHandleCache.TryGet<OverseasChartDataset>(datasetId, out OverseasChartDataset? dataset) || dataset is null)
@@ -768,6 +780,9 @@ public static class OverseasStockTools
                 withWarmup: null,
                 cancellationToken).ConfigureAwait(false);
 
+            string? themeHint = string.IsNullOrWhiteSpace(theme)
+                ? dataset.ThemeHint
+                : CandlestickChartBuilder.NormalizeThemeHint(theme);
             OverseasChartDataset updated = dataset with
             {
                 PeriodType = refreshed.PeriodType,
@@ -779,6 +794,7 @@ public static class OverseasStockTools
                 Indicators = refreshed.Indicators,
                 Context = refreshed.Context,
                 Summary = refreshed.Summary,
+                ThemeHint = themeHint,
             };
             if (!DatasetHandleCache.TryUpdate(datasetId, updated))
                 return McpJson.ErrorResult("Unknown or expired dataset_id.", new { dataset_id = datasetId });
@@ -808,7 +824,8 @@ public static class OverseasStockTools
                         refreshed.Indicators,
                         dataset.IndicatorSpecs,
                         dataset.Name,
-                        CurrencyHint(dataset.Symbol.Exchcd)),
+                        CurrencyHint(dataset.Symbol.Exchcd),
+                        themeHint),
                 }
                 : null;
 
@@ -1393,5 +1410,6 @@ public static class OverseasStockTools
         ChartContext Context,
         AnalyticalSummary Summary,
         bool Adjusted,
-        DateTimeOffset CreatedAtUtc);
+        DateTimeOffset CreatedAtUtc,
+        string? ThemeHint = null);
 }

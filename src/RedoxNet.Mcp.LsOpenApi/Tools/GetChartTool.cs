@@ -68,6 +68,7 @@ public static class GetChartTool
     /// <see langword="true"/> forces warm-up even with explicit <paramref name="from"/>;
     /// <see langword="false"/> skips warm-up even when <paramref name="from"/> is null.
     /// </param>
+    /// <param name="theme">Optional chart theme override: <c>"light"</c>, <c>"dark"</c>, or <c>"auto"</c>/<see langword="null"/> (default). Stored on the dataset so follow-up ls_add_indicator / ls_reframe_chart inherit it. See docs/MCP-APPS-INTEROP.md §3 Q8.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Text content with a compact analytical summary and dataset handle, plus an optional <c>structuredContent.chart</c> for inline rendering.</returns>
     [McpServerTool(Name = "ls_get_chart")]
@@ -124,6 +125,8 @@ public static class GetChartTool
         string? name = null,
         [Description("Warm-up policy override. Omit (null) for auto: pad when `from` is unspecified, skip when `from` is given. Pass true to force pad with explicit `from` (analyze trends inside a narrow window). Pass false to skip pad even without `from` (fastest read; long-period indicators may be null — check summary.coverage to explain why).")]
         bool? with_warmup = null,
+        [Description("Optional chart theme override: \"light\", \"dark\", or \"auto\" (default). Pass when the user explicitly asks for a dark/light chart (e.g. \"다크 차트로 보여줘\") — the iframe overrides hostContext.theme. Follow-up ls_add_indicator / ls_reframe_chart on the same dataset_id inherit this unless overridden.")]
+        string? theme = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(shcode))
@@ -186,12 +189,14 @@ public static class GetChartTool
                     f.Context,
                     f.Summary)).ToList();
 
+            string? themeHint = CandlestickChartBuilder.NormalizeThemeHint(theme);
             string datasetId = DatasetHandleCache.Add("chart", new ChartDataset(
                 shcode,
                 name,
                 periods,
                 datasetFrames,
-                DateTimeOffset.UtcNow));
+                DateTimeOffset.UtcNow,
+                themeHint));
 
             if (periods.Count == 1)
             {
@@ -233,7 +238,8 @@ public static class GetChartTool
                     structured = new JsonObject
                     {
                         ["chart"] = CandlestickChartBuilder.Build(
-                            shcode, only.PeriodType, only.Candles, only.Indicators, parsedIndicators, name),
+                            shcode, only.PeriodType, only.Candles, only.Indicators, parsedIndicators, name,
+                            currency: null, themeHint: themeHint),
                     };
                 }
                 CallToolResult singleResult = McpJson.OkResult(singleText, structured);
@@ -390,6 +396,8 @@ public static class GetChartTool
         string? period_type = null,
         [Description("If true, return an updated Plotly chart spec through structuredContent.chart. Default true.")]
         bool include_chart = true,
+        [Description("Optional chart theme override: \"light\", \"dark\", or \"auto\". Null (default) inherits the dataset's theme from the original ls_get_chart call. Pass to switch theme mid-conversation (e.g. \"이걸 다크로 바꿔서\").")]
+        string? theme = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(dataset_id))
@@ -403,7 +411,7 @@ public static class GetChartTool
         // Overseas chart datasets share the same handle cache; route to the
         // overseas tool when the handle resolves to one of its payloads.
         CallToolResult? overseas = await OverseasStockTools.TryAddIndicatorAsync(
-            apiClient, dataset_id, specToAdd, include_chart, cancellationToken).ConfigureAwait(false);
+            apiClient, dataset_id, specToAdd, include_chart, theme, cancellationToken).ConfigureAwait(false);
         if (overseas is not null)
             return overseas;
 
@@ -443,7 +451,13 @@ public static class GetChartTool
                 refreshed.Context,
                 summary);
 
-            ChartDataset updatedDataset = ReplaceFrame(dataset, updatedFrame);
+            // theme=null inherits dataset's stored ThemeHint; non-null overrides
+            // and persists so subsequent ls_add_indicator / ls_reframe_chart
+            // calls keep the new theme without re-passing it.
+            string? themeHint = string.IsNullOrWhiteSpace(theme)
+                ? dataset.ThemeHint
+                : CandlestickChartBuilder.NormalizeThemeHint(theme);
+            ChartDataset updatedDataset = ReplaceFrame(dataset, updatedFrame) with { ThemeHint = themeHint };
             if (!DatasetHandleCache.TryUpdate(dataset_id, updatedDataset))
                 return McpJson.ErrorResult("Unknown or expired dataset_id.", new { dataset_id });
 
@@ -467,7 +481,9 @@ public static class GetChartTool
                         updatedFrame.Candles,
                         updatedFrame.Indicators,
                         specs,
-                        dataset.Name),
+                        dataset.Name,
+                        currency: null,
+                        themeHint: themeHint),
                 }
                 : null;
 
@@ -509,6 +525,8 @@ public static class GetChartTool
         int minute_unit = 5,
         [Description("If true, return an updated Plotly chart spec through structuredContent.chart. Default true.")]
         bool include_chart = true,
+        [Description("Optional chart theme override: \"light\", \"dark\", or \"auto\". Null (default) inherits the dataset's theme. Pass to switch theme mid-conversation.")]
+        string? theme = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(dataset_id))
@@ -519,7 +537,7 @@ public static class GetChartTool
         // Overseas chart datasets share the same handle cache; route to the
         // overseas tool when the handle resolves to one of its payloads.
         CallToolResult? overseas = await OverseasStockTools.TryReframeAsync(
-            apiClient, dataset_id, period_type, count, from, to, minute_unit, include_chart, cancellationToken).ConfigureAwait(false);
+            apiClient, dataset_id, period_type, count, from, to, minute_unit, include_chart, theme, cancellationToken).ConfigureAwait(false);
         if (overseas is not null)
             return overseas;
 
@@ -559,7 +577,10 @@ public static class GetChartTool
                 frame.Context,
                 summary);
 
-            ChartDataset updatedDataset = ReplaceWithSingleFrame(dataset, updatedFrame);
+            string? themeHint = string.IsNullOrWhiteSpace(theme)
+                ? dataset.ThemeHint
+                : CandlestickChartBuilder.NormalizeThemeHint(theme);
+            ChartDataset updatedDataset = ReplaceWithSingleFrame(dataset, updatedFrame) with { ThemeHint = themeHint };
             if (!DatasetHandleCache.TryUpdate(dataset_id, updatedDataset))
                 return McpJson.ErrorResult("Unknown or expired dataset_id.", new { dataset_id });
 
@@ -583,7 +604,9 @@ public static class GetChartTool
                         frame.Candles,
                         frame.Indicators,
                         specs,
-                        dataset.Name),
+                        dataset.Name,
+                        currency: null,
+                        themeHint: themeHint),
                 }
                 : null;
 

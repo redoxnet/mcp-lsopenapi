@@ -26,7 +26,23 @@
         --badge-fg: #c7d2fe;
       }
     }
-    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); }
+    /* Authoritative override when JS resolves a theme (hostContext.theme or
+       spec _themeHint). Iframe `prefers-color-scheme` is unreliable across
+       hosts — body.theme-dark / body.theme-light forces the right palette
+       regardless. See docs/MCP-APPS-INTEROP.md §3 Q8. */
+    body.theme-light {
+      --fg: #1a1a1a; --fg-muted: #6b6b6b; --bg: #ffffff;
+      --bg-soft: #f5f5f7; --border: #e2e2e6;
+      --badge-bg: #eef2ff; --badge-fg: #3730a3;
+    }
+    body.theme-dark {
+      --fg: #e8e8e8; --fg-muted: #9a9a9a; --bg: #1a1a1a;
+      --bg-soft: #232326; --border: #2e2e33;
+      --badge-bg: #1e1b4b; --badge-fg: #c7d2fe;
+    }
+    /* Body background stays transparent so the host card shows through
+       — this is the actual fix for "white chart card on dark host". */
+    html, body { margin: 0; padding: 0; background: transparent; color: var(--fg); }
     body {
       font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
             "Malgun Gothic", "맑은 고딕", "Noto Sans KR", system-ui, sans-serif;
@@ -174,15 +190,50 @@
       return hostContext.platform === "mobile" || (w && w < NARROW_PX);
     }
 
-    function applyTheme(layout) {
-      const dark = hostContext.theme === "dark"
-                || (!hostContext.theme && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    // Resolve theme from (1) tool spec override (`spec.layout.template?.layout.colorway`
+    // is *not* the signal — we use a dedicated `_themeHint` field set by the
+    // builder when the tool param overrides), (2) host signal hostContext.theme,
+    // (3) iframe `prefers-color-scheme`. The chart layout *backgrounds* default
+    // to transparent (set by builders), so the host card's bg shows through —
+    // theme detection only drives axis/grid/font colors for readability.
+    //
+    // Track A diagnostic: the `[theme]` console.log surfaces which signal won
+    // and what the iframe's media query saw. When inspecting a host in dev
+    // tools, this single line answers "did the host send hostContext.theme,
+    // and does the iframe's prefers-color-scheme actually follow the parent?"
+    // — the two questions that drove the v1.5.1 investigation.
+    // See docs/MCP-APPS-INTEROP.md §3 Q8 for the per-host empirical record.
+    function resolveDark(spec) {
+      const hint = spec?.layout?._themeHint;
+      if (hint === "dark") return true;
+      if (hint === "light") return false;
+      if (hostContext.theme === "dark") return true;
+      if (hostContext.theme === "light") return false;
+      return window.matchMedia("(prefers-color-scheme: dark)").matches;
+    }
+
+    function applyTheme(layout, spec) {
+      const dark = resolveDark(spec);
       const fg = dark ? "#e8e8e8" : "#1a1a1a";
-      const bg = dark ? "#1a1a1a" : "#ffffff";
       const grid = dark ? "#2e2e33" : "#e2e2e6";
+      // Force CSS vars (panel/table/badge) to follow the resolved theme even
+      // when the iframe's prefers-color-scheme disagrees with the host.
+      document.body.classList.toggle("theme-dark", dark);
+      document.body.classList.toggle("theme-light", !dark);
+      try {
+        console.log(
+          "[theme] resolved=", dark ? "dark" : "light",
+          "hostContext.theme=", hostContext.theme,
+          "matchMedia dark=", window.matchMedia("(prefers-color-scheme: dark)").matches,
+          "spec hint=", layout?._themeHint ?? "(none)");
+      } catch (_) { /* no console — ignore */ }
       return Object.assign({
-        paper_bgcolor: bg,
-        plot_bgcolor: bg,
+        // Transparent by default — host card background shows through on
+        // hosts that don't propagate theme. Individual builders may set
+        // explicit bg colors (e.g. a printable export) and those win via the
+        // Object.assign(layout) below.
+        paper_bgcolor: "rgba(0,0,0,0)",
+        plot_bgcolor: "rgba(0,0,0,0)",
         font: { color: fg, family: "inherit" },
         xaxis: Object.assign({ gridcolor: grid, zerolinecolor: grid }, layout?.xaxis || {}),
         yaxis: Object.assign({ gridcolor: grid, zerolinecolor: grid }, layout?.yaxis || {}),
@@ -206,7 +257,7 @@
         }
         return trace;
       });
-      const layout = applyTheme(spec.layout);
+      const layout = applyTheme(spec.layout, spec);
       Plotly.newPlot("chart", data, layout, {
         responsive: true,
         displayModeBar: false,
