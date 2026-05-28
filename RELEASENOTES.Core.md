@@ -1,5 +1,13 @@
 ﻿# Release Notes — RedoxNet.LsOpenApi.Core
 
+## v1.6.0 (unreleased)
+
+**Lockstep release with `RedoxNet.Mcp.LsOpenApi` 1.6.0.** The v1.6 work
+is entirely in the Mcp package (`ls_account_*` family + portfolio.db
+schema-split into paper / live registries); Core ships unchanged in
+behaviour and surface. Full context in
+[`RELEASENOTES.Mcp.md`](RELEASENOTES.Mcp.md) v1.6.0.
+
 ## v1.5.1 (2026-05-27)
 
 Chart theme propagation slice. `CandlestickChartBuilder.Build` accepts

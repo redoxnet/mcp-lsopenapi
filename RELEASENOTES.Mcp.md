@@ -1,5 +1,161 @@
 ﻿# Release Notes — RedoxNet.Mcp.LsOpenApi
 
+## v1.6.0 (unreleased)
+
+**Account inquiry family + schema-split live registry.** v1.6 introduces
+the ten `ls_account_*` MCP tools (read-only inquiry against the
+appkey-bound LS broker account) and corrects a v1.6-dev design flaw that
+let manually-tracked paper portfolios shadow the LS live label.
+
+### Added — `ls_account_*` family (10 tools)
+
+`ls_account_holdings` (t0424), `ls_account_orders` (t0425),
+`ls_account_balance` (CSPAQ12200), `ls_account_bep` (CSPAQ12300),
+`ls_account_credit_limit` (CSPAQ00600),
+`ls_account_max_order_qty` (CSPBQ00200),
+`ls_account_order_history` (CSPAQ13700),
+`ls_account_transactions` (CDPCQ04700),
+`ls_account_performance` (FOCCQ33600),
+`ls_account_daily_pnl` (t0150 today / t0151 specific date).
+
+Each call is a fresh REST snapshot — no caching, no daemon. None of the
+tools accept an `account` argument: LS account-inquiry TRs do not take
+`AcntNo` in the request body, the appkey's authenticated session
+resolves to one subaccount server-side and only echoes the resolved
+number in the response (programgarden's
+`CSPAQ12300InBlock1` / `CSPAQ22200InBlock1` confirms this is by design,
+not an omission). v1.7 trading actuators will build on the same routing.
+
+Surface: 40 → 50 standard / 43 → 53 all. Token budget 32k → 38k / 36k →
+42k.
+
+### Changed (BREAKING) — paper portfolio is LS-mode agnostic
+
+Migration v8 drops the `accounts.mode` column added by v6. The
+mode-keyed indexes (`idx_accounts_nickname_mode` /
+`idx_accounts_mode_default`) are replaced by a single
+nickname-uniqueness index plus a default-promotion index. Paper
+portfolios are the user's multi-broker manual book — they have no
+LS-side identity to begin with — so segregating them by `LS_MARKET`
+just hid the user's records every time they swapped appkey pairs.
+After v8, `ls_holdings_list`, `ls_account(action="list")`'s
+`paper_accounts` array, and every paper write (`ls_holding`,
+`ls_account upsert/remove/rename_broker`) operate on the full paper
+book regardless of the loaded appkey. Live LS rows continue to
+live in the separate `ls_accounts` table — which stays mode-keyed,
+because the live registry IS appkey-bound by definition.
+
+Migration v8 also defensively disambiguates any duplicate nicknames
+left over from v6's cross-mode tolerance (suffixes the non-lowest-id
+row with ` (real)` / ` (virtual)`) so the new single-column UNIQUE
+index can be created without conflict. AccountInfo / AccountSummary
+drop their `mode` field; the PortfolioExportDto schema drops
+account `mode` too.
+
+### Changed (BREAKING) — paper / live account registries are now physically separate
+
+The v1.6-dev iterations stored both paper-portfolio accounts (broker
+label as display) and auto-discovered LS broker accounts (broker
+hardcoded to `"LS"`) in the same `accounts` table. A user with a default
+paper-portfolio row would see `_meta.account_used` echo that row's
+identity even though the LS data came from a completely unrelated
+appkey-bound account. The E2E run in `todo/E2E-v1.6-claude.txt`
+exhibited this exact confusion (paper "유안타-001" shadowed the LS row).
+
+v1.6 release splits the two surfaces into physically distinct stores:
+
+- **Paper portfolio** stays in `accounts` and is the user-curated
+  multi-broker book accessed via `ls_account` / `ls_holding` /
+  `ls_holdings_list`. `broker` is purely a display label — `"한투"`,
+  `"유안타증권"`, `"LS증권 페이퍼"` are all valid.
+- **LS live broker** moves to a new `ls_accounts` table, keyed by
+  `(account_no, mode)`. Auto-discovered from successful `ls_account_*`
+  responses. Tools that match this surface read only from
+  `ls_accounts`; paper rows can never shadow them.
+
+Migration v7 backfills any v1.6-dev `accounts` rows with `broker='LS'`
+into `ls_accounts` and deletes the originals (the labels move with them).
+
+### Changed (BREAKING) — `ls_account(action="list")` response shape
+
+The response is now an object with two keys instead of a flat array:
+
+```json
+{
+  "paper_accounts": [ /* AccountSummary[] */ ],
+  "live_accounts":  [ /* LsLiveAccountInfo[] */ ]
+}
+```
+
+so the model can tell which side it is looking at without inspecting
+`broker` labels.
+
+### Added — `ls_account(action="set_live_nickname")`
+
+Sets or clears a friendly nickname on a live LS account row. Requires
+`account_number` (the LS-side AcntNo) and `nickname` (empty clears).
+Live broker accounts are NOT created via `ls_account` — they are
+auto-discovered on the first successful `ls_account_balance` /
+`ls_account_bep` / `ls_account_credit_limit` / `ls_account_max_order_qty`
+call (the four CSPAQ/CSPBQ TRs that echo `AcntNo` in their OutBlock1).
+`ls_account_holdings` / `ls_account_orders` / `ls_account_daily_pnl`
+work fine without prior discovery but echo a synthetic
+`account_used.account_number = null` until one of the CSPAQ tools primes
+the registry.
+
+### Changed — `_meta.account_used` shape on `ls_account_*`
+
+The echo is now `LsLiveAccountInfo`:
+
+```
+{ account_number, nickname, mode, discovered, branch_name?, account_name? }
+```
+
+No `is_default` field (the live registry has at most one row per mode
+in practice), no `broker` field (live rows are inherently LS-broker so
+the label was always redundant). `branch_name` / `account_name` are
+populated when CSPAQ12200 has answered at least once (cached
+in `ls_accounts`).
+
+### Virtual (모의투자) account coverage matrix
+
+Empirical findings from v1.6 E2E with a virtual appkey pair, captured
+in `docs/LS-API-QUIRKS.md` §4.2f:
+
+- **Works**: `ls_account_holdings`, `ls_account_orders`,
+  `ls_account_balance`, `ls_account_bep`, `ls_account_max_order_qty`,
+  `ls_account_order_history`, `ls_account_transactions`,
+  `ls_account_daily_pnl`, every read-only market-data TR (quote /
+  chart / index / industry / theme / investor flow / screeners),
+  `ls_get_global_market_quote` (t3521 — overseas indices / FX / futures).
+- **Blocked by LS with `rsp_cd: "01900" / "모의투자에서는 해당업무가 제공되지 않습니다"`**:
+  `ls_account_performance` (FOCCQ33600),
+  `ls_account_credit_limit` (CSPAQ00600).
+- **Unavailable (separate appkey track required)**: overseas
+  individual stocks (`ls_search_overseas_stock`, `ls_get_overseas_quote`,
+  `ls_get_overseas_chart`). LS issues the `해외주식 API` key track
+  separately, with no `모의투자` counterpart — overseas individual
+  stocks are real-money only.
+
+The wrapper passes the `01900` business-level error through unchanged
+so the model can narrate the limitation honestly.
+
+### LS mode reality
+
+REST endpoint is identical for real and virtual: `https://openapi.ls-sec.co.kr:8080`.
+Only WSS splits. Mode is determined entirely by which appkey pair
+(`LS_APPKEY` / `LS_APPSECRETKEY`) is loaded; `LS_MARKET` is informational
+labelling that tags `ls_accounts` rows so real-mode and virtual-mode
+(모의투자) registrations stay separate. To target a different
+subaccount, swap to that account's appkey pair. See
+`docs/LS-API-QUIRKS.md` §4.2c / §4.2d for the full story.
+
+### Tests
+
+683 Mcp tests pass (was 672); +11 new (`SqliteLsLiveAccountRepositoryTests`
+direct coverage, `LsAccountResolverTests` rewritten for the
+schema-split, paper-portfolio non-shadowing pinned).
+
 ## v1.5.1 (2026-05-27)
 
 **Chart theme propagation across SEP-1865 hosts.** Follow-up to v1.5

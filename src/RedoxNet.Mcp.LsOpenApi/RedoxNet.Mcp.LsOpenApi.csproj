@@ -11,7 +11,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 
-    <Version>1.5.1</Version>
+    <Version>1.6.0</Version>
     <PackageId>RedoxNet.Mcp.LsOpenApi</PackageId>
 	<Authors>Jong Hyun Kim</Authors>
     <Company>RedoxNet</Company>
@@ -24,7 +24,7 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>icon.png</PackageIcon>
     <Copyright>Copyright (c) 2026 RedoxNet</Copyright>
-    <PackageReleaseNotes>v1.5.1 — Chart theme propagation across SEP-1865 hosts. PlotlyTemplate.html iframe body and applyTheme() defaults switch to transparent backgrounds (paper_bgcolor / plot_bgcolor / body background); CandlestickChartBuilder joins the other builders in emitting transparent layout backgrounds, so the host card shows through and dark hosts no longer render a white chart card. Chart-emitting tools (ls_get_chart / ls_get_overseas_chart / ls_add_indicator / ls_reframe_chart) gain an optional theme="auto|light|dark" parameter that pins the chart palette; the hint persists on the dataset so follow-up calls inherit it. Added a [theme] diagnostic console.log in the iframe to enable per-host empirical investigation. Tool surface unchanged (40 standard / 43 all). Lockstep with RedoxNet.LsOpenApi.Core 1.5.1. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Mcp.md.</PackageReleaseNotes>
+    <PackageReleaseNotes>v1.6.0 — Account inquiry family + schema-split live registry. Ten new ls_account_* MCP tools (read-only inquiry against the appkey-bound LS broker account): holdings, orders, balance, bep, credit_limit, max_order_qty, order_history, transactions, performance, daily_pnl. Surface 40→50 standard / 43→53 all. portfolio.db now keeps paper portfolios (accounts table — broker is purely a display label) and the auto-discovered live LS row (new ls_accounts table) in physically separate stores so a paper "LS증권" label never shadows the live broker echo. BREAKING: ls_account(action="list") returns {paper_accounts, live_accounts}; ls_account_* tools drop the `account` parameter (LS account-inquiry TRs are appkey-routed server-side, not client-selectable). New ls_account(action="set_live_nickname"). LS REST endpoint is identical for real and virtual modes — only the appkey pair distinguishes them. Lockstep with RedoxNet.LsOpenApi.Core 1.6.0. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Mcp.md.</PackageReleaseNotes>
 
     <PackageType>McpServer</PackageType>
     <PackAsTool>true</PackAsTool>

@@ -1,8 +1,8 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.redoxnet/lsopenapi",
-  "description": "LS Securities OpenAPI MCP server: Korean + overseas stocks, charts, screeners, portfolio.",
-  "version": "1.5.1",
+  "description": "LS Securities OpenAPI MCP server: Korean + overseas stocks, charts, screeners, portfolio, accounts.",
+  "version": "1.6.0",
   "repository": {
     "url": "https://github.com/redoxnet/mcp-lsopenapi",
     "source": "github"
@@ -12,7 +12,7 @@
       "registryType": "nuget",
       "registryBaseUrl": "https://api.nuget.org/v3/index.json",
       "identifier": "RedoxNet.Mcp.LsOpenApi",
-      "version": "1.5.1",
+      "version": "1.6.0",
       "runtimeHint": "dnx",
       "transport": {
         "type": "stdio"

@@ -11,7 +11,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 
-    <Version>1.5.1</Version>
+    <Version>1.6.0</Version>
     <PackageId>RedoxNet.LsOpenApi.Core</PackageId>
     <Authors>Jong Hyun Kim</Authors>
     <Company>RedoxNet</Company>
@@ -24,7 +24,7 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
 	<PackageIcon>icon.png</PackageIcon>
     <Copyright>Copyright (c) 2026 RedoxNet</Copyright>
-    <PackageReleaseNotes>v1.5.1 — Chart theme propagation slice for RedoxNet.Mcp.LsOpenApi 1.5.1. CandlestickChartBuilder.Build accepts an optional themeHint ("light" / "dark" / null) embedded in layout._themeHint; CandlestickChartBuilder also now emits transparent layout backgrounds to match the other builders so the host card shows through regardless of theme signal. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Core.md for full notes.</PackageReleaseNotes>
+    <PackageReleaseNotes>v1.6.0 — Lockstep release with RedoxNet.Mcp.LsOpenApi 1.6.0. v1.6 work is entirely in the Mcp package (ls_account_* family + portfolio.db schema-split into paper / live registries); Core ships unchanged in behaviour and surface. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Core.md for full notes.</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>
