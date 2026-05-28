@@ -136,11 +136,11 @@ You need an **AppKey** and **AppSecretKey** pair issued by LS Securities to use 
 LS issues **two separate AppKey / AppSecretKey pairs** — one for the real (실투) account and one for the virtual (모의투자) account. They are issued from the same portal page (**LS Securities → 고객센터 → 매매시스템 → API** for the Korean menu): the `Open API` radio gives a real pair, the `모의투자 Open API` radio gives a virtual pair. The REST endpoint is identical for both — `https://openapi.ls-sec.co.kr:8080` — so the appkey pair itself determines which account answers a TR call. See [LS-API-QUIRKS §4.2d](docs/LS-API-QUIRKS.md) for the full explanation.
 
 What this means for `LS_MARKET`:
-- It is **informational and labelling** — tags rows in `portfolio.db` so a real-mode registration and a virtual-mode registration don't collide.
-- It does **NOT** switch the REST endpoint or otherwise route differently.
-- Set it to match the loaded appkey pair: `real` when `LS_APPKEY` is the real-account pair, `virtual` when it's the mock pair. A mismatch (real key + `LS_MARKET=virtual`) won't break anything — the broker still answers with the real account — but the auto-discovered nickname will read `LS-virtual-{acntno}` which is confusing later. The model can guide the user to rename via `ls_account(action="upsert")`.
+- It is **NOT a switch that flips the same key between modes**. It is a **runtime declaration of which kind of key pair is currently injected** — real (실전용) or virtual (모의용).
+- The REST endpoint is already decided by the appkey pair itself. `LS_MARKET` only labels the server's own state: portfolio.db row namespacing, the model-facing `mode` echo on `_meta.account_used`, and (in v1.7) the placement-safety gating.
+- Set it to match the loaded appkey pair: `real` when `LS_APPKEY` is the real-account pair, `virtual` when it's the mock pair. A mismatch (real key + `LS_MARKET=virtual`) won't break anything — the broker still answers from the key — but the auto-discovered nickname will read `LS-virtual-{acntno}` even though the data is real. Relabel via `ls_account(action="upsert")` to clean it up.
 
-To switch between modes in practice, swap the appkey pair in your host config and restart the MCP server.
+To switch between modes in practice, swap **both** the appkey pair **and** `LS_MARKET` in the host config and restart the MCP server.
 
 ### Security Notes
 

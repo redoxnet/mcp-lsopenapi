@@ -307,12 +307,16 @@ appsecretkey pairs** for the real account and the virtual (모의투자)
 account. The token issued from a given pair is tied to that account.
 Same REST URL + different keys → different account answers.
 
-**Implication for `LS_MARKET`:** the env var is *informational and
-namespacing*, not routing. It tags `portfolio.db` rows so two locally
-registered accounts (one real, one virtual) don't collide. The actual
-LS routing happens at the appkey level — set `LS_APPKEY` /
-`LS_APPSECRETKEY` to the pair that matches the intended account, and
-set `LS_MARKET` to match for the local labelling.
+**Framing for `LS_MARKET`:** it is **NOT a switch that swaps modes on
+the same key** — it is a **runtime declaration of which kind of key
+pair is currently injected** (실전용 vs 모의용). The REST routing is
+already decided by the appkey; `LS_MARKET` just lets the server label
+its own state correctly (portfolio.db row separation, the model-facing
+`mode` echo, future v1.7 placement-safety gating). A mismatch (real
+key + `LS_MARKET=virtual`) won't break the call — LS responds based on
+the key — but the nickname auto-discovery will tag the discovered row
+`LS-virtual-{acntno}` even though the data is real, and the user has
+to relabel via `ls_account(action="upsert")` later.
 
 **Status:** ✅ v1.6 — discovered after the user's smoke showed real
 account data with `LS_MARKET=virtual` set, because the loaded appkey

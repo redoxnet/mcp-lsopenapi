@@ -96,7 +96,7 @@ LS가 큐레이션한 99개 신호 카탈로그(이평선 정배열·MA 돌파·
 
 **사전 준비.** `dnx`는 **.NET SDK 10 이상**에 들어 있는 dotnet 도구 실행기입니다. 아직 없으면 [.NET 다운로드](https://dotnet.microsoft.com/download/dotnet/10.0)에서 SDK를 먼저 설치하세요 (Windows/macOS/Linux 모두 지원). 터미널에서 `dnx --help`가 도움말을 출력하면 준비 완료입니다.
 
-LS증권 OpenAPI 키 한 쌍(`AppKey` + `AppSecretKey`)이 필요합니다 — **LS증권 → 고객센터 → 매매시스템 → API** 에서 발급. 실투용과 모의투자용은 *별도 키 페어*입니다 ([LS-API-QUIRKS §4.2d](docs/LS-API-QUIRKS.md)) — 한 모드를 쓰려면 그 모드 키를 `LS_APPKEY` / `LS_APPSECRETKEY`로 로드. v1.6의 `LS_MARKET`은 portfolio.db 라벨링용이지 REST 라우팅을 바꾸지 않습니다 (REST endpoint는 두 모드가 동일). 자세한 단계는 [영문 README](README.en.md#getting-an-api-key) 참조.
+LS증권 OpenAPI 키 한 쌍(`AppKey` + `AppSecretKey`)이 필요합니다 — **LS증권 → 고객센터 → 매매시스템 → API** 에서 발급. 실투용과 모의투자용은 *별도 키 페어*입니다 ([LS-API-QUIRKS §4.2d](docs/LS-API-QUIRKS.md)) — 한 모드를 쓰려면 그 모드 키를 `LS_APPKEY` / `LS_APPSECRETKEY`로 로드. **`LS_MARKET`은 같은 키를 모드만 바꿔 쓰는 스위치가 아니라, 현재 주입된 키가 실전용인지 모의용인지 명시하는 런타임 모드**입니다 — REST endpoint는 두 모드 동일, 라우팅은 키가 결정. 자세한 단계는 [영문 README](README.en.md#getting-an-api-key) 참조.
 
 ### Claude Desktop / Claude Code
 
