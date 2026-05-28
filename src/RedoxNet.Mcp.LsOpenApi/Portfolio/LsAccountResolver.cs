@@ -5,34 +5,32 @@ using RedoxNet.LsOpenApi.Core.Auth;
 namespace RedoxNet.Mcp.LsOpenApi.Portfolio;
 
 /// <summary>
-/// Resolves which LS broker account a v1.6 <c>ls_account_*</c> tool should
-/// label its response with.
-/// </summary>
-/// <remarks>
-/// LS account-inquiry TRs do not take <c>account_number</c> as input — the
-/// access token tells LS which account to return. So the resolver's role is
-/// purely about *labelling*: pick the right nickname / mode tag for the
-/// <c>_meta.account_used</c> echo, and (when the user pre-registered an
-/// account via <c>ls_account(action="upsert")</c>) verify the identifier
-/// makes sense. When the registry is empty, the resolver returns
-/// <see langword="null"/> so the caller can fall back to auto-discovery from
-/// the TR response's <c>AcntNo</c> field.
+/// Provides the <c>_meta.account_used</c> echo for v1.6 <c>ls_account_*</c>
+/// tools. The account is NOT a routing handle — LS account-inquiry and
+/// trading TRs do not accept <c>AcntNo</c> in their request InBlock; the
+/// authenticated session (via <c>LS_APPKEY</c> / <c>LS_APPSECRETKEY</c>)
+/// resolves to a single subaccount server-side and only echoes the
+/// resolved number back in the response. So the resolver's job is purely
+/// label persistence: read the echo'd AcntNo, upsert into the
+/// <c>ls_accounts</c> store keyed by (account_no, mode), and surface the
+/// resulting row for friendly display.
 /// <para>
-/// The convention matches the v0.7 portfolio write path: when an explicit
-/// identifier is given but does not resolve, <see cref="AccountNotFoundException"/>;
-/// when the registry has multiple accounts and no default,
-/// <see cref="AmbiguousAccountException"/>. The empty-registry case is NOT
-/// an error in v1.6 — the broker tells us which account the appkey owns.
+/// Earlier dev iterations of v1.6 conflated this with the paper-portfolio
+/// <c>accounts</c> table and routed identifier lookups through it, which
+/// let an unrelated paper-portfolio default shadow the LS label and
+/// confuse the model about which account answered. The split into
+/// <see cref="ILsLiveAccountRepository"/> removes that class of bug
+/// entirely. See [[ls-api-quirks-doc]] §4.2e.
 /// </para>
-/// </remarks>
+/// </summary>
 internal sealed class LsAccountResolver
 {
-    readonly IPortfolioRepository _repository;
+    readonly ILsLiveAccountRepository _repository;
     readonly LsMarket _market;
     readonly ILogger<LsAccountResolver> _logger;
 
     public LsAccountResolver(
-        IPortfolioRepository repository,
+        ILsLiveAccountRepository repository,
         LsMarket market,
         ILogger<LsAccountResolver>? logger = null)
     {
@@ -45,68 +43,60 @@ internal sealed class LsAccountResolver
     public string Mode => _market.ToCanonical();
 
     /// <summary>
-    /// Resolves the labelling account for a TR call.
+    /// Returns the registered live row for the active mode, or
+    /// <see langword="null"/> when discovery has not happened yet (cold
+    /// start). Callers use this for the <c>_meta.account_used</c> echo.
     /// </summary>
-    /// <param name="identifier">User-supplied account_number or nickname. Null/empty falls back to default → single-row → null.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The labelling account, or <see langword="null"/> when no account is registered in the active mode (caller should auto-discover from the TR response).</returns>
-    /// <exception cref="AccountNotFoundException">Explicit identifier given but no registered account matched.</exception>
-    /// <exception cref="AmbiguousAccountException">No identifier given, multiple accounts exist, and none is the default.</exception>
-    public async Task<Account?> ResolveAsync(string? identifier, CancellationToken cancellationToken = default)
-    {
-        if (!string.IsNullOrWhiteSpace(identifier))
-        {
-            Account? found = await _repository.GetAccountByIdentifierAsync(identifier!, cancellationToken).ConfigureAwait(false);
-            if (found is not null)
-                return found;
-
-            IReadOnlyList<Account> known = await _repository.ListAccountsAsync(cancellationToken).ConfigureAwait(false);
-            throw new AccountNotFoundException(
-                identifier!,
-                known.Select(SqlitePortfolioRepository.ToAccountInfo).ToList());
-        }
-
-        Account? def = await _repository.GetDefaultAccountAsync(cancellationToken).ConfigureAwait(false);
-        if (def is not null)
-            return def;
-
-        IReadOnlyList<Account> accounts = await _repository.ListAccountsAsync(cancellationToken).ConfigureAwait(false);
-        return accounts.Count switch
-        {
-            0 => null,
-            1 => accounts[0],
-            _ => throw new AmbiguousAccountException(
-                $"Multiple {Mode} accounts exist ({accounts.Count}) and none is marked default. " +
-                $"Pass account=<number or nickname> or set a default via ls_account(action=\"upsert\", set_default=true).",
-                accounts.Select(SqlitePortfolioRepository.ToAccountInfo).ToList()),
-        };
-    }
+    public Task<LsLiveAccount?> GetRegisteredAsync(CancellationToken cancellationToken = default) =>
+        _repository.GetByModeAsync(Mode, cancellationToken);
 
     /// <summary>
-    /// Records a broker-discovered account in portfolio.db so subsequent
-    /// calls in the active mode can resolve it by nickname or set a custom
-    /// label via <c>ls_account(action="upsert")</c>. Idempotent — calling
-    /// twice with the same account_no is a no-op (the existing row stays).
+    /// Upserts a broker-discovered live account row so subsequent calls
+    /// can echo a stable label. Fire-and-forget by intent — any failure
+    /// is logged at Debug and swallowed so the response path still
+    /// returns the user-visible data. Returns the upserted row on
+    /// success, or <see langword="null"/> when the upsert failed or
+    /// <paramref name="accountNo"/> was blank.
     /// </summary>
-    /// <remarks>
-    /// Fire-and-forget by intent: a discovery failure must never block the
-    /// model-facing response. Errors are logged at Debug and swallowed.
-    /// </remarks>
-    public async Task<Account?> RecordDiscoveredAsync(string accountNumber, string? defaultNickname, CancellationToken cancellationToken = default)
+    public async Task<LsLiveAccount?> RecordDiscoveredAsync(
+        string? accountNo,
+        string? branchName = null,
+        string? accountName = null,
+        CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(accountNumber))
+        if (string.IsNullOrWhiteSpace(accountNo))
             return null;
         try
         {
-            string nickname = string.IsNullOrWhiteSpace(defaultNickname)
-                ? $"LS-{Mode}-{accountNumber.TrimStart('A').Trim()}"
-                : defaultNickname.Trim();
-            return await _repository.UpsertAccountAsync(accountNumber.Trim(), nickname, "LS", setDefault: false, cancellationToken).ConfigureAwait(false);
+            return await _repository
+                .UpsertDiscoveredAsync(accountNo!, Mode, branchName, accountName, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Auto-discovery upsert failed for {AccountNumber} (mode={Mode}); proceeding with response-only echo.", accountNumber, Mode);
+            _logger.LogDebug(ex, "Auto-discovery upsert failed for {AccountNumber} (mode={Mode}); proceeding with response-only echo.", accountNo, Mode);
             return null;
         }
+    }
+
+    /// <summary>
+    /// Builds the synchronous echo shape used in <c>_meta.account_used</c>
+    /// for success and error responses. <paramref name="registered"/>
+    /// wins when present; otherwise <paramref name="discoveredAcntNo"/>
+    /// (when present) surfaces as a synthetic <c>discovered=true</c>
+    /// shape so the model can explain "this is the broker-reported
+    /// account number". On full cold-start both are null and the echo
+    /// shape carries only the mode plus <c>discovered=false</c>.
+    /// </summary>
+    public LsLiveAccountInfo BuildEcho(LsLiveAccount? registered, string? discoveredAcntNo = null)
+    {
+        if (registered is not null)
+            return SqliteLsLiveAccountRepository.ToInfo(registered);
+        string? trimmed = string.IsNullOrWhiteSpace(discoveredAcntNo) ? null : discoveredAcntNo.Trim();
+        return new LsLiveAccountInfo(
+            AccountNumber: trimmed,
+            Nickname: null,
+            Mode: Mode,
+            Discovered: !string.IsNullOrEmpty(trimmed));
     }
 }

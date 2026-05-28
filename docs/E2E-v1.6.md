@@ -3,100 +3,102 @@
 MCP host (Claude Desktop / Cowork / Claude Code / Codex / VS Code Chat 등) 에서 한국어로 자연스럽게 던질 프롬프트 세트. 각 프롬프트의 *기대 동작*은 모델이 어떤 도구를 호출해야 하는지 + 응답 envelope에서 무엇이 보여야 하는지를 명시한다.
 
 **사전 준비**:
-1. `scripts/deploy-dev.ps1` 실행 (./deploy 최신화)
+1. `scripts/deploy-dev.ps1` 실행 (./deploy 최신화 — migration v7 + ls_accounts 테이블 신규 적용)
 2. MCP host 재시작 (server는 `D:\Codes\mcp-lsopenapi\deploy\redoxnet-mcp-lsopenapi.exe`)
 3. host config의 `LS_APPKEY` / `LS_APPSECRETKEY` 는 실투 키 페어, `LS_MARKET=real`
-4. portfolio.db는 그대로 둠 (auto-discovery 동작 확인 = `LS-virtual-20856195501` nickname 존재 — 이번 세션에서 자동 등록된 것; 새 세션도 이 row를 그대로 쓰면 됨)
+4. portfolio.db는 그대로 둠. v1.6-dev에서 broker='LS' 로 잘못 들어간 row가 있다면 migration v7이 자동으로 `ls_accounts` 테이블로 이주시킨다 (paper `accounts` 테이블에서는 사라짐).
 
 응답을 paste할 때는 모델이 *어떤 도구를 골랐는지* + *최종 답변에 어떤 숫자/메타가 등장했는지* 둘 다 알려주세요.
+
+> **v1.6 release-blocking fix**: dev 이터레이션에서는 paper-portfolio의 default account가 `_meta.account_used`를 가려서 모델이 유안타 paper portfolio를 LS 실계좌로 착각하던 문제가 있었음. release는 paper(accounts) ↔ live(ls_accounts) 테이블을 **물리적으로 분리**해서 이 클래스 버그를 구조적으로 차단. 자세한 내력은 `docs/LS-API-QUIRKS.md` §4.2e + `RELEASENOTES.Mcp.md` v1.6.0.
 
 ---
 
 ## A. 기본 흐름 (happy path × 10 tools)
 
-각 프롬프트는 한 도구가 호출되어야 함. 모델이 다른 도구를 부르거나 "내가 모른다"고 답하면 routing 문제.
+각 프롬프트는 한 도구가 호출되어야 함. 모델이 다른 도구를 부르거나 "내가 모른다"고 답하면 routing 문제. **`ls_account_*` 10개 도구 모두 `account` 파라미터 없음** — appkey가 자체로 계좌를 결정.
 
 ### A1. ls_account_holdings (t0424)
 ```
 LS 실계좌에 지금 뭐 들어있어?
 ```
-**기대**: `ls_account_holdings` 호출 → 삼성전자 1주 (qty=1, avg≈301,000, cur=현재가) 표시. `_meta.account_used.account_number`에 `20856195501` 등장, `tr_code: "t0424"`, `source: "live"`.
+**기대**: `ls_account_holdings()` 호출 → 보유 종목 표시. `_meta.account_used` shape = `{account_number, nickname?, mode, discovered, branch_name?, account_name?}` (구 shape의 `broker`/`is_default` 없음). `account_number`는 LS가 응답에 echo한 실제 AcntNo (예: `20856195501`). 첫 호출이면 `discovered=false` 가능 — t0424는 응답에 AcntNo가 없어서 cold-start에서는 synthetic이 됨.
 
 ### A2. ls_account_orders (t0425)
 ```
 오늘 주문 현황 보여줘
 ```
-**기대**: `ls_account_orders` 호출. 어제(2026-05-28) 매수 주문은 이미 체결됐으니 *오늘* 새 주문이 없으면 빈 결과. 모델은 "오늘 들어간 주문은 없습니다" 정직하게 narration.
+**기대**: `ls_account_orders()` 호출. t0425 응답에 AcntNo 없음 → A1과 동일한 echo 동작.
 
 ### A3. ls_account_balance (CSPAQ12200)
 ```
 내 LS 계좌 잔고 알려줘
 ```
-**기대**: `ls_account_balance` 호출 → 예수금 500,000 / D2 198,990 / 평가금액 ≈300,000 / 매입금액 301,000 / 평가손익 ≈-1,000. `_meta.tr_code: "CSPAQ12200"` (CSPAQ22200 *아님* — 정정 확인).
+**기대**: `ls_account_balance()` 호출 → 예수금 / D2 / 평가금액 / 매입금액. `_meta.tr_code: "CSPAQ12200"` (CSPAQ22200 아님). **이 호출이 핵심**: CSPAQ12200 응답의 OutBlock1.AcntNo + OutBlock2.BrnNm / AcntNm를 `ls_accounts`에 upsert → 이후 모든 `ls_account_*` 호출의 echo가 `discovered=true` + nickname/branch_name/account_name 채워서 나옴.
 
 ### A4. ls_account_bep (CSPAQ12300)
 ```
 보유 종목 BEP 단가 알려줘
 ```
-**기대**: `ls_account_bep` 호출. 삼성전자 평균단가 ≈301,000~301,695 표시. SellPrc (BEP) 필드는 현재 0으로 옴 — minor follow-up (메모리 §"Minor follow-ups" 참조).
+**기대**: `ls_account_bep()` 호출. 평균단가 등 표시. CSPAQ12300도 응답에 AcntNo + AcntNm가 있어서 A3 안 거쳤어도 첫 호출이면 여기서 auto-discovery 발화. SellPrc (BEP 매도가) 필드가 0으로 옴 — minor follow-up (별도 메모).
 
 ### A5. ls_account_order_history (CSPAQ13700)
 ```
 어제 주문 내역 좀 보여줘
 ```
-**기대**: `ls_account_order_history(order_date="2026-05-28")` 또는 모델이 그제 날짜 변환. 005930 매수 1주 #11028 체결 row 표시.
+**기대**: `ls_account_order_history(order_date="...")` 호출. CSPAQ13700도 OutBlock1.AcntNo echo — auto-discovery 발화.
 
 ### A6. ls_account_transactions (CDPCQ04700)
 ```
 최근 일주일 거래 내역 정리해줘
 ```
-**기대**: `ls_account_transactions(start_date, end_date)`. 입금/매수 row 표시. 모델이 "입금 1건 + 매수 1건" 형식으로 narration.
+**기대**: `ls_account_transactions(start_date, end_date)` 호출. CDPCQ04700 OutBlock1.AcntNo echo. 입금/매수 row 표시.
 
 ### A7. ls_account_performance (FOCCQ33600)
 ```
 이번 달 수익률 어때?
 ```
-**기대**: `ls_account_performance(start_date, end_date, term="monthly" 또는 "daily")` 호출. 평가금액 변동 + 수익률 표시. 거래 1건만 있어 short period라 의미 있는 trend는 안 나올 수 있음 — 모델이 "데이터가 짧다"고 narration하면 좋음.
+**기대**: `ls_account_performance(start_date, end_date, term="monthly"/"daily")` 호출. FOCCQ33600은 OutBlock2에 AcntNm까지 있어 wrapper가 캐시한다.
 
 ### A8. ls_account_daily_pnl (t0150)
 ```
 오늘 매매일지 보여줘
 ```
-**기대**: `ls_account_daily_pnl` 호출 (today → t0150). 오늘 매매가 없으면 `count=0, total=0` 빈 응답. `_meta.tr_code: "t0150"`.
+**기대**: `ls_account_daily_pnl()` 호출 (today → t0150). t0150은 AcntNo 미echo — synthetic echo 가능.
 
 ### A9. ls_account_daily_pnl (t0151 — 어제)
 ```
 어제 매매일지 보여줘
 ```
-**기대**: `ls_account_daily_pnl(date="2026-05-28")` → t0151. 어제 005930 매수 1주 (수수료 10원, 매수금액 301,000) row 표시. `_meta.tr_code: "t0151"`.
+**기대**: `ls_account_daily_pnl(date="<어제>")` → t0151. t0151도 AcntNo 미echo.
 
 ### A10. ls_account_credit_limit (CSPAQ00600)
 ```
 신용한도 얼마 남았어?
 ```
-**기대**: `ls_account_credit_limit` 호출 → `rsp_cd: "02062"` "신용계좌가 아닙니다" error envelope. 모델이 "이 계좌는 신용 거래 약정이 없어서 한도 조회가 막혀있다"고 정직하게 narration.
+**기대**: `ls_account_credit_limit()` 호출 → `rsp_cd: "02062"` "신용계좌가 아닙니다" error envelope. 모델이 "이 계좌는 신용 거래 약정이 없어서 한도 조회가 막혀있다"고 narration.
 
 ### A11. ls_account_max_order_qty (CSPBQ00200)
 ```
 지금 가격으로 삼성전자 최대 몇 주 살 수 있어?
 ```
-**기대**: `ls_account_max_order_qty(symbol="005930", side="buy")` 호출. 현재가 기준 1주 가능 (D2 ≈199k / 300k = 0주이지만 100% 증거금률 계좌면 1주). `margin_tiers` 응답 확인.
+**기대**: `ls_account_max_order_qty(symbol="005930", side="buy")` 호출. `margin_tiers` 응답 확인. CSPBQ00200도 OutBlock1.AcntNo + OutBlock2.AcntNm echo.
 
 ---
 
-## B. 분리 검증 (local portfolio vs LS broker live)
+## B. 분리 검증 (paper portfolio vs LS broker live)
 
 ### B1. 두 출처 명확히 구분
 ```
 내가 가진 모든 주식 보여줘. 종이 포트폴리오랑 실계좌 둘 다.
 ```
-**기대**: 모델이 *두 도구를 모두 호출* — `ls_holdings_list` (local) + `ls_account_holdings` (LS live). 둘 결과를 *별도로 narration*. ServerInstructions §"TWO distinct sources" 적용 확인.
+**기대**: 모델이 *두 도구를 모두 호출* — `ls_holdings_list` (paper) + `ls_account_holdings` (LS live). 둘 결과를 *별도로 narration*. ServerInstructions §"TWO distinct sources" 적용 확인.
 
 ### B2. 종이 포트폴리오만 (LS 호출 안 함)
 ```
 내가 등록한 paper portfolio만 보여줘. 실계좌 말고.
 ```
-**기대**: `ls_holdings_list` 만 호출 (혹은 빈 결과면 `ls_watchlist` / `ls_holding`). `ls_account_*` 호출 *안 함*.
+**기대**: `ls_holdings_list` 만 호출. `ls_account_*` 호출 *안 함*.
 
 ### B3. LS 실계좌만
 ```
@@ -104,52 +106,64 @@ LS 실계좌에 있는 거 정확히 알려줘. 내가 따로 적어둔 거 말�
 ```
 **기대**: `ls_account_holdings` 호출. `ls_holdings_list` 호출 *안 함*.
 
+### B4. paper 라벨 "LS증권" 자유 사용 (v1.6 schema-split 확인)
+```
+내 LS증권 종이 포트폴리오에 삼성전자 10주를 3만원에 매수한 걸로 기록해줘.
+```
+**기대**: 모델이 `ls_account(action="upsert", broker="LS증권", ...)`로 paper 계좌 등록 → `ls_holding(action="buy", account="...")` 호출. **여기 핵심**: paper의 `broker` 라벨이 "LS증권"이어도 live registry(`ls_accounts`)에 영향 없음. 다음 `ls_account_balance` 호출 결과의 `_meta.account_used`는 여전히 실제 LS appkey-bound 계좌. v1.6 release fix의 골든 시그널.
+
 ---
 
-## C. 모드 + 자동 발견
+## C. 두 registry 라벨링
 
-### C1. account_used echo 검증
+### C1. account_used echo 검증 (auto-discovery 직후)
 ```
 LS 계좌 잔고 보여주고, 어떤 계좌인지도 같이 알려줘.
 ```
-**기대**: `ls_account_balance` 호출 → response의 `_meta.account_used`에서 `account_number: "20856195501"`, `nickname: "LS-virtual-20856195501"`, `mode: "virtual"` 등장. 모델이 nickname을 그대로 사용자에게 보여줘야 함. **이 nickname의 mode 라벨이 'virtual'인 건 LS_MARKET이 'virtual'로 주입됐던 흔적 — 실은 real 키 + real 데이터**. 모델이 헷갈리지 않게 nickname을 정정하려면 다음 프롬프트:
+**기대**: `ls_account_balance` 호출 → response의 `_meta.account_used` shape:
+```json
+{
+  "account_number": "20856195501",
+  "nickname": null,
+  "mode": "real",
+  "discovered": true,
+  "branch_name": "다이렉트206",
+  "account_name": "김종현"
+}
+```
+첫 호출이면 nickname은 null (자동 발견 시 부여 안 함). 모델이 branch_name + account_name으로 사용자에게 친절하게 설명.
 
-### C2. nickname 재라벨
+### C2. nickname 부여
 ```
-방금 LS-virtual-20856195501로 잡혔는데, 사실 실투 계좌야. 닉네임 "실투-주식"으로 바꿔주고 default로 잡아줘.
+방금 LS 계좌 닉네임을 "실투-주식"으로 붙여줘.
 ```
-**기대**: 모델이 `ls_account(action="upsert", account_number="20856195501", nickname="실투-주식", set_default=true)` 호출. 응답에 nickname 변경 확인. *주의*: 이 시점 `LS_MARKET=virtual`이면 portfolio.db의 mode='virtual' 그대로. 환경을 `LS_MARKET=real`로 바꾸고 재시작하면 새로운 real-mode 등록이 필요 (cross-mode account_no collision → InvalidOperationException 발생; 검증할 의향이 있다면 D2 시나리오 참조).
+**기대**: 모델이 `ls_account(action="set_live_nickname", account_number="20856195501", nickname="실투-주식")` 호출. 응답에 `updated.nickname: "실투-주식"`. 다음 `ls_account_*` 호출의 echo에 nickname 채워서 나옴.
 
-### C3. 실투/모의 분리 확인 (앱키 교체 시나리오)
+### C3. 두 registry 같이 보기
 ```
-LS_MARKET=virtual 그대로 두고, 다음 명령으로 결과를 확인해줘:
-- 내 LS 계좌 잔고
+등록된 계좌 다 보여줘.
 ```
-이미 다음 단계를 위해 호스트 config의 `LS_MARKET`만 `real`로 바꾸고 서버 재시작 후:
+**기대**: 모델이 `ls_account(action="list")` 호출. 응답 shape:
+```json
+{
+  "paper_accounts": [/* 유안타-001, 카카오페이-001 등 */],
+  "live_accounts":  [{ "account_number": "20856195501", "nickname": "실투-주식", "mode": "real", ... }]
+}
 ```
-이제 다시 내 LS 계좌 잔고 보여줘.
-```
-**기대**: mode 변경 후 portfolio.db에 real-mode row가 없으면 `ls_account_balance`가 *다시* auto-discovery → `LS-real-20856195501` 닉네임 새로 등록. account_no가 동일하지만 mode가 다르므로 column-level UNIQUE 위반... 잠시, 우리는 cross-mode를 `InvalidOperationException`으로 차단했음. 이 시나리오에서는:
-- 만약 `UpsertAccountAsync`가 호출되면 → 이미 virtual-mode로 등록된 같은 account_no를 real로 upsert 시도 → `InvalidOperationException` raise
-- `RecordDiscoveredAsync`는 catch + Debug log + null 반환 (fire-and-forget) → account_used echo가 synthetic shape으로 떨어짐 (`account_number=20856195501, nickname=null, mode=real, discovered=true`)
-
-**검증 포인트**: 이 시나리오 발생 시 모델이 어떻게 narration하는지. discovered=true 라벨을 사용자에게 보여주면 idea — 사용자가 ls_account(action="remove")로 stale virtual row 정리 후 재등록 안내.
+모델이 두 그룹을 *분리해서* narration해야 함. 한 덩어리로 묶어 보이면 ServerInstructions 부족.
 
 ---
 
 ## D. 에러 envelope 검증
 
-### D1. AmbiguousAccount (2+ 계좌, default 없음)
-*전제*: portfolio.db에 LS 계좌 두 개 이상이 같은 mode에 있고 둘 다 `is_default=0`이어야 함. 현재 상태에선 발생 안 함 — 검증하려면 의도적으로 두 번째 계좌 등록 후 `is_default` 직접 SQL로 풀어야 함. 우선 skip 가능.
-
-### D2. AccountNotFound
+### D1. nickname 부여 실패 (존재 안 하는 account_no)
 ```
-LS 계좌 "없는닉네임"의 잔고 보여줘.
+LS 계좌 번호 99999999999에 "테스트"라는 닉네임을 붙여줘.
 ```
-**기대**: `ls_account_balance(account="없는닉네임")` 호출 → error envelope: `error_code: "AccountNotFound"`, `identifier: "없는닉네임"`, `candidates: [...]`. 모델이 candidates를 사용자에게 노출.
+**기대**: `ls_account(action="set_live_nickname", account_number="99999999999", nickname="테스트")` 호출 → response에 `{"error": "Not found.", "error_code": "LiveAccountNotFound", "account_number": "99999999999"}`. 모델이 "그런 LS 계좌 없습니다"로 narration.
 
-### D3. LS business error pass-through
-A10에서 이미 확인 (`CSPAQ00600` → 02062).
+### D2. LS business error pass-through
+A10에서 이미 확인 (`CSPAQ00600` → `rsp_cd: "02062"`).
 
 ---
 
@@ -159,19 +173,19 @@ A10에서 이미 확인 (`CSPAQ00600` → 02062).
 ```
 내 LS 계좌 보유 종목 중 첫 번째 종목 정보 자세히 알려줘.
 ```
-**기대**: `ls_account_holdings` → 005930 식별 → `ls_get_stock_info(shcode="005930")` 호출. 시가총액 / PER 등 추가 정보.
+**기대**: `ls_account_holdings` → 005930 식별 → `ls_get_stock_info(shcode="005930")` 호출.
 
 ### E2. holdings → 차트
 ```
 내 보유 종목 일봉 차트 보여줘.
 ```
-**기대**: `ls_account_holdings` → 005930 → `ls_get_chart(shcode="005930", period_type="day")`. 차트가 인라인 (host가 SEP-1865 지원하면) 또는 분석 요약만.
+**기대**: `ls_account_holdings` → 005930 → `ls_get_chart(shcode="005930", period_type="day")`.
 
 ### E3. 거래 + 시세 결합
 ```
 내가 어제 산 종목, 지금 가격이랑 비교해서 손익이 어떻게 됐는지 알려줘.
 ```
-**기대**: `ls_account_order_history(order_date="2026-05-28")` 또는 `ls_account_daily_pnl(date="2026-05-28")` → 005930 매수가 301,000 추출 → `ls_get_quote("005930")` 호출 → 현재가와 비교 narration.
+**기대**: `ls_account_order_history(order_date="<어제>")` 또는 `ls_account_daily_pnl(date="<어제>")` → 매수가 추출 → `ls_get_quote(...)` 호출 → 현재가와 비교 narration.
 
 ---
 
@@ -179,13 +193,14 @@ A10에서 이미 확인 (`CSPAQ00600` → 02062).
 
 각 호출에서 다음을 확인:
 
-- [ ] **도구 라우팅**: 모델이 의도된 `ls_account_*` 도구를 골랐는지 (`ls_holdings_list` 같은 local 도구로 잘못 가지 않았는지)
-- [ ] **`_meta.account_used`**: `account_number`, `nickname`, `mode`, `is_default` 4개 필드가 모두 present
+- [ ] **도구 라우팅**: 모델이 의도된 `ls_account_*` 도구를 골랐는지 (`ls_holdings_list` 같은 paper 도구로 잘못 가지 않았는지)
+- [ ] **`_meta.account_used`**: shape = `{account_number, nickname, mode, discovered, branch_name?, account_name?}` — 구 shape의 `broker`/`is_default`가 **없어야** 함
 - [ ] **`_meta.data_as_of`**: ISO 8601 timestamp 또는 yyyyMMdd (도구마다)
-- [ ] **`_meta.tr_code`**: 정확한 TR 코드 (CSPAQ12200 ✓, CSPAQ22200 ✗)
+- [ ] **`_meta.tr_code`**: 정확한 TR 코드
 - [ ] **`_meta.source: "live"`**: 모든 ls_account_* 호출에 등장
-- [ ] **에러 envelope**: `error_code` + `details` 구조; `account_used` echo도 포함 (resolver가 nicer label)
 - [ ] **CSPAQ rsp_cd**: stderr 로그에서 `00136 / 00133 / 00200 / 00707` 등 non-zero success codes도 통과되어 나옴 — `LS_MCP_STDERR_LOG` 환경 변수로 stderr 캡처 가능
+- [ ] **schema-split shape**: `ls_account(action="list")` 응답이 `{paper_accounts, live_accounts}` 형태 (구 shape의 flat array가 **아님**)
+- [ ] **paper "LS증권" 라벨이 live를 가리지 않음** (B4 시나리오의 핵심)
 - [ ] **ServerInstructions 효과**: 모델이 *narration*에서 "두 출처를 구분", "live REST snapshot", "v1.6은 read-only inquiry, 발주는 v1.7" 같은 문구를 자연스럽게 표현하는지
 
 ---
@@ -197,7 +212,8 @@ A10에서 이미 확인 (`CSPAQ00600` → 02062).
 ```
 [A1] LS 실계좌에 지금 뭐 들어있어?
 도구: ls_account_holdings
-결과: 삼성전자 1주, avg 301,000 ... 
+결과: 삼성전자 1주, avg 301,000 ...
+_meta.account_used: {...}
 이상한 점: 없음 / 있다면 어떤
 ```
 

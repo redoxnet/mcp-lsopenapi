@@ -62,8 +62,8 @@ public sealed class AccountOrdersToolTests
     [Fact]
     public async Task Orders_ParsesSampleResponse_AndAttachesMeta()
     {
-        await using AccountScratch scratch = new();
-        await scratch.SeedDefaultAccount("12345-01", "주식");
+        await using LiveAccountScratch scratch = new(scope: "ord");
+        await scratch.SeedLiveAccount("12345-01", nickname: "주식");
 
         var (client, handler) = TestClientFactory.Create((_, _) => Task.FromResult(
             new HttpResponseMessage(HttpStatusCode.OK)
@@ -107,8 +107,8 @@ public sealed class AccountOrdersToolTests
     [Fact]
     public async Task Orders_RejectsUnknownStatus()
     {
-        await using AccountScratch scratch = new();
-        await scratch.SeedDefaultAccount("12345-01", "주식");
+        await using LiveAccountScratch scratch = new(scope: "ord");
+        await scratch.SeedLiveAccount("12345-01", nickname: "주식");
 
         var (client, _) = TestClientFactory.Create((_, _) => Task.FromResult(
             new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") }));
@@ -121,8 +121,8 @@ public sealed class AccountOrdersToolTests
     [Fact]
     public async Task Orders_MapsStatusAndSideFiltersToInBlock()
     {
-        await using AccountScratch scratch = new();
-        await scratch.SeedDefaultAccount("12345-01", "주식");
+        await using LiveAccountScratch scratch = new(scope: "ord");
+        await scratch.SeedLiveAccount("12345-01", nickname: "주식");
 
         HttpRequestMessage? capturedRequest = null;
         string? capturedBody = null;
@@ -149,42 +149,4 @@ public sealed class AccountOrdersToolTests
         capturedBody.Should().Contain("\"expcode\":\"005930\"");
     }
 
-    sealed class AccountScratch : IAsyncDisposable
-    {
-        readonly string _directory;
-        readonly SqlitePortfolioRepository _repository;
-
-        public AccountScratch()
-        {
-            _directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "mcp-lsopenapi-o-" + Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(_directory);
-            DbPath = System.IO.Path.Combine(_directory, "portfolio.db");
-            _repository = new SqlitePortfolioRepository(DbPath, "real");
-            Resolver = new LsAccountResolver(_repository, LsMarket.Real);
-        }
-
-        public string DbPath { get; }
-        public LsAccountResolver Resolver { get; }
-
-        public async Task SeedDefaultAccount(string accountNumber, string nickname)
-        {
-            await _repository.InitializeAsync();
-            await _repository.UpsertAccountAsync(accountNumber, nickname, null, setDefault: true);
-        }
-
-        public ValueTask DisposeAsync()
-        {
-            try
-            {
-                SqliteConnection.ClearAllPools();
-                if (Directory.Exists(_directory))
-                    Directory.Delete(_directory, recursive: true);
-            }
-            catch
-            {
-                // Best-effort cleanup.
-            }
-            return ValueTask.CompletedTask;
-        }
-    }
 }

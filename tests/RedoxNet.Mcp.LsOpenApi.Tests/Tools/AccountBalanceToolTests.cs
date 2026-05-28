@@ -44,8 +44,8 @@ public sealed class AccountBalanceToolTests
     [Fact]
     public async Task Balance_RealMode_HitsCSPAQ12200_AndCarriesValuationFields()
     {
-        await using AccountScratch scratch = new("real", LsMarket.Real);
-        await scratch.SeedDefaultAccount("12345-01", "주식");
+        await using LiveAccountScratch scratch = new("real", LsMarket.Real, scope: "bal");
+        await scratch.SeedLiveAccount("12345-01", nickname: "주식");
 
         HttpRequestMessage? capturedRequest = null;
         string? capturedBody = null;
@@ -91,8 +91,8 @@ public sealed class AccountBalanceToolTests
         // v1.6 correction: virtual mode does NOT route to CSPAQ22200 — that
         // was a misunderstanding of the LS docs. The appkey pair determines
         // which account answers; the TR code is the same.
-        await using AccountScratch scratch = new("virtual", LsMarket.Virtual);
-        await scratch.SeedDefaultAccount("999-01", "모의");
+        await using LiveAccountScratch scratch = new("virtual", LsMarket.Virtual, scope: "bal-v");
+        await scratch.SeedLiveAccount("999-01", nickname: "모의");
 
         HttpRequestMessage? capturedRequest = null;
         string? capturedBody = null;
@@ -126,8 +126,8 @@ public sealed class AccountBalanceToolTests
     [Fact]
     public async Task Balance_SurfacesBusinessLevelErrorWithTrCode()
     {
-        await using AccountScratch scratch = new("real", LsMarket.Real);
-        await scratch.SeedDefaultAccount("12345-01", "주식");
+        await using LiveAccountScratch scratch = new("real", LsMarket.Real, scope: "bal");
+        await scratch.SeedLiveAccount("12345-01", nickname: "주식");
 
         const string errorBody = """{"rsp_cd":"IGW00012","rsp_msg":"계좌가 존재하지 않습니다."}""";
         var (client, _) = TestClientFactory.Create((_, _) => Task.FromResult(
@@ -144,42 +144,4 @@ public sealed class AccountBalanceToolTests
         details.GetProperty("rsp_cd").GetString().Should().Be("IGW00012");
     }
 
-    sealed class AccountScratch : IAsyncDisposable
-    {
-        readonly string _directory;
-        readonly SqlitePortfolioRepository _repository;
-
-        public AccountScratch(string mode, LsMarket market)
-        {
-            _directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "mcp-lsopenapi-bal-" + Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(_directory);
-            DbPath = System.IO.Path.Combine(_directory, "portfolio.db");
-            _repository = new SqlitePortfolioRepository(DbPath, mode);
-            Resolver = new LsAccountResolver(_repository, market);
-        }
-
-        public string DbPath { get; }
-        public LsAccountResolver Resolver { get; }
-
-        public async Task SeedDefaultAccount(string accountNumber, string nickname)
-        {
-            await _repository.InitializeAsync();
-            await _repository.UpsertAccountAsync(accountNumber, nickname, null, setDefault: true);
-        }
-
-        public ValueTask DisposeAsync()
-        {
-            try
-            {
-                SqliteConnection.ClearAllPools();
-                if (Directory.Exists(_directory))
-                    Directory.Delete(_directory, recursive: true);
-            }
-            catch
-            {
-                // Best-effort cleanup.
-            }
-            return ValueTask.CompletedTask;
-        }
-    }
 }

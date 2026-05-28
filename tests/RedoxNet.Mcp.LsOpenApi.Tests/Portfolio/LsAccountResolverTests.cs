@@ -7,145 +7,172 @@ using Xunit;
 namespace RedoxNet.Mcp.LsOpenApi.Tests.Portfolio;
 
 /// <summary>
-/// Pins the resolver behavior every v1.6 <c>ls_account_*</c> tool relies on
-/// — mode-bounded account selection with the v0.7 portfolio default /
-/// ambiguous / not-found envelope pattern.
+/// Pins the v1.6 (schema-split) resolver behavior. LS account-inquiry TRs
+/// do not accept <c>AcntNo</c> in their request — the appkey-bound LS
+/// subaccount is resolved server-side and only echoed in the response.
+/// So the resolver's job is purely label persistence into a registry
+/// that is physically separate from the paper-portfolio <c>accounts</c>
+/// table. Tests below pin that separation plus the discovery roundtrip.
 /// </summary>
 public sealed class LsAccountResolverTests
 {
     [Fact]
-    public async Task ResolveAsync_PicksDefaultWhenIdentifierOmitted()
+    public async Task GetRegisteredAsync_ReturnsNullWhenLiveRegistryEmpty()
     {
         await using ResolverScratch db = new();
-        var repository = new SqlitePortfolioRepository(db.Path, "real");
-        await repository.InitializeAsync();
-        await repository.UpsertAccountAsync("12345-01", "한투", null, setDefault: false);
-        await repository.UpsertAccountAsync("67890-22", "ISA", null, setDefault: true);
+        ILsLiveAccountRepository live = NewLive(db);
 
-        var resolver = new LsAccountResolver(repository, LsMarket.Real);
-        Account picked = await resolver.ResolveAsync(null);
+        var resolver = new LsAccountResolver(live, LsMarket.Virtual);
+        LsLiveAccount? row = await resolver.GetRegisteredAsync();
 
-        picked.AccountNo.Should().Be("67890-22");
-        picked.IsDefault.Should().BeTrue();
-        picked.Mode.Should().Be("real");
-        resolver.Mode.Should().Be("real");
+        row.Should().BeNull();
+        resolver.Mode.Should().Be("virtual");
     }
 
     [Fact]
-    public async Task ResolveAsync_ReturnsNullOnEmptyRegistry()
+    public async Task GetRegisteredAsync_IgnoresPaperAccountsInTheSameDatabase()
     {
-        // v1.6 correction: an empty registry is NOT an error. LS account-
-        // inquiry TRs do not take account_number as input — the appkey's
-        // token tells LS which account to return — so the wrapper can call
-        // the TR and read AcntNo from the response. The resolver returns
-        // null and the calling tool auto-discovers from the broker response.
+        // Sanity: paper-portfolio rows must not leak into ls_account_*
+        // labelling. The E2E bug we ship-blocked v1.6 on was the paper
+        // default 유안타-001 shadowing the LS broker echo. Schema-split
+        // makes the leak structurally impossible — paper accounts live
+        // in `accounts`, live in `ls_accounts`, and the resolver only
+        // reads the latter.
         await using ResolverScratch db = new();
-        var repository = new SqlitePortfolioRepository(db.Path, "virtual");
-        await repository.InitializeAsync();
+        var paper = new SqlitePortfolioRepository(db.Path, "real");
+        await paper.InitializeAsync();
+        await paper.UpsertAccountAsync("유안타-001", "유안타", "유안타증권", setDefault: true);
+        await paper.UpsertAccountAsync("카카오페이-001", "카카오페이", "카카오페이증권", setDefault: false);
 
-        var resolver = new LsAccountResolver(repository, LsMarket.Virtual);
-        Account? resolved = await resolver.ResolveAsync(null);
+        ILsLiveAccountRepository live = NewLive(db);
+        var resolver = new LsAccountResolver(live, LsMarket.Real);
 
-        resolved.Should().BeNull();
+        LsLiveAccount? row = await resolver.GetRegisteredAsync();
+
+        row.Should().BeNull();
     }
 
     [Fact]
     public async Task RecordDiscoveredAsync_UpsertsAndIsIdempotent()
     {
         await using ResolverScratch db = new();
-        var repository = new SqlitePortfolioRepository(db.Path, "virtual");
-        await repository.InitializeAsync();
-        var resolver = new LsAccountResolver(repository, LsMarket.Virtual);
+        ILsLiveAccountRepository live = NewLive(db);
+        var resolver = new LsAccountResolver(live, LsMarket.Virtual);
 
-        Account? first = await resolver.RecordDiscoveredAsync("99988877766", defaultNickname: null);
+        LsLiveAccount? first = await resolver.RecordDiscoveredAsync("99988877766");
         first.Should().NotBeNull();
         first!.AccountNo.Should().Be("99988877766");
         first.Mode.Should().Be("virtual");
-        first.Nickname.Should().Contain("99988877766");
+        first.Nickname.Should().BeNull();
 
-        // Idempotent: calling again does not throw and returns the same row.
-        Account? second = await resolver.RecordDiscoveredAsync("99988877766", defaultNickname: null);
+        // Idempotent: calling again refreshes last_seen_at but returns
+        // the same row identity.
+        LsLiveAccount? second = await resolver.RecordDiscoveredAsync("99988877766");
         second.Should().NotBeNull();
         second!.Id.Should().Be(first.Id);
     }
 
     [Fact]
-    public async Task ResolveAsync_RaisesAmbiguousAccountWhenNoDefaultAndMany()
+    public async Task RecordDiscoveredAsync_StoresBranchAndAccountNameWhenSupplied()
     {
-        // UpsertAccountAsync auto-promotes the first row to default. Demote
-        // it directly via SQL to reach the AmbiguousAccount branch.
+        // CSPAQ12200 already extracts BrnNm / AcntNm for the balance
+        // payload; the resolver caches them in ls_accounts so a later
+        // call without those fields still gets the friendly labels.
         await using ResolverScratch db = new();
-        var repository = new SqlitePortfolioRepository(db.Path, "real");
-        await repository.InitializeAsync();
-        await repository.UpsertAccountAsync("A-01", "first", null, setDefault: false);
-        await repository.UpsertAccountAsync("A-02", "second", null, setDefault: false);
+        ILsLiveAccountRepository live = NewLive(db);
+        var resolver = new LsAccountResolver(live, LsMarket.Real);
 
-        using (var conn = new SqliteConnection($"Data Source={db.Path}"))
-        {
-            conn.Open();
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = "UPDATE accounts SET is_default = 0;";
-            cmd.ExecuteNonQuery();
-        }
+        LsLiveAccount? row = await resolver.RecordDiscoveredAsync(
+            "20856195501", branchName: "다이렉트206", accountName: "김종현");
 
-        var resolver = new LsAccountResolver(repository, LsMarket.Real);
-        Func<Task> act = () => resolver.ResolveAsync(null);
+        row.Should().NotBeNull();
+        row!.BranchName.Should().Be("다이렉트206");
+        row.AccountName.Should().Be("김종현");
 
-        var ex = (await act.Should().ThrowAsync<AmbiguousAccountException>()).Which;
-        ex.Code.Should().Be("AmbiguousAccount");
-        ex.Candidates.Should().HaveCount(2);
-        ex.Candidates.Select(c => c.AccountNumber).Should().BeEquivalentTo(["A-01", "A-02"]);
-        ex.Candidates.Should().OnlyContain(c => c.Mode == "real");
+        // A second call without labels should NOT erase the cached ones.
+        LsLiveAccount? second = await resolver.RecordDiscoveredAsync("20856195501");
+        second!.BranchName.Should().Be("다이렉트206");
+        second.AccountName.Should().Be("김종현");
     }
 
     [Fact]
-    public async Task ResolveAsync_LooksUpByAccountNumberAndNickname()
+    public async Task RecordDiscoveredAsync_ReturnsNullOnBlankAcntNo()
     {
         await using ResolverScratch db = new();
-        var repository = new SqlitePortfolioRepository(db.Path, "real");
-        await repository.InitializeAsync();
-        await repository.UpsertAccountAsync("99-77", "주식", null, setDefault: false);
+        ILsLiveAccountRepository live = NewLive(db);
+        var resolver = new LsAccountResolver(live, LsMarket.Real);
 
-        var resolver = new LsAccountResolver(repository, LsMarket.Real);
-
-        (await resolver.ResolveAsync("99-77")).Nickname.Should().Be("주식");
-        (await resolver.ResolveAsync("주식")).AccountNo.Should().Be("99-77");
+        (await resolver.RecordDiscoveredAsync(null)).Should().BeNull();
+        (await resolver.RecordDiscoveredAsync("")).Should().BeNull();
+        (await resolver.RecordDiscoveredAsync("   ")).Should().BeNull();
     }
 
     [Fact]
-    public async Task ResolveAsync_RaisesAccountNotFoundOnUnknownIdentifier()
+    public async Task BuildEcho_PrefersRegisteredRow()
     {
         await using ResolverScratch db = new();
-        var repository = new SqlitePortfolioRepository(db.Path, "real");
-        await repository.InitializeAsync();
-        await repository.UpsertAccountAsync("99-77", "주식", null, setDefault: false);
+        ILsLiveAccountRepository live = NewLive(db);
+        var resolver = new LsAccountResolver(live, LsMarket.Real);
+        LsLiveAccount? recorded = await resolver.RecordDiscoveredAsync("20856195501", branchName: "다이렉트206");
 
-        var resolver = new LsAccountResolver(repository, LsMarket.Real);
+        LsLiveAccountInfo echo = resolver.BuildEcho(recorded, discoveredAcntNo: "ignored-precedence-test");
 
-        var ex = await Assert.ThrowsAsync<AccountNotFoundException>(
-            () => resolver.ResolveAsync("나의비밀계좌"));
-        ex.Identifier.Should().Be("나의비밀계좌");
-        ex.Candidates.Should().ContainSingle(c => c.AccountNumber == "99-77");
+        echo.AccountNumber.Should().Be("20856195501");
+        echo.Discovered.Should().BeTrue();
+        echo.BranchName.Should().Be("다이렉트206");
+        echo.Mode.Should().Be("real");
     }
 
     [Fact]
-    public async Task ResolveAsync_DoesNotLeakAccountsAcrossModes()
+    public async Task BuildEcho_FallsBackToDiscoveredAcntNoWhenUnregistered()
     {
         await using ResolverScratch db = new();
-        var realRepository = new SqlitePortfolioRepository(db.Path, "real");
-        var virtualRepository = new SqlitePortfolioRepository(db.Path, "virtual");
-        await realRepository.InitializeAsync();
-        await realRepository.UpsertAccountAsync("R-01", "real-acct", null, setDefault: true);
-        await virtualRepository.UpsertAccountAsync("V-01", "virt-acct", null, setDefault: true);
+        ILsLiveAccountRepository live = NewLive(db);
+        var resolver = new LsAccountResolver(live, LsMarket.Real);
 
-        var realResolver = new LsAccountResolver(realRepository, LsMarket.Real);
-        var virtualResolver = new LsAccountResolver(virtualRepository, LsMarket.Virtual);
+        LsLiveAccountInfo echo = resolver.BuildEcho(registered: null, discoveredAcntNo: "20856195501");
 
-        (await realResolver.ResolveAsync(null)).AccountNo.Should().Be("R-01");
-        (await virtualResolver.ResolveAsync(null)).AccountNo.Should().Be("V-01");
+        echo.AccountNumber.Should().Be("20856195501");
+        echo.Nickname.Should().BeNull();
+        echo.Mode.Should().Be("real");
+        echo.Discovered.Should().BeTrue();
+    }
 
-        await Assert.ThrowsAsync<AccountNotFoundException>(() => realResolver.ResolveAsync("V-01"));
-        await Assert.ThrowsAsync<AccountNotFoundException>(() => virtualResolver.ResolveAsync("R-01"));
+    [Fact]
+    public async Task BuildEcho_ColdStartReturnsSyntheticWithNullNumber()
+    {
+        await using ResolverScratch db = new();
+        ILsLiveAccountRepository live = NewLive(db);
+        var resolver = new LsAccountResolver(live, LsMarket.Virtual);
+
+        LsLiveAccountInfo echo = resolver.BuildEcho(registered: null);
+
+        echo.AccountNumber.Should().BeNull();
+        echo.Discovered.Should().BeFalse();
+        echo.Mode.Should().Be("virtual");
+    }
+
+    [Fact]
+    public async Task GetRegisteredAsync_DoesNotLeakAcrossModes()
+    {
+        await using ResolverScratch db = new();
+        var paper = new SqlitePortfolioRepository(db.Path, "real");
+        await paper.InitializeAsync();
+        ILsLiveAccountRepository live = new SqliteLsLiveAccountRepository(paper, db.Path);
+
+        var realResolver = new LsAccountResolver(live, LsMarket.Real);
+        var virtualResolver = new LsAccountResolver(live, LsMarket.Virtual);
+        await realResolver.RecordDiscoveredAsync("R-01");
+        await virtualResolver.RecordDiscoveredAsync("V-01");
+
+        (await realResolver.GetRegisteredAsync())!.AccountNo.Should().Be("R-01");
+        (await virtualResolver.GetRegisteredAsync())!.AccountNo.Should().Be("V-01");
+    }
+
+    static ILsLiveAccountRepository NewLive(ResolverScratch db)
+    {
+        var paper = new SqlitePortfolioRepository(db.Path, "real");
+        return new SqliteLsLiveAccountRepository(paper, db.Path);
     }
 
     sealed class ResolverScratch : IAsyncDisposable

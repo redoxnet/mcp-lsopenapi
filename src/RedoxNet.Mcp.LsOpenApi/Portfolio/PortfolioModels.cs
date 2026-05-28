@@ -57,7 +57,11 @@ internal sealed class WatchedTheme
 }
 
 /// <summary>
-/// Local portfolio account metadata.
+/// Local portfolio account metadata. Used by the paper-portfolio surface
+/// (<c>ls_account</c> / <c>ls_holding</c> / <c>ls_holdings_list</c>); the
+/// <c>broker</c> field is purely a display label. LS live broker accounts
+/// (auto-discovered, appkey-routed) live in a separate store —
+/// see <see cref="LsLiveAccount"/>.
 /// </summary>
 internal sealed class Account
 {
@@ -68,6 +72,29 @@ internal sealed class Account
     public string Mode { get; init; } = "real";
     public bool IsDefault { get; init; }
     public string CreatedAt { get; init; } = "";
+}
+
+/// <summary>
+/// LS live broker account row — the appkey-routed subaccount that LS
+/// resolves from the authenticated session. Auto-discovered on the first
+/// successful <c>ls_account_*</c> call that returns <c>AcntNo</c> in its
+/// response (CSPAQ / CDPCQ / FOCCQ family). The <c>account_no</c> is the
+/// only canonical identifier; <c>nickname</c> is an optional user-set
+/// label for friendlier echoes. There is no <c>is_default</c> — one
+/// appkey is bound to one subaccount per mode, so the mode column alone
+/// identifies the row in practice (the schema still allows multiple to
+/// stay future-proof for LS 모계좌-style expansions).
+/// </summary>
+internal sealed class LsLiveAccount
+{
+    public long Id { get; init; }
+    public string AccountNo { get; init; } = "";
+    public string Mode { get; init; } = "real";
+    public string? Nickname { get; init; }
+    public string? BranchName { get; init; }
+    public string? AccountName { get; init; }
+    public string DiscoveredAt { get; init; } = "";
+    public string LastSeenAt { get; init; } = "";
 }
 
 /// <summary>
@@ -222,6 +249,31 @@ internal sealed record RemoveResult(bool Removed);
 /// Account metadata returned to MCP hosts. Used inside <c>applied_to</c> echoes and error envelope candidates.
 /// </summary>
 internal sealed record AccountInfo(string AccountNumber, string Nickname, string Broker, bool IsDefault, string Mode = "real");
+
+/// <summary>
+/// Live LS broker account echo for <c>_meta.account_used</c> in v1.6
+/// <c>ls_account_*</c> responses. <c>Discovered</c> is true when the row
+/// has been persisted to <c>ls_accounts</c>; false on cold-start before
+/// any TR with <c>AcntNo</c> in its response has been observed.
+/// </summary>
+internal sealed record LsLiveAccountInfo(
+    string? AccountNumber,
+    string? Nickname,
+    string Mode,
+    bool Discovered,
+    string? BranchName = null,
+    string? AccountName = null);
+
+/// <summary>
+/// Combined response for <c>ls_account(action="list")</c>. <c>PaperAccounts</c>
+/// is the manually-managed paper-portfolio table (broker label is purely
+/// display). <c>LiveAccounts</c> is the auto-managed LS broker registry
+/// keyed per appkey-mode. The two surfaces are physically distinct
+/// stores; see <see cref="LsLiveAccount"/> for the why.
+/// </summary>
+internal sealed record AccountsListResult(
+    IReadOnlyList<AccountSummary> PaperAccounts,
+    IReadOnlyList<LsLiveAccountInfo> LiveAccounts);
 
 /// <summary>
 /// Per-account summary row for the accounts_list response. Class form so Dapper can

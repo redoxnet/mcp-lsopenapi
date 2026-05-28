@@ -16,16 +16,22 @@ namespace RedoxNet.Mcp.LsOpenApi.Tests.Tools;
 public sealed class PortfolioToolsAccountTests
 {
     [Fact]
-    public async Task Account_List_ReturnsRegisteredAccounts()
+    public async Task Account_List_ReturnsBothPaperAndLiveAccounts()
     {
+        // v1.6 BREAKING: list now returns {paper_accounts, live_accounts}
+        // because the registry has two physically separate stores. The
+        // paper one is the user-curated multi-broker portfolio; the live
+        // one is the LS appkey-bound row(s).
         await using TestEnvironment env = new();
         await env.Repository.UpsertAccountAsync("AAA", "한투", null, setDefault: false);
 
         string result = await PortfolioTools.Account(env.Service, action: "list");
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
-        root.ValueKind.Should().Be(JsonValueKind.Array);
-        root.EnumerateArray().Should().ContainSingle(a => a.GetProperty("nickname").GetString() == "한투");
+        root.ValueKind.Should().Be(JsonValueKind.Object);
+        root.GetProperty("paper_accounts").EnumerateArray()
+            .Should().ContainSingle(a => a.GetProperty("nickname").GetString() == "한투");
+        root.GetProperty("live_accounts").GetArrayLength().Should().Be(0);
     }
 
     [Fact]
@@ -121,7 +127,7 @@ public sealed class PortfolioToolsAccountTests
 
         root.GetProperty("error").GetString().Should().Contain("unknown action");
         root.GetProperty("details").GetProperty("valid_actions").EnumerateArray()
-            .Select(e => e.GetString()).Should().BeEquivalentTo(new[] { "list", "upsert", "remove" });
+            .Select(e => e.GetString()).Should().BeEquivalentTo(new[] { "list", "upsert", "remove", "set_live_nickname" });
     }
 
     sealed class TestEnvironment : IAsyncDisposable

@@ -71,8 +71,8 @@ public sealed class AccountHoldingsToolTests
     [Fact]
     public async Task Holdings_ParsesSampleResponse_AndAttachesMeta()
     {
-        await using AccountScratch scratch = new();
-        await scratch.SeedDefaultAccount("12345-01", "주식");
+        await using LiveAccountScratch scratch = new(scope: "h");
+        await scratch.SeedLiveAccount("12345-01", nickname: "주식");
 
         var (client, _) = TestClientFactory.Create((_, _) => Task.FromResult(
             new HttpResponseMessage(HttpStatusCode.OK)
@@ -114,6 +114,7 @@ public sealed class AccountHoldingsToolTests
         accountUsed.GetProperty("account_number").GetString().Should().Be("12345-01");
         accountUsed.GetProperty("nickname").GetString().Should().Be("주식");
         accountUsed.GetProperty("mode").GetString().Should().Be("real");
+        accountUsed.GetProperty("discovered").GetBoolean().Should().BeTrue();
     }
 
     [Fact]
@@ -123,8 +124,8 @@ public sealed class AccountHoldingsToolTests
         // through (LS account-inquiry TRs are token-routed, no account_number
         // input), data flows back, and the account_used echo synthesises a
         // mode-tagged shape since t0424 doesn't carry AcntNo in its response.
-        await using AccountScratch scratch = new();
-        // No accounts seeded — empty registry.
+        await using LiveAccountScratch scratch = new(scope: "h-empty");
+        // No live row seeded — cold start.
 
         var (client, _) = TestClientFactory.Create((_, _) => Task.FromResult(
             new HttpResponseMessage(HttpStatusCode.OK)
@@ -143,14 +144,14 @@ public sealed class AccountHoldingsToolTests
         JsonElement used = root.GetProperty("_meta").GetProperty("account_used");
         used.GetProperty("mode").GetString().Should().Be("real");
         used.GetProperty("account_number").ValueKind.Should().Be(JsonValueKind.Null);
-        used.GetProperty("is_default").GetBoolean().Should().BeFalse();
+        used.GetProperty("discovered").GetBoolean().Should().BeFalse();
     }
 
     [Fact]
     public async Task Holdings_SurfacesLsBusinessLevelError()
     {
-        await using AccountScratch scratch = new();
-        await scratch.SeedDefaultAccount("12345-01", "주식");
+        await using LiveAccountScratch scratch = new(scope: "h-err");
+        await scratch.SeedLiveAccount("12345-01", nickname: "주식");
 
         const string errorBody = """
             {
@@ -174,42 +175,4 @@ public sealed class AccountHoldingsToolTests
         details.GetProperty("account_used").GetProperty("account_number").GetString().Should().Be("12345-01");
     }
 
-    sealed class AccountScratch : IAsyncDisposable
-    {
-        readonly string _directory;
-        readonly SqlitePortfolioRepository _repository;
-
-        public AccountScratch()
-        {
-            _directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "mcp-lsopenapi-h-" + Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(_directory);
-            DbPath = System.IO.Path.Combine(_directory, "portfolio.db");
-            _repository = new SqlitePortfolioRepository(DbPath, "real");
-            Resolver = new LsAccountResolver(_repository, LsMarket.Real);
-        }
-
-        public string DbPath { get; }
-        public LsAccountResolver Resolver { get; }
-
-        public async Task SeedDefaultAccount(string accountNumber, string nickname)
-        {
-            await _repository.InitializeAsync();
-            await _repository.UpsertAccountAsync(accountNumber, nickname, null, setDefault: true);
-        }
-
-        public ValueTask DisposeAsync()
-        {
-            try
-            {
-                SqliteConnection.ClearAllPools();
-                if (Directory.Exists(_directory))
-                    Directory.Delete(_directory, recursive: true);
-            }
-            catch
-            {
-                // Best-effort cleanup.
-            }
-            return ValueTask.CompletedTask;
-        }
-    }
 }

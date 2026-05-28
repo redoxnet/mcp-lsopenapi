@@ -2,9 +2,9 @@
 
 # RedoxNet.Mcp.LsOpenApi
 
-MCP server for the **LS 증권 OpenAPI** — exposes Korean and US/overseas (Nasdaq / NYSE / AMEX) stock market data as MCP tools so AI assistants can query quotes, charts, ETF data, market screeners, and index / industry / theme context in natural language, alongside a local-only portfolio module (multi-account holdings, watchlists, watched themes, JSON backup / restore).
+MCP server for the **LS 증권 OpenAPI** — exposes Korean and US/overseas (Nasdaq / NYSE / AMEX) stock market data as MCP tools so AI assistants can query quotes, charts, ETF data, market screeners, and index / industry / theme context in natural language, plus the user's live LS broker account (read-only inquiry: holdings, balance, orders, P&L, BEP, orderable capacity) and a local-only paper-portfolio module (multi-broker holdings, watchlists, watched themes, JSON backup / restore).
 
-> Unofficial third-party MCP server. Not affiliated with or endorsed by LS Securities Co., Ltd. (LS증권). v0.x.x scope: read-only market data + local portfolio notes (manual entry; no broker sync, no order placement).
+> Unofficial third-party MCP server. Not affiliated with or endorsed by LS Securities Co., Ltd. (LS증권). v1.6 scope: read-only market data + read-only LS broker inquiry + local paper portfolio notes (manual entry; **no order placement** — that's v1.7).
 
 ## Install
 
@@ -123,10 +123,11 @@ Credentials are accepted **only** through the process environment — never thro
 
 Local data lives at `%LOCALAPPDATA%\RedoxNet\LsOpenApi\` on Windows and `~/.local/share/redoxnet/lsopenapi/` on Linux/macOS: `token.db` (auth cache, SHA-256 keyed) and `portfolio.db` (user-supplied holdings/watchlists; never read or written by tools outside the portfolio family).
 
-## Tools (40 in the `standard` profile, 43 in `all`)
+## Tools (50 in the `standard` profile, 53 in `all`)
 
 Recent surface highlights (full history in [RELEASENOTES.Mcp.md](https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Mcp.md)):
 
+- **v1.6** — **LS broker account inquiry family + schema-split live registry.** Ten new `ls_account_*` tools wrap the LS account-inquiry TR family (holdings t0424, orders t0425, balance CSPAQ12200, BEP CSPAQ12300, credit_limit CSPAQ00600, max_order_qty CSPBQ00200, order_history CSPAQ13700, transactions CDPCQ04700, performance FOCCQ33600, daily_pnl t0150/t0151) — read-only inquiry against the appkey-bound LS broker account, no caching, no daemon. Order placement stays explicitly out (v1.7 will ship `ls_place_order` / `ls_cancel_order` / `ls_amend_order` with paper-trading default, preview-required gating, and idempotency tokens). portfolio.db now keeps paper portfolios (`accounts` — `broker` is purely a display label) and the auto-discovered LS live row (new `ls_accounts` table) in physically separate stores so a paper "LS증권" label can never shadow the live broker echo. `ls_account_*` tools take no `account` parameter — LS REST routes through the authenticated session, not a client-side selector. New `ls_account(action="set_live_nickname")` for friendly labelling.
 - **v1.5** — **Fidelity-first chart narration.** Every chart-emitting tool response now carries `_meta.render_status` (`delivered` / `stripped_text_only`) so the model has a hard signal whether the host rendered the chart and can narrate honestly. ServerInstructions forbids self-synthesis fallbacks regardless of `render_status` — no rendering raw OHLCV in Python / JavaScript / PNG, no forwarding the spec to a generic visualize MCP. Chart customization is constrained to `ls_add_indicator` / `ls_reframe_chart`; layout-level requests (panel height, sizing) are identified as host panel constraints. `output_mode=export` responses ship `_meta.data_purpose: "analysis_only"` + `_meta.do_not_render`. Tool surface unchanged.
 - **v1.4** — (a) **date envelope** (`query_date` input + `data_as_of` / `query_date_resolution` response fields) so non-trading-day fallbacks are explicit — wired on `ls_get_market_funds_trend` and `ls_get_short_selling_trend`; (b) **LS Q-Click signal screeners**: `ls_list_screeners`, `ls_run_screener`, `ls_combine_screeners` over `t1825` / `t1826`.
 - **v1.3** — first-class **US/overseas stocks** (Nasdaq / NYSE / AMEX): `ls_search_overseas_stock`, `ls_get_overseas_quote`, `ls_get_overseas_chart`. `ls_add_indicator` / `ls_reframe_chart` accept overseas `dataset_id`s through the shared handle cache.
@@ -202,23 +203,40 @@ Recent surface highlights (full history in [RELEASENOTES.Mcp.md](https://github.
 | `ls_get_program_trading` | `t1662` / `t1633` / `t1636` / `t1637` | Program-trading (프로그램매매) flow. `scope=market` — intraday (t1662) or daily (t1633) market-wide 차익 / 비차익 net buying with the KOSPI200 index; `scope=ranking` — per-stock net-buy ranking (t1636) with a market-cap-normalized footprint ratio; `scope=stock` — one stock's intraday / daily flow (t1637). `include_chart=true` ships an inline Plotly v5 chart. |
 | `ls_analyze_program_flow` | `t1637` | Program-trading footprint analysis for one stock — a regime (accumulation / distribution / churn / neutral), a 0–1 confidence, signals (persistence, churn ratio, intensity, intraday pace, price coupling), and plain-language evidence to narrate. |
 
-### Portfolio (local-only, no broker sync)
+### LS broker account inquiry (live, LS-backed)
 
-Manual entries persisted to `portfolio.db` next to `token.db`. v0.10 folds the twenty v0.9 portfolio tools into **five action-routed dispatchers** — each takes an `action` argument and validates the per-action required parameters — plus two standalone tools. List responses fall back to a `quote_error` envelope when LS credentials are missing, but saved data still returns.
+Fresh REST snapshot of the appkey-bound LS broker account on every call — no caching, no daemon, no background sync. None of these tools accept an `account` argument: LS account-inquiry TRs route through the authenticated session, not a client-side selector. The first successful call auto-discovers the broker's `AcntNo` into a separate `ls_accounts` registry; a friendly nickname can be attached via `ls_account(action="set_live_nickname")`.
+
+| Tool | TR | Purpose |
+|---|---|---|
+| `ls_account_holdings` | `t0424` | Live positions — per-symbol rows + portfolio summary (estimated net assets, deposit, total evaluation / P&L). |
+| `ls_account_orders` | `t0425` | Today's order book — filled + pending. Filters: `status` (all / filled / pending), `side` (all / buy / sell), `symbol`, `sort`. |
+| `ls_account_balance` | `CSPAQ12200` | Cash, buying power, total valuation — deposit, D1/D2, orderable amounts (cash / kospi / kosdaq / margin tiers), substitute amount, evaluation amount, deposited asset total, investment principal / P&L. |
+| `ls_account_bep` | `CSPAQ12300` | Break-even price per holding — different from raw average purchase price; reflects fees / taxes. |
+| `ls_account_credit_limit` | `CSPAQ00600` | Margin loan limits (융자/대주 한도). Returns `02062 신용계좌가 아닙니다` for cash-only accounts. |
+| `ls_account_max_order_qty` | `CSPBQ00200` | Maximum orderable quantity for a symbol / side / price triple — INQUIRY ONLY, never places an order. Returns 증거금률별 (20/30/40/100%) tiers. |
+| `ls_account_order_history` | `CSPAQ13700` | Order/fill history for a specific date. Lifecycle rows include placed / modified / cancelled / executed. |
+| `ls_account_transactions` | `CDPCQ04700` | Transaction log over a date range — deposits, withdrawals, fills, transfers. `kind` filter: all / cashflow / transfer / trade / fx / misc. |
+| `ls_account_performance` | `FOCCQ33600` | Period P&L — total invested principal, period return %, per-period breakdown (daily / weekly / monthly). |
+| `ls_account_daily_pnl` | `t0150` / `t0151` | Single-day trade log + fees/taxes. `t0150` for today; `t0151` for any other date. |
+
+### Paper portfolio (local-only, no broker sync)
+
+Manual entries persisted to `portfolio.db` next to `token.db` — physically separate from the live `ls_accounts` table above so a paper "LS증권" label never shadows the live broker echo. `broker` on paper-portfolio rows is purely a display label (`"한투"`, `"유안타증권"`, `"LS증권"` all valid).
 
 | Tool | Actions | Purpose |
 |---|---|---|
-| `ls_account` | `list` / `upsert` / `remove` | Registered accounts. `upsert` also renames a broker label across accounts (`rename_broker_from` mode); `remove` is a two-step `confirm` cascade with auto-succession of the default (id ASC). |
-| `ls_holding` | `set` / `buy` / `sell` / `remove` / `corporate_action` | Holding writes — initial state, weighted-average buy merge, partial/full sell (auto-remove at zero, `InsufficientQuantity` above the position), outright delete, and the open-enum corporate action (`type` ∈ split / reverse_split / bonus). |
-| `ls_holdings_list` | — | Holdings grouped by account with per-account + total summary. Optional `account`, `theme_code`, `theme_keyword`, `industry` (FICS substring) filters (AND-combine). Standalone — the read path is the most common portfolio intent. |
-| `ls_stocks_refresh_metadata` | — | Synchronous refresh for theme / FICS-industry caches. Default scope = holdings ∪ watchlist symbols when `shcodes` omitted. Standalone. |
+| `ls_account` | `list` / `upsert` / `remove` / `set_live_nickname` | `list` returns `{paper_accounts, live_accounts}`. `upsert` / `remove` apply to paper accounts only (`upsert` also renames a broker label across accounts via `rename_broker_from`; `remove` is a two-step `confirm` cascade with auto-succession of the default by id ASC). `set_live_nickname` attaches a friendly label to the auto-discovered live row. |
+| `ls_holding` | `set` / `buy` / `sell` / `remove` / `corporate_action` | Holding writes for paper accounts — initial state, weighted-average buy merge, partial/full sell (auto-remove at zero, `InsufficientQuantity` above the position), outright delete, and the open-enum corporate action (`type` ∈ split / reverse_split / bonus). |
+| `ls_holdings_list` | — | Paper holdings grouped by account with per-account + total summary. Optional `account`, `theme_code`, `theme_keyword`, `industry` (FICS substring) filters (AND-combine). |
+| `ls_stocks_refresh_metadata` | — | Synchronous refresh for theme / FICS-industry caches. Default scope = holdings ∪ watchlist symbols when `shcodes` omitted. |
 | `ls_watchlist` | `list` / `add` / `remove` / `group_upsert` / `group_delete` | Saved watchlist items and their groups. `list` takes `scope` (`items` / `groups`); `group_upsert` creates, updates, or renames a group (`rename_from`). |
 | `ls_watched_themes` | `list` / `add` / `remove` | Track LS theme codes (`t1531` tmcode such as `0064`); `list` carries each theme's avg percent change. |
-| `ls_portfolio_io` | `export` / `import` | Versioned JSON snapshot (schema v1) of accounts/holdings/watchlists/watched themes. `import mode=replace` requires `confirm=true` and writes a `before-import-*.json` auto-backup. |
+| `ls_portfolio_io` | `export` / `import` | Versioned JSON snapshot (schema v1) of paper accounts/holdings/watchlists/watched themes. `import mode=replace` requires `confirm=true` and writes a `before-import-*.json` auto-backup. |
 
-**Ambiguity policy.** Reads fall back; writes require an explicit target when ambiguous. 0 accounts → `RequiresAccount`; 1 account → auto with `applied_to` echo; 2+ → `AmbiguousAccount` with `candidates[]` so the model can re-call without prompting the user. Every mutation response includes `applied_to` (single account) or `applied_to[]` with before/after snapshots (corporate actions).
+**Ambiguity policy (paper).** Reads fall back; writes require an explicit target when ambiguous. 0 paper accounts → `RequiresAccount`; 1 paper account → auto with `applied_to` echo; 2+ → `AmbiguousAccount` with `candidates[]`. Every paper-portfolio mutation includes `applied_to` (single account) or `applied_to[]` (corporate actions).
 
-**Error envelopes.** `RequiresAccount` / `AmbiguousAccount` / `AccountNotFound` / `RequiresConfirmation` / `InsufficientQuantity` / `ValidationError` — all carry structured fields (candidates, identifier, holding count + market value, etc.) so the LLM can recover automatically.
+**Error envelopes.** `RequiresAccount` / `AmbiguousAccount` / `AccountNotFound` / `RequiresConfirmation` / `InsufficientQuantity` / `ValidationError` / `LiveAccountNotFound` — all carry structured fields (candidates, identifier, holding count + market value, etc.) so the LLM can recover automatically.
 
 Full release notes: https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Mcp.md
 

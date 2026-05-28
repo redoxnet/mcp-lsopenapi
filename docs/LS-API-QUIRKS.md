@@ -324,6 +324,51 @@ was the real-account pair. The `LsApiOptions.DefaultRealBaseUrl` and
 `DefaultVirtualBaseUrl` constants are intentionally identical and a
 comment block explains why.
 
+### 4.2e Account-inquiry / trading TRs ignore request-side AcntNo ✅
+
+**Symptom:** `ls_account_*` calls in v1.6-dev appeared to "route to the
+default account in portfolio.db." Removing the default or marking a
+different paper-portfolio row as default produced the same broker data
+with a different `_meta.account_used` label — the LS data itself never
+changed.
+
+**Root cause:** the LS REST family for account inquiry and trading does
+not accept `AcntNo` in the request InBlock. Confirmed by inspecting the
+official LS docs in `todo/`:
+
+- `CSPAQ12200InBlock1` → only `BalCreTp`.
+- `CSPAQ12300InBlock1` → only `BalCreTp` / `CmsnAppTpCode` / `D2balBaseQryTp` / `UprcTpCode`.
+- `CSPAQ22200InBlock1` → same shape as v1.
+- `CSPAQ13700InBlock1` → market / side / symbol / date / order-no cursor — no account field.
+- `CSPAT00701InBlock1` (현물정정주문) → order-no / symbol / qty / price — no account field.
+- `t0424` / `t0425` / `t0150` / `t0151` (legacy `cts_*` family) → never had AcntNo.
+
+Every successful call instead echoes `AcntNo` in OutBlock1 (or
+OutBlock2). programgarden's `executor.py` line 3911 and `blocks.py`
+line 116 explicitly describe it as the "authenticated session's
+resolved account number" — a server-side derivation, not a client
+selector.
+
+**Implication:** the appkey + appsecretkey pair fully determines which
+LS subaccount answers. A multi-account customer must rotate keys at the
+process boundary (env vars / appkey loader) to target a different
+subaccount; there is no in-protocol way to switch. v1.7 trading
+actuators inherit the same routing.
+
+**Workaround:** v1.6 (release) split portfolio.db into two physically
+separate stores: paper portfolios in `accounts` (user-curated
+multi-broker book, `broker` purely a display label) and the
+appkey-bound LS live label in `ls_accounts` (auto-discovered from
+response `AcntNo`, keyed by `(account_no, mode)`, never written by
+paper-portfolio tools). The `ls_account_*` tools drop the `account`
+parameter entirely — the resolver only echoes the live row. See
+[`RELEASENOTES.Mcp.md`](../RELEASENOTES.Mcp.md) v1.6.0.
+
+**Status:** ✅ v1.6 — surfaced by the v1.6-dev E2E in
+`todo/E2E-v1.6-claude.txt` where a paper "유안타-001" default
+shadowed live LS data; the user correctly diagnosed it as a structural
+issue rather than a relabel bug.
+
 ### 4.3 "Q-Click / 씽큐스마트" is LS-curated, not user-authored ✅
 
 **TRs:** `t1825`, `t1826` (Q-Click signal pair) + HTS screens [1801]

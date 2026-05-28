@@ -173,6 +173,40 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
             CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_nickname_mode ON accounts(nickname, mode);
             CREATE INDEX IF NOT EXISTS idx_accounts_mode_default ON accounts(mode, is_default, id);
             """),
+        (7, """
+            -- v1.6 schema split (post-E2E correction): the `accounts` table
+            -- conflated two surfaces — auto-discovered LS broker accounts
+            -- (label for the appkey-routed live account) and manually-entered
+            -- paper portfolios for other brokers. The default-account fallback
+            -- could shadow LS labelling with an unrelated paper account, so
+            -- the user mistook 유안타 paper portfolio data for the LS live
+            -- account in E2E. From v7 onward live and paper are physically
+            -- separated stores. See docs/LS-API-QUIRKS.md §4.2e.
+            CREATE TABLE IF NOT EXISTS ls_accounts (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_no     TEXT NOT NULL,
+                mode           TEXT NOT NULL CHECK(mode IN ('real','virtual')),
+                nickname       TEXT,
+                branch_name    TEXT,
+                account_name   TEXT,
+                discovered_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                last_seen_at   TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(account_no, mode)
+            );
+            CREATE INDEX IF NOT EXISTS idx_ls_accounts_mode ON ls_accounts(mode);
+
+            -- Backfill any v1.6-dev rows that were auto-discovered into the
+            -- paper accounts table under broker='LS'. The convention there
+            -- collides with paper "LS증권" labelling, which is why we split.
+            INSERT OR IGNORE INTO ls_accounts(account_no, mode, nickname, discovered_at, last_seen_at)
+            SELECT account_no, mode,
+                   NULLIF(nickname, ''),
+                   datetime('now'), datetime('now')
+            FROM accounts
+            WHERE broker = 'LS';
+
+            DELETE FROM accounts WHERE broker = 'LS';
+            """),
     ];
 
     readonly string _databasePath;

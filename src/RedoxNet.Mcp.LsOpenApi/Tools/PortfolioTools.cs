@@ -155,33 +155,36 @@ internal static class PortfolioTools
     /// </summary>
     [McpServerTool(Name = "ls_account")]
     [Description("""
-        Manages local portfolio accounts — list, create/update, or remove. Does not require LS credentials. Pick the operation with `action`:
+        Manages portfolio account labels — both manually-tracked paper portfolios AND the auto-discovered LS live broker label. Does not require LS credentials. Pick the operation with `action`:
 
-        - action="list" — lists every registered account with its holdings count and the is_default flag. Returns an empty array when none exist; no other parameters.
-        - action="upsert" — creates or updates an account by `account_number` (also requires `nickname`). `set_default=true` promotes it to the sole default; the first account is auto-promoted. Rename-broker sub-mode: set `rename_broker_from` to relabel the broker across every account currently using that label, with the replacement passed in `broker` (account_number / nickname / set_default are ignored).
-        - action="remove" — removes the account identified by `account` (account_number or nickname). When it owns holdings, returns RequiresConfirmation with a preview unless `confirm=true`. Removing the default auto-promotes the oldest remaining account.
+        - action="list" — returns {paper_accounts, live_accounts} so the model can distinguish manually-tracked paper portfolios (broker label = display only) from the appkey-bound LS live row (auto-managed). Returns empty arrays when nothing is registered; no other parameters.
+        - action="upsert" — creates or updates a PAPER-portfolio account by `account_number` (also requires `nickname`). `broker` is a free-form display label ("유안타증권", "한투", "LS증권" — all valid). `set_default=true` promotes it to the sole default paper account; the first paper account is auto-promoted. Rename-broker sub-mode: set `rename_broker_from` to relabel a broker across every paper account using it, with the replacement in `broker`.
+        - action="remove" — removes the paper account identified by `account` (account_number or nickname). RequiresConfirmation envelope when it owns holdings unless `confirm=true`. Removing the default auto-promotes the oldest remaining paper account.
+        - action="set_live_nickname" — sets or clears a friendly nickname on a LIVE LS account row. Requires `account_number` (the LS-side AcntNo) and `nickname` (passing empty/null clears it). Returns the updated live row, or NotFound when no live row matches.
 
-        USE WHEN: the user wants to register a brokerage account ("내 한투 계좌 등록해줘. 번호 X 닉네임 한투"), list their accounts, rename a broker label, or delete an account.
+        USE WHEN: the user wants to register a manual paper-portfolio account ("내 한투 계좌 등록해줘. 번호 X 닉네임 한투"), list both registries, rename a broker label, delete a paper account, or rename their LS live account.
 
-        v0.10 BREAKING: replaces ls_accounts_list / ls_account_upsert / ls_account_remove.
+        Live broker accounts are NOT created here — they are auto-discovered on the first successful ls_account_balance / ls_account_bep / ls_account_credit_limit / ls_account_max_order_qty call. To force discovery without inspecting balances, call ls_account_balance once.
+
+        v0.10 BREAKING: replaces ls_accounts_list / ls_account_upsert / ls_account_remove. v1.6 BREAKING: list response shape is {paper_accounts, live_accounts}; new set_live_nickname action.
         """)]
     public static async Task<string> Account(
         IPortfolioService portfolio,
-        [Description("Operation to perform: 'list', 'upsert', or 'remove'.")]
+        [Description("Operation to perform: 'list', 'upsert', 'remove', or 'set_live_nickname'.")]
         string action,
-        [Description("upsert: brokerage account number (required unless rename_broker_from is set).")]
+        [Description("upsert / set_live_nickname: brokerage account number (required unless rename_broker_from is set).")]
         string? account_number = null,
-        [Description("upsert: human-readable nickname, unique across accounts (required for a normal upsert).")]
+        [Description("upsert: human-readable nickname, unique across paper accounts (required for a normal upsert). set_live_nickname: the nickname to set on the live row (empty string clears it).")]
         string? nickname = null,
-        [Description("upsert: free-text broker label (defaults to 'LS'). In rename-broker sub-mode this is REQUIRED — the replacement label.")]
+        [Description("upsert: free-text display label for the paper account (defaults to 'paper'). In rename-broker sub-mode this is REQUIRED — the replacement label.")]
         string? broker = null,
-        [Description("upsert: if true, promote this account to the sole default.")]
+        [Description("upsert: if true, promote this paper account to the sole default.")]
         bool set_default = false,
-        [Description("upsert: set this to enter rename-broker sub-mode — the current broker label to replace across every account.")]
+        [Description("upsert: set this to enter rename-broker sub-mode — the current broker label to replace across every paper account.")]
         string? rename_broker_from = null,
-        [Description("remove: account identifier (account_number or nickname).")]
+        [Description("remove: paper account identifier (account_number or nickname).")]
         string? account = null,
-        [Description("remove: must be true to cascade-delete holdings owned by the account.")]
+        [Description("remove: must be true to cascade-delete holdings owned by the paper account.")]
         bool confirm = false,
         CancellationToken cancellationToken = default)
     {
@@ -189,15 +192,30 @@ internal static class PortfolioTools
         switch (NormalizeAction(action))
         {
             case "list":
-                return await SerializeAsync(() => portfolio.ListAccountsAsync(cancellationToken)).ConfigureAwait(false);
+                return await SerializeAsync(() => portfolio.ListAllAccountsAsync(cancellationToken)).ConfigureAwait(false);
             case "upsert":
                 return await AccountUpsertAsync(portfolio, account_number, nickname, broker, set_default, rename_broker_from, cancellationToken).ConfigureAwait(false);
             case "remove":
                 if (string.IsNullOrWhiteSpace(account))
                     return MissingArgs(tool, "remove", "account");
                 return await SerializeAsync(() => portfolio.RemoveAccountAsync(account!, confirm, cancellationToken)).ConfigureAwait(false);
+            case "set_live_nickname":
+            {
+                List<string> missing = new();
+                if (string.IsNullOrWhiteSpace(account_number)) missing.Add("account_number");
+                // Nickname is allowed to be null/empty (clears the label); only flag the account_no.
+                if (missing.Count > 0)
+                    return MissingArgs(tool, "set_live_nickname", missing.ToArray());
+                return await SerializeAsync<object>(async () =>
+                {
+                    LsLiveAccountInfo? updated = await portfolio.SetLiveAccountNicknameAsync(account_number!, nickname, cancellationToken).ConfigureAwait(false);
+                    if (updated is null)
+                        return new { error = "Not found.", error_code = "LiveAccountNotFound", account_number };
+                    return new { updated };
+                }).ConfigureAwait(false);
+            }
             default:
-                return UnknownAction(tool, action, "list", "upsert", "remove");
+                return UnknownAction(tool, action, "list", "upsert", "remove", "set_live_nickname");
         }
     }
 

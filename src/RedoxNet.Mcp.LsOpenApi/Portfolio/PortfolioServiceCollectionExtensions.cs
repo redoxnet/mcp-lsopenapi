@@ -30,9 +30,22 @@ internal static class PortfolioServiceCollectionExtensions
             return repository;
         });
         services.AddSingleton<IQuoteService, LsQuoteService>();
-        services.AddSingleton<IPortfolioService, PortfolioService>();
-        services.AddSingleton(sp => new LsAccountResolver(
+        services.AddSingleton<ILsLiveAccountRepository>(sp =>
+        {
+            string path = SqlitePortfolioRepository.ResolveDatabasePath();
+            return new SqliteLsLiveAccountRepository(
+                sp.GetRequiredService<IPortfolioRepository>(),
+                path,
+                sp.GetRequiredService<ILogger<SqliteLsLiveAccountRepository>>());
+        });
+        services.AddSingleton<IPortfolioService>(sp => new PortfolioService(
             sp.GetRequiredService<IPortfolioRepository>(),
+            sp.GetRequiredService<ILsLiveAccountRepository>(),
+            sp.GetRequiredService<IQuoteService>(),
+            sp.GetRequiredService<IOptions<LsApiOptions>>().Value.Market,
+            sp.GetRequiredService<ILogger<PortfolioService>>()));
+        services.AddSingleton(sp => new LsAccountResolver(
+            sp.GetRequiredService<ILsLiveAccountRepository>(),
             sp.GetRequiredService<IOptions<LsApiOptions>>().Value.Market));
         return services;
     }

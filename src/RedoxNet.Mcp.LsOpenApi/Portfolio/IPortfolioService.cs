@@ -29,13 +29,29 @@ internal interface IPortfolioService
     Task<RemoveResult> UnwatchThemeAsync(string themeCode, CancellationToken cancellationToken = default);
     Task<ThemeListResult> ListThemesAsync(CancellationToken cancellationToken = default);
 
-    // -------- Accounts --------
+    // -------- Accounts (paper portfolio) --------
     Task<IReadOnlyList<AccountSummary>> ListAccountsAsync(CancellationToken cancellationToken = default);
     Task<AccountInfo?> GetDefaultAccountAsync(CancellationToken cancellationToken = default);
     Task<AccountInfo> UpsertAccountAsync(string accountNumber, string nickname, string? broker, bool setDefault, CancellationToken cancellationToken = default);
     Task<RemoveAccountResult> RemoveAccountAsync(string accountIdentifier, bool confirm, CancellationToken cancellationToken = default);
     Task<AccountInfo> SetDefaultAccountAsync(string accountIdentifier, CancellationToken cancellationToken = default);
     Task<RenameBrokerResult> RenameBrokerAsync(string fromBroker, string toBroker, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// v1.6 combined registry view used by <c>ls_account(action="list")</c>.
+    /// Returns paper-portfolio accounts and live LS-broker accounts in
+    /// distinct buckets so the model can tell which side it is looking at
+    /// without inspecting <c>broker</c> labels.
+    /// </summary>
+    Task<AccountsListResult> ListAllAccountsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sets or clears the friendly nickname on a live LS broker row. The
+    /// row is keyed by <paramref name="accountNo"/> + the active LS_MARKET
+    /// mode; passing <c>null</c> or whitespace clears the nickname.
+    /// Returns the updated row or null when no row matches.
+    /// </summary>
+    Task<LsLiveAccountInfo?> SetLiveAccountNicknameAsync(string accountNo, string? nickname, CancellationToken cancellationToken = default);
 
     // -------- Holdings --------
     Task<HoldingWriteResult> SetHoldingAsync(string symbol, int quantity, double avgPrice, string? notes, string? accountIdentifier, CancellationToken cancellationToken = default);

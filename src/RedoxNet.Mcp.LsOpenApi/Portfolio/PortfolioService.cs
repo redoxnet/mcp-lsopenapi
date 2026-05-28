@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using RedoxNet.LsOpenApi.Core.Auth;
 using RedoxNet.Mcp.LsOpenApi.Tools;
 
 namespace RedoxNet.Mcp.LsOpenApi.Portfolio;
@@ -19,7 +20,9 @@ internal sealed class PortfolioService : IPortfolioService
     const double WarningRatioThreshold = 5.0;
 
     readonly IPortfolioRepository _repository;
+    readonly ILsLiveAccountRepository _liveAccounts;
     readonly IQuoteService _quoteService;
+    readonly LsMarket _market;
     readonly ILogger<PortfolioService> _logger;
 
     // Per-process enrichment scheduler state. v0.6: fire-and-forget runs on
@@ -43,12 +46,35 @@ internal sealed class PortfolioService : IPortfolioService
 
     public PortfolioService(
         IPortfolioRepository repository,
+        ILsLiveAccountRepository liveAccounts,
         IQuoteService quoteService,
+        LsMarket market,
         ILogger<PortfolioService>? logger = null)
     {
         _repository = repository;
+        _liveAccounts = liveAccounts;
         _quoteService = quoteService;
+        _market = market;
         _logger = logger ?? NullLogger<PortfolioService>.Instance;
+    }
+
+    /// <summary>
+    /// Test-friendly overload: constructs the live-account repository
+    /// from the same SQLite file as the paper-portfolio repository, with
+    /// a default <c>LsMarket.Real</c>. Production wiring goes through the
+    /// primary ctor via <see cref="PortfolioServiceCollectionExtensions"/>.
+    /// </summary>
+    internal PortfolioService(
+        SqlitePortfolioRepository repository,
+        IQuoteService quoteService,
+        ILogger<PortfolioService>? logger = null)
+        : this(
+            repository,
+            new SqliteLsLiveAccountRepository(repository, repository.DatabasePath),
+            quoteService,
+            LsMarket.Real,
+            logger)
+    {
     }
 
     // -------- Watchlist groups --------
@@ -199,6 +225,23 @@ internal sealed class PortfolioService : IPortfolioService
 
     public Task<RenameBrokerResult> RenameBrokerAsync(string fromBroker, string toBroker, CancellationToken cancellationToken = default) =>
         _repository.RenameBrokerAsync(fromBroker, toBroker, cancellationToken);
+
+    public async Task<AccountsListResult> ListAllAccountsAsync(CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<AccountSummary> paper = await _repository.ListAccountSummariesAsync(cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<LsLiveAccount> live = await _liveAccounts.ListAllAsync(cancellationToken).ConfigureAwait(false);
+        var liveInfos = live.Select(SqliteLsLiveAccountRepository.ToInfo).ToList();
+        return new AccountsListResult(paper, liveInfos);
+    }
+
+    public async Task<LsLiveAccountInfo?> SetLiveAccountNicknameAsync(string accountNo, string? nickname, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(accountNo))
+            throw new PortfolioValidationException("account_no must not be empty.");
+        string mode = _market.ToCanonical();
+        LsLiveAccount? updated = await _liveAccounts.SetNicknameAsync(accountNo.Trim(), mode, nickname, cancellationToken).ConfigureAwait(false);
+        return updated is null ? null : SqliteLsLiveAccountRepository.ToInfo(updated);
+    }
 
     // -------- Holdings (set/buy/sell/remove) --------
 
