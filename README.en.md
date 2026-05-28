@@ -22,7 +22,7 @@ An LLM-friendly window into Korean and US stock market data — designed so agen
 - **Q-Click signal screeners (v1.4+).** LS-curated saved conditions (~99 signals: MA alignment, breakouts, short-side trend, foreign-flow streaks, …) discovered by keyword, run by name, and *combined* with AND / OR — compound conditions no single HTS screen offers.
 - **Token-efficient by default.** Heavy responses are shaped for the model's context window — not the API's raw shape. Charts return summary-first payloads + dataset handles, raw bars stay off-context unless `output_mode: "export"` is asked for, and list tools cap rows with `limit`. The common chart / history / holdings payloads run 66-97% smaller than the pre-v0.9 shapes, so long multi-turn analysis conversations don't burn the budget on bar arrays.
 - **A smaller routing surface.** The default `standard` profile exposes 50 semantic tools, while the 3 catalog escape-hatch tools stay hidden unless `LS_TOOL_PROFILE=all`.
-- **Schema-split portfolio memory.** v1.6 separates the LS broker live row (auto-discovered, in its own `ls_accounts` table) from the manually-tracked paper portfolio (multi-broker accounts, holdings, watchlists, watched themes; `broker` field purely a display label). The two coexist physically — a paper "LS증권" account never shadows the live broker echo. JSON backup / restore covers the paper side; the live side is rediscovered on each appkey load.
+- **Schema-split portfolio memory.** v1.6 separates the LS broker live row (auto-discovered, in its own `ls_accounts` table) from the manually-tracked paper portfolio (multi-broker accounts, holdings, watchlists, watched themes; `broker` field purely a display label). The two coexist physically — a paper "LS증권" account never shadows the live broker echo. JSON backup / restore covers the paper side; the live row is (re)discovered on the first successful `ls_account_*` call (CSPAQ / CDPCQ / FOCCQ family) that echoes back an `AcntNo`, not at server startup.
 
 Token-efficiency case study: [Same question, less context](docs/case-studies/v0.4.0-token-efficiency.en.md)
 
@@ -171,7 +171,7 @@ The v1.3 tools become available immediately after step 4 — `ls_search_overseas
 
 - **No additional key issued** — KR and US share the same key pair. `LS_APPKEY` / `LS_APPSECRETKEY` env vars are unchanged.
 - **Non-Display restriction** — LS's NYSE / Nasdaq data license is Display-only. The "AI assistant shows the result to the user" pattern this server is built for falls within Display use; automated trading bots and third-party data redistribution may violate LS terms.
-- **Commissions** — US stock trades via the OPEN API channel are charged 0.25%. (No separate data-feed fee.) v1.3 tools are read-only, so no trading commissions apply — that becomes relevant only when order tools land in a later release.
+- **Commissions** — US stock trades via the OPEN API channel are charged 0.25%. (No separate data-feed fee.) Every overseas tool in this server is currently read-only (market data + the live LS broker inquiry family), so no trading commissions apply — that becomes relevant only when order tools land in v1.7.
 - **Time zones** — quote timestamps are Seoul wall-clock (`timestamp_tz: "Asia/Seoul"`); daily / minute bars are US Eastern (`bar_timezone: "America/New_York"`). An NVDA "5/22 day bar" is the NYSE 5/22 session, which spans 22:30 5/22 → 05:00 5/23 in Seoul time.
 
 ## Environment variables

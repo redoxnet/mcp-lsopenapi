@@ -43,6 +43,8 @@ if (response.IsSuccess)
 
 ## What's in the box
 
+This package is the **SDK / catalog / HTTP-client layer**: auth, the TR catalog (76 entries spanning market data, charts, screeners, and the v1.6 account-inquiry family), the HTTP client with retry / rate-limit / continuation handling, and the indicator math. It does not own portfolio state — paper portfolios (`accounts` / `holdings` / `watchlist_*`) and the live LS broker account registry (`ls_accounts`, the v1.6 schema-split table) live in [`RedoxNet.Mcp.LsOpenApi`](https://www.nuget.org/packages/RedoxNet.Mcp.LsOpenApi/). If you only need to call LS REST from a non-MCP .NET app, this package alone is enough.
+
 | Layer | What it provides |
 |---|---|
 | **Auth** | `LsTokenIssuer` — OAuth2 `client_credentials`, with `LsTokenCache` (SQLite WAL, key = `SHA256(appkey):market` — raw app key never on disk). Auto-refresh 5 min pre-expiry; concurrent issuance is serialized. |

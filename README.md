@@ -161,7 +161,7 @@ v1.3부터 미장(Nasdaq / NYSE / AMEX) 종목의 시세·차트·종목 검색�
 ## 데이터와 보안
 
 - **내 페이퍼 포트폴리오·관심종목은 로컬 디스크에만** 저장됩니다 (`%LOCALAPPDATA%\RedoxNet\LsOpenApi\portfolio.db`). 외부 송신은 없습니다. v1.6부터 LS 실계좌의 AcntNo + 지점명/계좌명 라벨도 같은 파일의 별도 `ls_accounts` 테이블에 자동 발견 시점에 저장됩니다 (실시간 잔고/주문 자체는 캐시하지 않고 매 호출마다 LS REST를 새로 침).
-- **모든 동작은 read-only**입니다 — v1.6은 시장 데이터 조회 + LS 실계좌의 잔고·보유·주문이력·BEP·주문가능수량 등 inquiry까지만 수행하고, **실주문(매매·정정·취소)은 지원하지 않습니다** (v1.7에 paper-default + preview-gate로 도입 예정). 페이퍼 포트폴리오의 보유 종목·관심종목·백업은 사용자가 직접 입력해 로컬 DB/JSON에 기록합니다.
+- **브로커·시장 연동은 read-only**입니다 — v1.6은 시장 데이터 조회 + LS 실계좌의 잔고·보유·주문이력·BEP·주문가능수량 등 inquiry까지만 수행하고, **실주문(매매·정정·취소)은 지원하지 않습니다** (v1.7에 paper-default + preview-gate로 도입 예정). 페이퍼 포트폴리오는 사용자가 직접 입력해 로컬 DB/JSON에 기록 — `ls_holding`(매수/매도/보유 기록), `ls_account(action="upsert")`(계좌 등록), `ls_portfolio_io`(JSON 백업/복구) 같은 로컬 write가 있고, 이건 외부 송신 없이 본인 PC에만 머뭅니다.
 - **자격증명(API 키)은 환경변수로만** 전달받습니다. 채팅·도구 인자·MCP 엘리시테이션 등 모델이 관찰할 수 있는 경로로는 절대 받지 않습니다 — 의도된 보안 설계이며, 상세 정책은 [영문 README](README.en.md#credential-handling-policy)에 있습니다.
 
 ---
