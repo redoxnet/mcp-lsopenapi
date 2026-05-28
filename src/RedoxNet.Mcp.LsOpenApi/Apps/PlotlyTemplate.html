@@ -153,6 +153,7 @@
     let _sizeScheduled = false;
     let _lastWidth = 0;
     let _lastHeight = 0;
+    let _plotlyResizeScheduled = false;
     function sendBodySizeChanged() {
       if (_sizeScheduled) return;
       _sizeScheduled = true;
@@ -180,6 +181,28 @@
       const ro = new ResizeObserver(sendBodySizeChanged);
       ro.observe(document.documentElement);
       ro.observe(document.body);
+      return () => ro.disconnect();
+    }
+
+    function schedulePlotlyResize() {
+      const chart = document.getElementById("chart");
+      if (!window.Plotly || !chart || !chart._fullLayout) return;
+      if (_plotlyResizeScheduled) return;
+      _plotlyResizeScheduled = true;
+      requestAnimationFrame(() => {
+        _plotlyResizeScheduled = false;
+        if (!window.Plotly || !chart._fullLayout) return;
+        Promise.resolve(Plotly.Plots.resize(chart))
+          .then(sendBodySizeChanged)
+          .catch(() => { /* best-effort sync only */ });
+      });
+    }
+
+    function setupPlotlyResizeSync() {
+      const chart = document.getElementById("chart");
+      if (!chart || !window.ResizeObserver) return null;
+      const ro = new ResizeObserver(schedulePlotlyResize);
+      ro.observe(chart);
       return () => ro.disconnect();
     }
 
@@ -262,6 +285,11 @@
         responsive: true,
         displayModeBar: false,
         displaylogo: false,
+      }).then(() => {
+        // Host iframes can settle to their final dimensions after the plot is
+        // created. Force Plotly's internal geometry to match the rendered div
+        // so hover hit-testing and spike lines stay under the actual cursor.
+        schedulePlotlyResize();
       });
     }
 
@@ -328,6 +356,7 @@
         hostContext = msg.result.hostContext || {};
         notify("ui/notifications/initialized");
         setupAutoResize();
+        setupPlotlyResizeSync();
         render();
         return;
       }

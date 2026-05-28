@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FluentAssertions;
@@ -18,6 +19,8 @@ namespace RedoxNet.Mcp.LsOpenApi.Tests.Apps;
 public class UiResourcesTests
 {
     const string PlotlyResourceUri = "ui://lsopenapi/plotly";
+    const string PlotlyEmbeddedResourceName =
+        "RedoxNet.Mcp.LsOpenApi.Apps.PlotlyTemplate.html";
 
     static Tool ChartTool(string name = "ls_get_chart") => new()
     {
@@ -35,6 +38,14 @@ public class UiResourcesTests
 
     static bool SchemaHasProperty(Tool tool, string property) =>
         tool.InputSchema.GetProperty("properties").TryGetProperty(property, out _);
+
+    static string ReadPlotlyTemplate()
+    {
+        using Stream stream = typeof(UiResources).Assembly.GetManifestResourceStream(PlotlyEmbeddedResourceName)
+            ?? throw new FileNotFoundException(PlotlyEmbeddedResourceName);
+        using StreamReader reader = new(stream);
+        return reader.ReadToEnd();
+    }
 
     // ── ApplyChartSurface: Sep1865 ──────────────────────────────────────────
 
@@ -111,6 +122,16 @@ public class UiResourcesTests
             SchemaHasProperty(tool, "include_chart").Should().BeTrue(
                 $"a non-chart tool's schema is never reshaped ({mode})");
         }
+    }
+
+    [Fact]
+    public void PlotlyTemplate_SyncsPlotlyGeometryAfterHostResize()
+    {
+        string html = ReadPlotlyTemplate();
+
+        html.Should().Contain("setupPlotlyResizeSync");
+        html.Should().Contain("new ResizeObserver(schedulePlotlyResize)");
+        html.Should().Contain("Plotly.Plots.resize(chart)");
     }
 
     // ── StripChartStructuredContent ─────────────────────────────────────────
