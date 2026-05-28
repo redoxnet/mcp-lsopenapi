@@ -27,7 +27,10 @@ public sealed class ToolSurfaceFreezeTests
     [
         "ls_account",
         "ls_account_balance",
+        "ls_account_bep",
+        "ls_account_credit_limit",
         "ls_account_holdings",
+        "ls_account_max_order_qty",
         "ls_account_orders",
         "ls_add_indicator",
         "ls_analyze_program_flow",
@@ -84,7 +87,7 @@ public sealed class ToolSurfaceFreezeTests
         IReadOnlyList<ToolSurface> tools = DiscoverSurface(ToolProfile.Resolve("standard", null));
 
         tools.Select(t => t.Name).Should().Equal(StandardToolNames.Order(StringComparer.Ordinal));
-        tools.Should().HaveCount(43);
+        tools.Should().HaveCount(46);
     }
 
     [Fact]
@@ -93,7 +96,7 @@ public sealed class ToolSurfaceFreezeTests
         IReadOnlyList<ToolSurface> tools = DiscoverSurface(ToolProfile.Resolve("all", null));
 
         tools.Select(t => t.Name).Should().Equal(AllToolNames.Order(StringComparer.Ordinal));
-        tools.Should().HaveCount(46);
+        tools.Should().HaveCount(49);
     }
 
     [Fact]
@@ -147,7 +150,10 @@ public sealed class ToolSurfaceFreezeTests
         // Reflection-surface proxy for tools/list. The historical v0.10
         // standard tools/list was about 60k chars; this budget catches
         // description/schema creep while leaving room for minor wording fixes.
-        json.ShouldFitTokenBudget(32000);
+        // v1.6 bumped the ceiling from 32k → 38k to make room for the 10 new
+        // ls_account_* descriptors. Don't raise it again without scrutinising
+        // whether wording can be tightened first.
+        json.ShouldFitTokenBudget(38000);
     }
 
     [Fact]
@@ -155,7 +161,7 @@ public sealed class ToolSurfaceFreezeTests
     {
         string json = SerializeSurface(ToolProfile.Resolve("all", null));
 
-        json.ShouldFitTokenBudget(36000);
+        json.ShouldFitTokenBudget(42000);
     }
 
     static string SerializeSurface(ToolProfile profile) =>

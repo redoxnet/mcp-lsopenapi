@@ -236,6 +236,96 @@ try {
         Write-Host $rawText
     }
 
+    # --- ls_account_bep ---
+    Write-Host ""
+    Write-Host "== ls_account_bep (CSPAQ12300) ==" -ForegroundColor Yellow
+    $resp = CallTool 'ls_account_bep' $accountArgs
+    $rawText = $resp.result.content[0].text
+    try {
+        $parsed = $rawText | ConvertFrom-Json -Depth 32
+        if ($parsed.error) {
+            Write-Host ("    ❌ {0}" -f $parsed.error) -ForegroundColor Red
+            if ($parsed.details) {
+                Write-Host ("       details: {0}" -f ($parsed.details | ConvertTo-Json -Depth 5 -Compress)) -ForegroundColor DarkRed
+            }
+        } else {
+            $used = $parsed._meta.account_used
+            Write-Host ("    ✅ account {0} ({1}, mode={2})" -f $used.account_number, $used.nickname, $used.mode) -ForegroundColor Green
+            if ($parsed.summary) {
+                Write-Host ("       summary      : eval={0:N0}  pnl={1:N0}  pnl_pct={2:N2}  invst_pnl={3:N0}" -f `
+                    $parsed.summary.evaluation_amount, $parsed.summary.evaluation_pnl_sum, $parsed.summary.pnl_pct, $parsed.summary.investment_pnl)
+            }
+            Write-Host ("       holdings     : {0}" -f $parsed.count)
+            foreach ($row in @($parsed.holdings) | Select-Object -First 5) {
+                Write-Host ("         - {0,-8} {1,-12} qty={2,4} avg={3,9:N0} BEP_sell={4,9:N0} cur={5,9:N0} pnl%={6,7:N2}" -f `
+                    $row.symbol, $row.name, $row.quantity, $row.average_price, $row.bep_sell_price, $row.current_price, $row.evaluation_pnl_pct)
+            }
+        }
+    } catch {
+        Write-Host "    (non-JSON output):" -ForegroundColor Yellow
+        Write-Host $rawText
+    }
+
+    # --- ls_account_credit_limit ---
+    Write-Host ""
+    Write-Host "== ls_account_credit_limit (CSPAQ00600) ==" -ForegroundColor Yellow
+    $resp = CallTool 'ls_account_credit_limit' $accountArgs
+    $rawText = $resp.result.content[0].text
+    try {
+        $parsed = $rawText | ConvertFrom-Json -Depth 32
+        if ($parsed.error) {
+            Write-Host ("    ❌ {0}" -f $parsed.error) -ForegroundColor Red
+            if ($parsed.details) {
+                Write-Host ("       details: {0}" -f ($parsed.details | ConvertTo-Json -Depth 5 -Compress)) -ForegroundColor DarkRed
+            }
+        } else {
+            $used = $parsed._meta.account_used
+            Write-Host ("    ✅ account {0} ({1}, mode={2})  loan_type={3}" -f `
+                $used.account_number, $used.nickname, $used.mode, $parsed.filter.loan_type) -ForegroundColor Green
+            $l = $parsed.limits
+            Write-Host ("       limits       : dist={0:N0}/{1:N0}  self={2:N0}/{3:N0}  short={4:N0}/{5:N0}" -f `
+                $l.distribution_margin_used, $l.distribution_margin_limit, `
+                $l.self_margin_used, $l.self_margin_limit, `
+                $l.short_loan_used, $l.short_loan_limit)
+            Write-Host ("       pledge       : ratio={0:N4}%  maint={1:N4}%  dpsast_sum={2:N0}  orderable={3:N0}" -f `
+                $l.pledge_ratio_pct, $l.pledge_maintenance_ratio_pct, $l.deposited_asset_sum, $l.orderable_amount)
+        }
+    } catch {
+        Write-Host "    (non-JSON output):" -ForegroundColor Yellow
+        Write-Host $rawText
+    }
+
+    # --- ls_account_max_order_qty ---
+    Write-Host ""
+    Write-Host "== ls_account_max_order_qty (CSPBQ00200, sym=005930 buy) ==" -ForegroundColor Yellow
+    $maxOrderArgs = $accountArgs.Clone()
+    $maxOrderArgs['symbol'] = '005930'
+    $maxOrderArgs['side'] = 'buy'
+    $resp = CallTool 'ls_account_max_order_qty' $maxOrderArgs
+    $rawText = $resp.result.content[0].text
+    try {
+        $parsed = $rawText | ConvertFrom-Json -Depth 32
+        if ($parsed.error) {
+            Write-Host ("    ❌ {0}" -f $parsed.error) -ForegroundColor Red
+            if ($parsed.details) {
+                Write-Host ("       details: {0}" -f ($parsed.details | ConvertTo-Json -Depth 5 -Compress)) -ForegroundColor DarkRed
+            }
+        } else {
+            $used = $parsed._meta.account_used
+            $c = $parsed.capacity
+            $t = $parsed.margin_tiers
+            Write-Host ("    ✅ account {0} ({1}, mode={2})  symbol={3} side={4}" -f `
+                $used.account_number, $used.nickname, $used.mode, $parsed.filter.symbol, $parsed.filter.side) -ForegroundColor Green
+            Write-Host ("       capacity     : orderable_qty={0:N0}  orderable_amt={1:N0}  cash_orderable={2:N0}  margin_acct={3:N2}%" -f `
+                $c.orderable_quantity, $c.orderable_amount, $c.cash_orderable_amount, $c.margin_rate_account_pct)
+            Write-Host ("       tiers (qty)  : 20%={0,8:N0}  30%={1,8:N0}  40%={2,8:N0}  100%={3,8:N0}  100%cash={4,8:N0}" -f `
+                $t.pct20_orderable_quantity, $t.pct30_orderable_quantity, $t.pct40_orderable_quantity, $t.pct100_orderable_quantity, $t.pct100_cash_only_quantity)
+        }
+    } catch {
+        Write-Host "    (non-JSON output):" -ForegroundColor Yellow
+        Write-Host $rawText
+    }
+
     Write-Host ""
     Write-Host "==== account-inquiry smoke complete ====" -ForegroundColor Green
 }

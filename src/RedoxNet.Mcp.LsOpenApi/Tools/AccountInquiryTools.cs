@@ -494,23 +494,396 @@ internal static class AccountInquiryTools
         }
     }
 
+    [McpServerTool(Name = "ls_account_bep")]
+    [Description("""
+        Returns the break-even price (BEP 단가) per holding via TR CSPAQ12300. BEP is the price you'd need to sell at to fully cover commissions and taxes — different from the raw average purchase price.
+
+        USE WHEN: the user asks "BEP 단가", "손익분기 단가", "수수료 포함 평단", or wants the after-fee breakeven on their LS positions.
+        AVOID WHEN: the user wants just the simple average purchase price — that's already in ls_account_holdings.average_price.
+
+        `symbol` optionally narrows to a single 6-digit code (Korean shcode); the LS field IsuNo accepts the "A+code" form but the wrapper takes the bare 6-digit shcode for the user. Account resolution matches ls_account_holdings.
+        """)]
+    public static async Task<string> Bep(
+        LsApiClient apiClient,
+        LsAccountResolver accountResolver,
+        [Description("Optional account_number or nickname. Omit to use the active mode's default account.")]
+        string? account = null,
+        [Description("Optional 6-digit Korean short code (e.g. '005930'). Omit to return BEP for every holding.")]
+        string? symbol = null,
+        CancellationToken cancellationToken = default)
+    {
+        Account resolved;
+        try { resolved = await accountResolver.ResolveAsync(account, cancellationToken).ConfigureAwait(false); }
+        catch (RequiresAccountException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code }); }
+        catch (AmbiguousAccountException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, candidates = ex.Candidates }); }
+        catch (AccountNotFoundException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, identifier = ex.Identifier, candidates = ex.Candidates }); }
+
+        string? symbolFilter = string.IsNullOrWhiteSpace(symbol) ? null : symbol.Trim().ToUpperInvariant();
+        const string trCode = "CSPAQ12300";
+
+        try
+        {
+            var body = new JsonObject
+            {
+                [$"{trCode}InBlock1"] = new JsonObject
+                {
+                    ["BalCreTp"] = "0",
+                    ["CmsnAppTpCode"] = "1",      // include fees in evaluation
+                    ["D2balBaseQryTp"] = "0",
+                    ["UprcTpCode"] = "1",          // BEP, not average
+                },
+            };
+            LsTrResponse response = await apiClient.SendAsync(new LsTrRequest(trCode, body), cancellationToken).ConfigureAwait(false);
+
+            JsonElement? body3 = response.GetBlock($"{trCode}OutBlock3");
+            if (!IsCspaqSuccess(response.RspCode, body3))
+            {
+                return McpJson.Error("LS reported a business-level error.", new
+                {
+                    tr_code = trCode,
+                    rsp_cd = response.RspCode,
+                    rsp_msg = response.RspMessage,
+                    account_used = ToAccountEcho(resolved),
+                });
+            }
+            ArgumentNullException.ThrowIfNull(body3);
+
+            JsonElement? body2 = response.GetBlock($"{trCode}OutBlock2");
+            BepSummary? summary = null;
+            if (body2 is not null)
+            {
+                JsonElement s = body2.Value;
+                summary = new BepSummary
+                {
+                    AccountName = (s.ReadString("AcntNm") ?? "").Trim(),
+                    Deposit = s.ReadLong("Dps"),
+                    EvaluationAmount = s.ReadLong("BalEvalAmt"),
+                    PurchaseAmount = s.ReadLong("PchsAmt"),
+                    EvaluationPnlSum = s.ReadLong("EvalPnlSum"),
+                    PnlPct = s.ReadDouble("PnlRat"),
+                    InvestmentOriginal = s.ReadLong("InvstOrgAmt"),
+                    InvestmentPnl = s.ReadLong("InvstPlAmt"),
+                };
+            }
+
+            var rows = new List<BepRow>();
+            foreach (JsonElement row in body3.Value.EnumerateArray())
+            {
+                string isuNo = (row.ReadString("IsuNo") ?? "").Trim();
+                string sym = ExtractShcode(isuNo);
+                if (symbolFilter is not null && !string.Equals(sym, symbolFilter, StringComparison.Ordinal))
+                    continue;
+                rows.Add(new BepRow(
+                    Symbol: sym,
+                    Name: GetIndexQuoteTool.CompactName(row.ReadString("IsuNm")),
+                    Quantity: row.ReadLong("BalQty") != 0 ? row.ReadLong("BalQty") : row.ReadLong("BnsBaseBalQty"),
+                    SellableQuantity: row.ReadLong("SellAbleQty"),
+                    AveragePrice: row.ReadDouble("AvrUprc"),
+                    BepSellPrice: row.ReadDouble("SellPrc"),
+                    BepBuyPrice: row.ReadDouble("BuyPrc"),
+                    CurrentPrice: row.ReadDouble("NowPrc"),
+                    EvaluationAmount: row.ReadLong("BalEvalAmt"),
+                    EvaluationPnl: row.ReadLong("EvalPnl"),
+                    EvaluationPnlPct: row.ReadDouble("PnlRat"),
+                    PurchaseAmount: row.ReadLong("PchsAmt")));
+            }
+
+            var payload = new
+            {
+                summary,
+                filter = new { symbol = symbolFilter },
+                count = rows.Count,
+                holdings = rows,
+                _meta = new
+                {
+                    account_used = ToAccountEcho(resolved),
+                    data_as_of = GetIndexQuoteTool.SeoulNowIsoString(),
+                    tr_code = trCode,
+                    source = "live",
+                },
+            };
+            return JsonSerializer.Serialize(payload, McpJson.Tool);
+        }
+        catch (LsAuthException ex) { return McpJson.Error("LS authentication failed for the account inquiry.", new { reason = ex.Message, account_used = ToAccountEcho(resolved) }); }
+        catch (LsTrException ex) { return McpJson.Error("TR call failed.", new { reason = ex.Message, status = ex.StatusCode, tr_code = trCode, account_used = ToAccountEcho(resolved) }); }
+    }
+
+    [McpServerTool(Name = "ls_account_credit_limit")]
+    [Description("""
+        Returns the credit margin loan limits (융자/대주 한도) for one of your LS accounts via TR CSPAQ00600. Reports both the broker-wide limits and your remaining headroom for the selected loan type.
+
+        USE WHEN: the user asks "신용한도", "융자 한도", "대주 한도", "담보비율" — anything about margin trading capacity.
+        AVOID WHEN: the user is asking about regular cash-account orderable amounts — use ls_account_balance.
+
+        `loan_type` defaults to '유통융자' (the most common case). `symbol` and `order_price` are required by LS (the limit calculation is symbol-aware); omitting them defaults to a low-impact probe (price=1 on the same default test symbol LS uses).
+        """)]
+    public static async Task<string> CreditLimit(
+        LsApiClient apiClient,
+        LsAccountResolver accountResolver,
+        [Description("Optional account_number or nickname. Omit to use the active mode's default account.")]
+        string? account = null,
+        [Description("Loan type: 'distribution_margin' (유통융자, default), 'self_margin' (자기융자), 'distribution_short' (유통대주), 'self_short' (자기대주').")]
+        string? loan_type = null,
+        [Description("6-digit Korean short code that anchors the limit calculation. Default '005930' (Samsung) as a low-impact probe.")]
+        string? symbol = null,
+        [Description("Order price reference for the limit calculation. Default 1.0.")]
+        double? order_price = null,
+        CancellationToken cancellationToken = default)
+    {
+        string loanCode = NormalizeLoanType(loan_type, out string? loanError);
+        if (loanError is not null) return McpJson.Error(loanError);
+
+        string sym = string.IsNullOrWhiteSpace(symbol) ? "005930" : symbol.Trim().ToUpperInvariant();
+        double price = order_price ?? 1.0;
+
+        Account resolved;
+        try { resolved = await accountResolver.ResolveAsync(account, cancellationToken).ConfigureAwait(false); }
+        catch (RequiresAccountException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code }); }
+        catch (AmbiguousAccountException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, candidates = ex.Candidates }); }
+        catch (AccountNotFoundException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, identifier = ex.Identifier, candidates = ex.Candidates }); }
+
+        const string trCode = "CSPAQ00600";
+        try
+        {
+            var body = new JsonObject
+            {
+                [$"{trCode}InBlock1"] = new JsonObject
+                {
+                    ["LoanDtlClssCode"] = loanCode,
+                    ["IsuNo"] = $"A{sym}",
+                    ["OrdPrc"] = price,
+                    ["CommdaCode"] = "41",
+                },
+            };
+            LsTrResponse response = await apiClient.SendAsync(new LsTrRequest(trCode, body), cancellationToken).ConfigureAwait(false);
+
+            JsonElement? body2 = response.GetBlock($"{trCode}OutBlock2");
+            if (!IsCspaqSuccess(response.RspCode, body2))
+            {
+                return McpJson.Error("LS reported a business-level error.", new
+                {
+                    tr_code = trCode,
+                    rsp_cd = response.RspCode,
+                    rsp_msg = response.RspMessage,
+                    account_used = ToAccountEcho(resolved),
+                });
+            }
+            ArgumentNullException.ThrowIfNull(body2);
+
+            JsonElement b = body2.Value;
+            var payload = new
+            {
+                filter = new { loan_type = LoanLabel(loanCode), symbol = sym, order_price = price },
+                limits = new
+                {
+                    account_name = (b.ReadString("AcntNm") ?? "").Trim(),
+                    distribution_margin_limit = b.ReadLong("MktcplMloanLmtAmt"),
+                    distribution_margin_used = b.ReadLong("MktcplMloanAmtSum"),
+                    self_margin_limit = b.ReadLong("SfaccMloanLmtAmt"),
+                    self_margin_used = b.ReadLong("SfaccMloanAmtSum"),
+                    short_loan_limit = b.ReadLong("SloanLmtAmt"),
+                    short_loan_used = b.ReadLong("SloanAmtSum"),
+                    pledge_ratio_pct = b.ReadDouble("PldgRat"),
+                    pledge_maintenance_ratio_pct = b.ReadDouble("PldgMaintRat"),
+                    deposited_asset_sum = b.ReadLong("DpsastSum"),
+                    orderable_amount = b.ReadLong("OrdAbleAmt"),
+                    orderable_quantity = b.ReadLong("OrdAbleQty"),
+                    receivable_unable_orderable_quantity = b.ReadLong("RcvblUablOrdAbleQty"),
+                },
+                _meta = new
+                {
+                    account_used = ToAccountEcho(resolved),
+                    data_as_of = GetIndexQuoteTool.SeoulNowIsoString(),
+                    tr_code = trCode,
+                    source = "live",
+                },
+            };
+            return JsonSerializer.Serialize(payload, McpJson.Tool);
+        }
+        catch (LsAuthException ex) { return McpJson.Error("LS authentication failed for the account inquiry.", new { reason = ex.Message, account_used = ToAccountEcho(resolved) }); }
+        catch (LsTrException ex) { return McpJson.Error("TR call failed.", new { reason = ex.Message, status = ex.StatusCode, tr_code = trCode, account_used = ToAccountEcho(resolved) }); }
+    }
+
+    [McpServerTool(Name = "ls_account_max_order_qty")]
+    [Description("""
+        Returns the maximum orderable quantity for a specific symbol / side / price triple via TR CSPBQ00200. INQUIRY ONLY — this never places an order. Lets the model answer "how many can I afford to buy at price X" without simulating any execution.
+
+        USE WHEN: the user asks "최대 몇 주 살 수 있어", "주문 가능 수량", "지금 가격에 풀매수 하면 몇 주", or anywhere they want to know capacity before placing an order.
+        AVOID WHEN: the user wants to actually place an order — v1.6 does NOT support order placement. v1.7 will ship ls_place_order with proper safety gating.
+
+        Returns 증거금률별 (20% / 30% / 40% / 100% margin tiers) quantities so the model can distinguish between cash-only capacity and leveraged capacity. order_price=0 lets LS pick the current best quote automatically.
+        """)]
+    public static async Task<string> MaxOrderQty(
+        LsApiClient apiClient,
+        LsAccountResolver accountResolver,
+        [Description("6-digit Korean short code (e.g. '005930' Samsung).")]
+        string symbol,
+        [Description("Side: 'buy' (매수) or 'sell' (매도).")]
+        string side,
+        [Description("Optional account_number or nickname. Omit to use the active mode's default account.")]
+        string? account = null,
+        [Description("Order price reference. Default 0 — LS uses the current best quote.")]
+        double order_price = 0.0,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+            return McpJson.Error("symbol is required.");
+        string bns = NormalizeOrderSide(side, out string? sideError);
+        if (sideError is not null) return McpJson.Error(sideError);
+
+        Account resolved;
+        try { resolved = await accountResolver.ResolveAsync(account, cancellationToken).ConfigureAwait(false); }
+        catch (RequiresAccountException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code }); }
+        catch (AmbiguousAccountException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, candidates = ex.Candidates }); }
+        catch (AccountNotFoundException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, identifier = ex.Identifier, candidates = ex.Candidates }); }
+
+        const string trCode = "CSPBQ00200";
+        try
+        {
+            string sym = symbol.Trim().ToUpperInvariant();
+            var body = new JsonObject
+            {
+                [$"{trCode}InBlock1"] = new JsonObject
+                {
+                    ["BnsTpCode"] = bns,
+                    ["IsuNo"] = $"A{sym}",
+                    ["OrdPrc"] = order_price,
+                },
+            };
+            LsTrResponse response = await apiClient.SendAsync(new LsTrRequest(trCode, body), cancellationToken).ConfigureAwait(false);
+
+            JsonElement? body2 = response.GetBlock($"{trCode}OutBlock2");
+            if (!IsCspaqSuccess(response.RspCode, body2))
+            {
+                return McpJson.Error("LS reported a business-level error.", new
+                {
+                    tr_code = trCode,
+                    rsp_cd = response.RspCode,
+                    rsp_msg = response.RspMessage,
+                    account_used = ToAccountEcho(resolved),
+                });
+            }
+            ArgumentNullException.ThrowIfNull(body2);
+
+            JsonElement b = body2.Value;
+            var payload = new
+            {
+                filter = new { symbol = sym, side = bns == "1" ? "sell" : "buy", order_price },
+                capacity = new
+                {
+                    account_name = (b.ReadString("AcntNm") ?? "").Trim(),
+                    symbol_name = (b.ReadString("IsuNm") ?? "").Trim(),
+                    deposit = b.ReadLong("Dps"),
+                    orderable_amount = b.ReadLong("OrdAbleAmt"),
+                    orderable_quantity = b.ReadLong("OrdAbleQty"),
+                    cash_orderable_amount = b.ReadLong("MnyOrdAbleAmt"),
+                    kospi_orderable_amount = b.ReadLong("SeOrdAbleAmt"),
+                    kosdaq_orderable_amount = b.ReadLong("KdqOrdAbleAmt"),
+                    margin_rate_symbol_pct = b.ReadDouble("IsuMgnRat") * 100,
+                    margin_rate_account_pct = b.ReadDouble("AcntMgnRat") * 100,
+                    commission = b.ReadLong("Cmsn"),
+                    commission_rate = b.ReadDouble("CmsnRat"),
+                },
+                margin_tiers = new
+                {
+                    pct20_orderable_quantity = b.ReadLong("MgnRat20OrdAbleQty"),
+                    pct30_orderable_quantity = b.ReadLong("MgnRat30OrdAbleQty"),
+                    pct40_orderable_quantity = b.ReadLong("MgnRat40OrdAbleQty"),
+                    pct100_orderable_quantity = b.ReadLong("MgnRat100OrdAbleQty"),
+                    pct100_cash_only_quantity = b.ReadLong("MgnRat100MnyOrdAbleQty"),
+                },
+                _meta = new
+                {
+                    account_used = ToAccountEcho(resolved),
+                    data_as_of = GetIndexQuoteTool.SeoulNowIsoString(),
+                    tr_code = trCode,
+                    source = "live",
+                },
+            };
+            return JsonSerializer.Serialize(payload, McpJson.Tool);
+        }
+        catch (LsAuthException ex) { return McpJson.Error("LS authentication failed for the account inquiry.", new { reason = ex.Message, account_used = ToAccountEcho(resolved) }); }
+        catch (LsTrException ex) { return McpJson.Error("TR call failed.", new { reason = ex.Message, status = ex.StatusCode, tr_code = trCode, account_used = ToAccountEcho(resolved) }); }
+    }
+
+    static string ExtractShcode(string isuNo)
+    {
+        // LS uses "A005930" for stock IsuNo (A + 6-digit shcode) and "KR7000020008" ISIN
+        // in some TRs. The wrapper exposes the bare 6-digit shcode users actually type.
+        if (string.IsNullOrEmpty(isuNo)) return "";
+        string trimmed = isuNo.Trim();
+        if (trimmed.Length == 7 && (trimmed[0] == 'A' || trimmed[0] == 'J'))
+            return trimmed[1..].ToUpperInvariant();
+        if (trimmed.Length == 12 && trimmed.StartsWith("KR7", StringComparison.OrdinalIgnoreCase))
+            return trimmed.Substring(3, 6).ToUpperInvariant();
+        return trimmed.ToUpperInvariant();
+    }
+
+    static string NormalizeLoanType(string? loanType, out string? error)
+    {
+        error = null;
+        string normalized = string.IsNullOrWhiteSpace(loanType) ? "distribution_margin" : loanType.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "distribution_margin" or "유통융자" or "01" => "01",
+            "self_margin" or "자기융자" or "03" => "03",
+            "distribution_short" or "유통대주" or "05" => "05",
+            "self_short" or "자기대주" or "07" => "07",
+            _ => SetLoanError(loanType, out error),
+        };
+    }
+
+    static string SetLoanError(string? raw, out string? error)
+    {
+        error = $"loan_type '{raw}' is not recognized. Use 'distribution_margin' (default), 'self_margin', 'distribution_short', or 'self_short'.";
+        return "01";
+    }
+
+    static string LoanLabel(string code) => code switch
+    {
+        "01" => "distribution_margin",
+        "03" => "self_margin",
+        "05" => "distribution_short",
+        "07" => "self_short",
+        _ => code,
+    };
+
+    static string NormalizeOrderSide(string? side, out string? error)
+    {
+        error = null;
+        string normalized = string.IsNullOrWhiteSpace(side) ? "" : side.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "sell" or "매도" or "1" => "1",
+            "buy" or "매수" or "2" => "2",
+            _ => SetOrderSideError(side, out error),
+        };
+    }
+
+    static string SetOrderSideError(string? raw, out string? error)
+    {
+        error = $"side '{raw}' is required and must be 'buy' or 'sell'.";
+        return "2";
+    }
+
     /// <summary>
-    /// CSPAQ family success check. LS routes these account TRs through a
-    /// gateway that stamps <c>rsp_cd="00136"</c> alongside "조회가 완료되었습니다."
-    /// rather than the usual <c>"00000"</c>. The presence of the expected
-    /// output block is the canonical "data arrived" signal; pair it with the
-    /// known success codes so non-success codes still fall through to the
-    /// business-error envelope.
+    /// /stock/accno family success check. LS routes account-inquiry TRs through
+    /// a gateway that stamps non-<c>"00000"</c> rsp_cd values alongside
+    /// "조회가 완료되었습니다." or "조회내역이 없습니다." — the docs catalog
+    /// includes <c>00133</c> (FOCCQ33600 paginated success), <c>00136</c>
+    /// (CSPAQ snapshot success), and <c>00200</c> (no-data success). Pair the
+    /// known codes with a present expected block so genuine error codes still
+    /// fall through to the business-error envelope.
     /// </summary>
     /// <remarks>See <see cref="LsTrResponse.SuccessCode"/> for the global default and
-    /// <c>docs/LS-API-QUIRKS.md</c> §4 for the broader pattern.</remarks>
+    /// <c>docs/LS-API-QUIRKS.md</c> §4.2b for the catalog.</remarks>
     static bool IsCspaqSuccess(string? rspCode, JsonElement? expectedBlock)
     {
         if (expectedBlock is null)
             return false;
         if (string.IsNullOrEmpty(rspCode))
             return false;
-        return rspCode == LsTrResponse.SuccessCode || rspCode == "00136";
+        return rspCode is LsTrResponse.SuccessCode or "00133" or "00136" or "00200";
     }
 
     static object ToAccountEcho(Account account) => new
@@ -638,6 +1011,32 @@ internal static class AccountInquiryTools
         public long TotalEvaluation { get; set; }
         public long TotalEvaluationPnl { get; set; }
     }
+
+    sealed class BepSummary
+    {
+        public string AccountName { get; set; } = "";
+        public long Deposit { get; set; }
+        public long EvaluationAmount { get; set; }
+        public long PurchaseAmount { get; set; }
+        public long EvaluationPnlSum { get; set; }
+        public double PnlPct { get; set; }
+        public long InvestmentOriginal { get; set; }
+        public long InvestmentPnl { get; set; }
+    }
+
+    sealed record BepRow(
+        string Symbol,
+        string Name,
+        long Quantity,
+        long SellableQuantity,
+        double AveragePrice,
+        double BepSellPrice,
+        double BepBuyPrice,
+        double CurrentPrice,
+        long EvaluationAmount,
+        long EvaluationPnl,
+        double EvaluationPnlPct,
+        long PurchaseAmount);
 
     sealed class BalancePayload
     {

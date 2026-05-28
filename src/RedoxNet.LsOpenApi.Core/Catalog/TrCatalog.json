@@ -3799,6 +3799,149 @@
       ],
       "continuation": { "supported": false },
       "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "CSPAQ12300",
+      "name": "BEP단가조회",
+      "category": "주식계좌",
+      "path": "/stock/accno",
+      "description": "보유 종목의 평균단가(UprcTpCode=0) 또는 BEP단가(UprcTpCode=1)를 조회합니다. BEP는 수수료/세금 차감 후 손익분기 단가. v1.6 ls_account_bep가 wrapping.",
+      "in_blocks": [
+        {
+          "name": "CSPAQ12300InBlock1",
+          "is_array": false,
+          "fields": [
+            { "name": "BalCreTp", "type": "char", "description": "잔고생성구분 (0:전체 1:현물 9:선물대용)", "required": true, "length": 1, "example": "0" },
+            { "name": "CmsnAppTpCode", "type": "char", "description": "수수료적용구분 (0:미적용 1:적용)", "required": true, "length": 1, "example": "0" },
+            { "name": "D2balBaseQryTp", "type": "char", "description": "D2잔고기준조회구분 (0:전부 1:D2잔고 0이상)", "required": true, "length": 1, "example": "0" },
+            { "name": "UprcTpCode", "type": "char", "description": "단가구분 (0:평균단가 1:BEP단가)", "required": true, "length": 1, "example": "1" }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "CSPAQ12300OutBlock2",
+          "is_array": false,
+          "fields": [
+            { "name": "AcntNm", "type": "char", "description": "계좌명", "length": 40 },
+            { "name": "Dps", "type": "long", "description": "예수금" },
+            { "name": "BalEvalAmt", "type": "long", "description": "잔고평가금액" },
+            { "name": "PchsAmt", "type": "long", "description": "매입금액" },
+            { "name": "EvalPnlSum", "type": "long", "description": "평가손익합계" },
+            { "name": "PnlRat", "type": "double", "description": "손익율 (%)" },
+            { "name": "InvstOrgAmt", "type": "long", "description": "투자원금" },
+            { "name": "InvstPlAmt", "type": "long", "description": "투자손익금액" }
+          ]
+        },
+        {
+          "name": "CSPAQ12300OutBlock3",
+          "is_array": true,
+          "fields": [
+            { "name": "IsuNo", "type": "char", "description": "종목번호 (A+6자리)", "length": 12 },
+            { "name": "IsuNm", "type": "char", "description": "종목명", "length": 40 },
+            { "name": "BalQty", "type": "long", "description": "잔고수량" },
+            { "name": "BnsBaseBalQty", "type": "long", "description": "매매기준잔고수량" },
+            { "name": "AvrUprc", "type": "double", "description": "평균단가" },
+            { "name": "SellPrc", "type": "double", "description": "매도가 (BEP 단가 — UprcTpCode=1 시 BEP, 0 시 평균)" },
+            { "name": "BuyPrc", "type": "double", "description": "매수가 (BEP 단가)" },
+            { "name": "NowPrc", "type": "double", "description": "현재가" },
+            { "name": "BalEvalAmt", "type": "long", "description": "잔고평가금액" },
+            { "name": "EvalPnl", "type": "long", "description": "평가손익" },
+            { "name": "PnlRat", "type": "double", "description": "손익율 (%)" },
+            { "name": "PchsAmt", "type": "long", "description": "매입금액" },
+            { "name": "SellAbleQty", "type": "long", "description": "매도가능수량" }
+          ]
+        }
+      ],
+      "continuation": { "supported": false },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "CSPAQ00600",
+      "name": "계좌별 신용한도 조회",
+      "category": "주식계좌",
+      "path": "/stock/accno",
+      "description": "융자/대주 한도 + 담보비율 + 종목별 주문가능수량 조회. LoanDtlClssCode로 융자종류 선택 (01@유통융자 03@자기융자 05@유통대주 07@자기대주). v1.6 ls_account_credit_limit가 wrapping.",
+      "in_blocks": [
+        {
+          "name": "CSPAQ00600InBlock1",
+          "is_array": false,
+          "fields": [
+            { "name": "LoanDtlClssCode", "type": "char", "description": "대출상세분류코드 (01:유통융자 03:자기융자 05:유통대주 07:자기대주)", "required": true, "length": 2, "example": "01" },
+            { "name": "IsuNo", "type": "char", "description": "종목번호 (A+6자리)", "required": true, "length": 12 },
+            { "name": "OrdPrc", "type": "double", "description": "주문가 (조회 기준가)", "required": true, "example": "0.00" },
+            { "name": "CommdaCode", "type": "char", "description": "통신매체코드 (41:xingAPI)", "required": true, "length": 2, "example": "41" }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "CSPAQ00600OutBlock2",
+          "is_array": false,
+          "fields": [
+            { "name": "AcntNm", "type": "char", "description": "계좌명", "length": 40 },
+            { "name": "SloanLmtAmt", "type": "long", "description": "대주한도" },
+            { "name": "SloanAmtSum", "type": "long", "description": "대주금액합계" },
+            { "name": "MktcplMloanLmtAmt", "type": "long", "description": "유통융자 한도금액" },
+            { "name": "MktcplMloanAmtSum", "type": "long", "description": "유통융자 금액합계" },
+            { "name": "SfaccMloanLmtAmt", "type": "long", "description": "자기융자 한도금액" },
+            { "name": "SfaccMloanAmtSum", "type": "long", "description": "자기융자 금액합계" },
+            { "name": "PldgMaintRat", "type": "double", "description": "담보유지비율" },
+            { "name": "PldgRat", "type": "double", "description": "담보비율" },
+            { "name": "DpsastSum", "type": "long", "description": "예탁자산합계" },
+            { "name": "OrdAbleAmt", "type": "long", "description": "주문가능금액" },
+            { "name": "OrdAbleQty", "type": "long", "description": "주문가능수량" },
+            { "name": "RcvblUablOrdAbleQty", "type": "long", "description": "미수불가 주문가능수량" }
+          ]
+        }
+      ],
+      "continuation": { "supported": false },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "CSPBQ00200",
+      "name": "현물계좌 증거금률별 주문가능수량 조회",
+      "category": "주식계좌",
+      "path": "/stock/accno",
+      "description": "특정 종목/가격/매매방향 조합으로 최대 주문 가능 수량을 조회 (발주 X, 조회 ONLY). 증거금률 20/30/40/100% 별 주문가능금액 + 수량 동시 반환. v1.6 ls_account_max_order_qty가 wrapping.",
+      "in_blocks": [
+        {
+          "name": "CSPBQ00200InBlock1",
+          "is_array": false,
+          "fields": [
+            { "name": "BnsTpCode", "type": "char", "description": "매매구분 (1:매도 2:매수)", "required": true, "length": 1, "example": "2" },
+            { "name": "IsuNo", "type": "char", "description": "종목번호 (A+6자리 또는 ISIN)", "required": true, "length": 12 },
+            { "name": "OrdPrc", "type": "double", "description": "주문가격 (0이면 자동 계산)", "required": true, "example": "0.00" }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "CSPBQ00200OutBlock2",
+          "is_array": false,
+          "fields": [
+            { "name": "AcntNm", "type": "char", "description": "계좌명", "length": 40 },
+            { "name": "IsuNm", "type": "char", "description": "종목명", "length": 40 },
+            { "name": "Dps", "type": "long", "description": "예수금" },
+            { "name": "OrdAbleQty", "type": "long", "description": "주문가능수량 (해당 종목/가격/방향에서의 최댓값)" },
+            { "name": "OrdAbleAmt", "type": "long", "description": "주문가능금액" },
+            { "name": "MnyOrdAbleAmt", "type": "long", "description": "현금주문가능금액" },
+            { "name": "SeOrdAbleAmt", "type": "long", "description": "거래소 주문가능금액" },
+            { "name": "KdqOrdAbleAmt", "type": "long", "description": "코스닥 주문가능금액" },
+            { "name": "IsuMgnRat", "type": "double", "description": "종목증거금률" },
+            { "name": "AcntMgnRat", "type": "double", "description": "계좌증거금률" },
+            { "name": "Cmsn", "type": "long", "description": "수수료" },
+            { "name": "CmsnRat", "type": "double", "description": "수수료율" },
+            { "name": "MgnRat20OrdAbleQty", "type": "long", "description": "증거금률20% 주문가능수량" },
+            { "name": "MgnRat30OrdAbleQty", "type": "long", "description": "증거금률30% 주문가능수량" },
+            { "name": "MgnRat40OrdAbleQty", "type": "long", "description": "증거금률40% 주문가능수량" },
+            { "name": "MgnRat100OrdAbleQty", "type": "long", "description": "증거금률100% 주문가능수량" },
+            { "name": "MgnRat100MnyOrdAbleQty", "type": "long", "description": "증거금률100% 현금 주문가능수량" }
+          ]
+        }
+      ],
+      "continuation": { "supported": false },
+      "rate_limit_per_sec": 1
     }
   ]
 }
