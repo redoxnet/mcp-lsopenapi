@@ -3942,6 +3942,288 @@
       ],
       "continuation": { "supported": false },
       "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "CSPAQ13700",
+      "name": "현물계좌 주문체결내역 조회",
+      "category": "주식계좌",
+      "path": "/stock/accno",
+      "description": "특정 일자의 주문/체결 history. OrdDt 단일 일자 기준, 시장/매매/체결여부/주문유형 필터. SrtOrdNo2 = 0 (정순) / 999999999 (역순). v1.6 ls_account_order_history가 wrapping.",
+      "in_blocks": [
+        {
+          "name": "CSPAQ13700InBlock1",
+          "is_array": false,
+          "fields": [
+            { "name": "OrdMktCode", "type": "char", "description": "주문시장코드 (00:전체 10:거래소 20:코스닥 30:프리보드)", "required": true, "length": 2, "example": "00" },
+            { "name": "BnsTpCode", "type": "char", "description": "매매구분 (0:전체 1:매도 2:매수)", "required": true, "length": 1, "example": "0" },
+            { "name": "IsuNo", "type": "char", "description": "종목번호 (A+6자리, 비우면 전체)", "required": false, "length": 12 },
+            { "name": "ExecYn", "type": "char", "description": "체결여부 (0:전체 1:체결 3:미체결)", "required": true, "length": 1, "example": "0" },
+            { "name": "OrdDt", "type": "char", "description": "주문일 (YYYYMMDD)", "required": true, "length": 8 },
+            { "name": "SrtOrdNo2", "type": "long", "description": "시작주문번호2 (정순=0 역순=999999999)", "required": true, "example": "0" },
+            { "name": "BkseqTpCode", "type": "char", "description": "역순구분 (0:역순 1:정순)", "required": true, "length": 1, "example": "1" },
+            { "name": "OrdPtnCode", "type": "char", "description": "주문유형코드 (00:전체)", "required": true, "length": 2, "example": "00" }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "CSPAQ13700OutBlock2",
+          "is_array": false,
+          "fields": [
+            { "name": "SellExecAmt", "type": "long", "description": "매도체결금액" },
+            { "name": "BuyExecAmt", "type": "long", "description": "매수체결금액" },
+            { "name": "SellExecQty", "type": "long", "description": "매도체결수량" },
+            { "name": "BuyExecQty", "type": "long", "description": "매수체결수량" },
+            { "name": "SellOrdQty", "type": "long", "description": "매도주문수량" },
+            { "name": "BuyOrdQty", "type": "long", "description": "매수주문수량" }
+          ]
+        },
+        {
+          "name": "CSPAQ13700OutBlock3",
+          "is_array": true,
+          "fields": [
+            { "name": "OrdDt", "type": "char", "description": "주문일", "length": 8 },
+            { "name": "OrdNo", "type": "long", "description": "주문번호" },
+            { "name": "OrgOrdNo", "type": "long", "description": "원주문번호 (정정/취소)" },
+            { "name": "IsuNo", "type": "char", "description": "종목번호", "length": 12 },
+            { "name": "IsuNm", "type": "char", "description": "종목명", "length": 40 },
+            { "name": "BnsTpNm", "type": "char", "description": "매매구분명 (매수/매도)", "length": 10 },
+            { "name": "OrdPtnNm", "type": "char", "description": "주문유형명", "length": 40 },
+            { "name": "OrdTrxPtnNm", "type": "char", "description": "주문처리유형명", "length": 50 },
+            { "name": "MrcTpNm", "type": "char", "description": "정정취소구분명", "length": 10 },
+            { "name": "OrdQty", "type": "long", "description": "주문수량" },
+            { "name": "OrdPrc", "type": "double", "description": "주문가격" },
+            { "name": "ExecQty", "type": "long", "description": "체결수량" },
+            { "name": "ExecPrc", "type": "double", "description": "체결가" },
+            { "name": "AllExecQty", "type": "long", "description": "전체체결수량" },
+            { "name": "OrdTime", "type": "char", "description": "주문시각 (HHMMSSff)", "length": 9 },
+            { "name": "LastExecTime", "type": "char", "description": "최종체결시각", "length": 9 },
+            { "name": "OrdprcPtnNm", "type": "char", "description": "호가유형명", "length": 40 },
+            { "name": "CommdaNm", "type": "char", "description": "통신매체명", "length": 40 }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "key_fields": ["SrtOrdNo2"] },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "CDPCQ04700",
+      "name": "계좌 거래내역",
+      "category": "주식계좌",
+      "path": "/stock/accno",
+      "description": "기간별 거래내역 (입출금 + 매매 통합). QryTp로 거래 종류 필터. 페이지네이션 SrtNo. v1.6 ls_account_transactions가 wrapping.",
+      "in_blocks": [
+        {
+          "name": "CDPCQ04700InBlock1",
+          "is_array": false,
+          "fields": [
+            { "name": "QryTp", "type": "char", "description": "조회구분 (0:전체 1:입출금 2:입출고 3:매매 4:환전 9:기타)", "required": true, "length": 1, "example": "0" },
+            { "name": "QrySrtDt", "type": "char", "description": "조회시작일 (YYYYMMDD)", "required": true, "length": 8 },
+            { "name": "QryEndDt", "type": "char", "description": "조회종료일 (YYYYMMDD)", "required": true, "length": 8 },
+            { "name": "SrtNo", "type": "long", "description": "시작번호 (페이지네이션, 0=첫 페이지)", "required": true, "example": "0" },
+            { "name": "PdptnCode", "type": "char", "description": "상품유형코드 (01)", "required": true, "length": 2, "example": "01" },
+            { "name": "IsuLgclssCode", "type": "char", "description": "종목대분류코드 (00:전체 01:주식 02:채권 04:펀드 03:선물 05:해외주식 06:해외파생)", "required": true, "length": 2, "example": "00" },
+            { "name": "IsuNo", "type": "char", "description": "종목번호 (비우면 전체)", "required": false, "length": 12 }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "CDPCQ04700OutBlock3",
+          "is_array": true,
+          "fields": [
+            { "name": "TrdDt", "type": "char", "description": "거래일자 (YYYYMMDD)", "length": 8 },
+            { "name": "TrdNo", "type": "long", "description": "거래번호" },
+            { "name": "TpCodeNm", "type": "char", "description": "구분코드명 (입금/출금/매수/매도 등)", "length": 50 },
+            { "name": "SmryNm", "type": "char", "description": "적요명", "length": 40 },
+            { "name": "CancTpNm", "type": "char", "description": "취소구분", "length": 20 },
+            { "name": "IsuNo", "type": "char", "description": "종목번호", "length": 12 },
+            { "name": "IsuNm", "type": "char", "description": "종목명", "length": 40 },
+            { "name": "TrdQty", "type": "long", "description": "거래수량" },
+            { "name": "TrdUprc", "type": "double", "description": "거래단가" },
+            { "name": "TrdAmt", "type": "long", "description": "거래금액" },
+            { "name": "CmsnAmt", "type": "long", "description": "수수료" },
+            { "name": "Trtax", "type": "long", "description": "거래세" },
+            { "name": "TaxSumAmt", "type": "long", "description": "세금합계금액" },
+            { "name": "AdjstAmt", "type": "long", "description": "정산금액" },
+            { "name": "DpsCrbalAmt", "type": "long", "description": "예수금금잔금액 (transaction 후 잔액)" },
+            { "name": "TrxTime", "type": "char", "description": "처리시각 (HHMMSSff)", "length": 9 },
+            { "name": "TrdmdaNm", "type": "char", "description": "거래매체명", "length": 40 }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "key_fields": ["SrtNo"] },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "FOCCQ33600",
+      "name": "주식계좌 기간별수익률 상세",
+      "category": "주식계좌",
+      "path": "/stock/accno",
+      "description": "기간별 수익률을 일/주/월 단위로 조회. 페이지네이션은 tr_cont (header). v1.6 ls_account_performance가 wrapping.",
+      "in_blocks": [
+        {
+          "name": "FOCCQ33600InBlock1",
+          "is_array": false,
+          "fields": [
+            { "name": "QrySrtDt", "type": "char", "description": "조회시작일 (YYYYMMDD)", "required": true, "length": 8 },
+            { "name": "QryEndDt", "type": "char", "description": "조회종료일 (YYYYMMDD)", "required": true, "length": 8 },
+            { "name": "TermTp", "type": "char", "description": "기간구분 (1:일별 2:주별 3:월별)", "required": true, "length": 1, "example": "1" }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "FOCCQ33600OutBlock2",
+          "is_array": false,
+          "fields": [
+            { "name": "AcntNm", "type": "char", "description": "계좌명", "length": 40 },
+            { "name": "BnsctrAmt", "type": "long", "description": "매매약정금액" },
+            { "name": "MnyinAmt", "type": "long", "description": "입금금액" },
+            { "name": "MnyoutAmt", "type": "long", "description": "출금금액" },
+            { "name": "InvstAvrbalPramt", "type": "long", "description": "투자원금 평잔금액" },
+            { "name": "InvstPlAmt", "type": "long", "description": "투자손익금액" },
+            { "name": "InvstErnrat", "type": "double", "description": "투자수익률 (%)" }
+          ]
+        },
+        {
+          "name": "FOCCQ33600OutBlock3",
+          "is_array": true,
+          "fields": [
+            { "name": "BaseDt", "type": "char", "description": "기준일 (YYYYMMDD)", "length": 8 },
+            { "name": "FdEvalAmt", "type": "long", "description": "기초평가금액" },
+            { "name": "EotEvalAmt", "type": "long", "description": "기말평가금액" },
+            { "name": "InvstAvrbalPramt", "type": "long", "description": "투자원금 평잔금액" },
+            { "name": "BnsctrAmt", "type": "long", "description": "매매약정금액" },
+            { "name": "MnyinSecinAmt", "type": "long", "description": "입금고액" },
+            { "name": "MnyoutSecoutAmt", "type": "long", "description": "출금고액" },
+            { "name": "EvalPnlAmt", "type": "long", "description": "평가손익금액" },
+            { "name": "TermErnrat", "type": "double", "description": "기간수익률 (%)" },
+            { "name": "Idx", "type": "double", "description": "지수" }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "key_fields": [] },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "t0150",
+      "name": "주식 당일 매매일지/수수료",
+      "category": "주식계좌",
+      "path": "/stock/accno",
+      "description": "당일 매수/매도 체결 통계 + 종목별 매매일지. 수수료/제세금 포함. v1.6 ls_account_daily_pnl(date=오늘)이 wrapping. 초당 2건.",
+      "in_blocks": [
+        {
+          "name": "t0150InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "cts_medosu", "type": "char", "description": "CTS_매매구분 (연속조회)", "required": false, "length": 1 },
+            { "name": "cts_expcode", "type": "char", "description": "CTS_종목번호 (연속조회)", "required": false, "length": 12 },
+            { "name": "cts_price", "type": "char", "description": "CTS_단가 (연속조회)", "required": false, "length": 9 },
+            { "name": "cts_middiv", "type": "char", "description": "CTS_매체 (연속조회)", "required": false, "length": 2 }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t0150OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "mdqty", "type": "long", "description": "매도수량" },
+            { "name": "mdamt", "type": "long", "description": "매도약정금액" },
+            { "name": "mdfee", "type": "long", "description": "매도수수료" },
+            { "name": "mdtax", "type": "long", "description": "매도거래세" },
+            { "name": "mdadjamt", "type": "long", "description": "매도정산금액" },
+            { "name": "msqty", "type": "long", "description": "매수수량" },
+            { "name": "msamt", "type": "long", "description": "매수약정금액" },
+            { "name": "msfee", "type": "long", "description": "매수수수료" },
+            { "name": "msadjamt", "type": "long", "description": "매수정산금액" },
+            { "name": "tqty", "type": "long", "description": "합계수량" },
+            { "name": "tamt", "type": "long", "description": "합계약정금액" },
+            { "name": "tfee", "type": "long", "description": "합계수수료" },
+            { "name": "tottax", "type": "long", "description": "합계거래세" },
+            { "name": "ttax", "type": "long", "description": "합계제비용합" },
+            { "name": "tadjamt", "type": "long", "description": "합계정산금액" }
+          ]
+        },
+        {
+          "name": "t0150OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "medosu", "type": "char", "description": "매매구분", "length": 10 },
+            { "name": "expcode", "type": "char", "description": "종목번호", "length": 12 },
+            { "name": "qty", "type": "long", "description": "수량" },
+            { "name": "price", "type": "long", "description": "단가" },
+            { "name": "amt", "type": "long", "description": "약정금액" },
+            { "name": "fee", "type": "long", "description": "수수료" },
+            { "name": "tax", "type": "long", "description": "거래세" },
+            { "name": "adjamt", "type": "long", "description": "정산금액" },
+            { "name": "middiv", "type": "char", "description": "매체", "length": 20 }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "key_fields": ["cts_medosu", "cts_expcode", "cts_price", "cts_middiv"] },
+      "rate_limit_per_sec": 2
+    },
+    {
+      "tr_code": "t0151",
+      "name": "주식 매매일지/수수료 (전일/특정일)",
+      "category": "주식계좌",
+      "path": "/stock/accno",
+      "description": "전일 또는 특정일의 매매일지. t0150와 동일 응답 shape, date 파라미터로 일자 지정. v1.6 ls_account_daily_pnl(date=어제 등)이 wrapping.",
+      "in_blocks": [
+        {
+          "name": "t0151InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "date", "type": "char", "description": "조회 일자 (YYYYMMDD)", "required": true, "length": 8 },
+            { "name": "cts_medosu", "type": "char", "description": "CTS_매매구분 (연속조회)", "required": false, "length": 1 },
+            { "name": "cts_expcode", "type": "char", "description": "CTS_종목번호 (연속조회)", "required": false, "length": 12 },
+            { "name": "cts_price", "type": "char", "description": "CTS_단가 (연속조회)", "required": false, "length": 9 },
+            { "name": "cts_middiv", "type": "char", "description": "CTS_매체 (연속조회)", "required": false, "length": 2 }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t0151OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "mdqty", "type": "long", "description": "매도수량" },
+            { "name": "mdamt", "type": "long", "description": "매도약정금액" },
+            { "name": "mdfee", "type": "long", "description": "매도수수료" },
+            { "name": "mdtax", "type": "long", "description": "매도거래세" },
+            { "name": "mdadjamt", "type": "long", "description": "매도정산금액" },
+            { "name": "msqty", "type": "long", "description": "매수수량" },
+            { "name": "msamt", "type": "long", "description": "매수약정금액" },
+            { "name": "msfee", "type": "long", "description": "매수수수료" },
+            { "name": "msadjamt", "type": "long", "description": "매수정산금액" },
+            { "name": "tqty", "type": "long", "description": "합계수량" },
+            { "name": "tamt", "type": "long", "description": "합계약정금액" },
+            { "name": "tfee", "type": "long", "description": "합계수수료" },
+            { "name": "tottax", "type": "long", "description": "합계거래세" },
+            { "name": "ttax", "type": "long", "description": "합계제비용합" },
+            { "name": "tadjamt", "type": "long", "description": "합계정산금액" }
+          ]
+        },
+        {
+          "name": "t0151OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "medosu", "type": "char", "description": "매매구분", "length": 10 },
+            { "name": "expcode", "type": "char", "description": "종목번호", "length": 12 },
+            { "name": "qty", "type": "long", "description": "수량" },
+            { "name": "price", "type": "long", "description": "단가" },
+            { "name": "amt", "type": "long", "description": "약정금액" },
+            { "name": "fee", "type": "long", "description": "수수료" },
+            { "name": "tax", "type": "long", "description": "거래세" },
+            { "name": "adjamt", "type": "long", "description": "정산금액" },
+            { "name": "middiv", "type": "char", "description": "매체", "length": 20 }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "key_fields": ["cts_medosu", "cts_expcode", "cts_price", "cts_middiv"] },
+      "rate_limit_per_sec": 2
     }
   ]
 }

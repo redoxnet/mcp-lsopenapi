@@ -295,6 +295,88 @@ try {
         Write-Host $rawText
     }
 
+    # --- ls_account_daily_pnl ---
+    Write-Host ""
+    Write-Host "== ls_account_daily_pnl (t0150 today) ==" -ForegroundColor Yellow
+    $resp = CallTool 'ls_account_daily_pnl' $accountArgs
+    $rawText = $resp.result.content[0].text
+    try {
+        $parsed = $rawText | ConvertFrom-Json -Depth 32
+        if ($parsed.error) {
+            Write-Host ("    ❌ {0}" -f $parsed.error) -ForegroundColor Red
+            if ($parsed.details) { Write-Host ("       details: {0}" -f ($parsed.details | ConvertTo-Json -Depth 5 -Compress)) -ForegroundColor DarkRed }
+        } else {
+            $used = $parsed._meta.account_used
+            Write-Host ("    ✅ tr_code={0}  account {1}  date={2} (is_today={3})" -f $parsed._meta.tr_code, $used.account_number, $parsed.filter.date, $parsed.filter.is_today) -ForegroundColor Green
+            $s = $parsed.summary
+            Write-Host ("       summary      : sell qty={0} amt={1:N0} fee={2:N0}  buy qty={3} amt={4:N0} fee={5:N0}" -f $s.sell_quantity, $s.sell_amount, $s.sell_fee, $s.buy_quantity, $s.buy_amount, $s.buy_fee)
+            Write-Host ("       total        : qty={0} amt={1:N0} fee={2:N0} tax={3:N0} settlement={4:N0}" -f $s.total_quantity, $s.total_amount, $s.total_fee, $s.total_tax, $s.total_settlement)
+            Write-Host ("       trades       : {0}" -f $parsed.count)
+        }
+    } catch { Write-Host "    (non-JSON output):" -ForegroundColor Yellow; Write-Host $rawText }
+
+    # --- ls_account_order_history ---
+    Write-Host ""
+    Write-Host "== ls_account_order_history (CSPAQ13700, today) ==" -ForegroundColor Yellow
+    $resp = CallTool 'ls_account_order_history' $accountArgs
+    $rawText = $resp.result.content[0].text
+    try {
+        $parsed = $rawText | ConvertFrom-Json -Depth 32
+        if ($parsed.error) {
+            Write-Host ("    ❌ {0}" -f $parsed.error) -ForegroundColor Red
+            if ($parsed.details) { Write-Host ("       details: {0}" -f ($parsed.details | ConvertTo-Json -Depth 5 -Compress)) -ForegroundColor DarkRed }
+        } else {
+            $used = $parsed._meta.account_used
+            $s = $parsed.summary
+            Write-Host ("    ✅ account {0}  order_date={1}" -f $used.account_number, $parsed.filter.order_date) -ForegroundColor Green
+            Write-Host ("       summary      : sell q={0} amt={1:N0}  buy q={2} amt={3:N0}" -f $s.sell_filled_quantity, $s.sell_filled_amount, $s.buy_filled_quantity, $s.buy_filled_amount)
+            Write-Host ("       orders       : {0}" -f $parsed.count)
+        }
+    } catch { Write-Host "    (non-JSON output):" -ForegroundColor Yellow; Write-Host $rawText }
+
+    # --- ls_account_transactions ---
+    Write-Host ""
+    Write-Host "== ls_account_transactions (CDPCQ04700, last 7 days) ==" -ForegroundColor Yellow
+    $resp = CallTool 'ls_account_transactions' $accountArgs
+    $rawText = $resp.result.content[0].text
+    try {
+        $parsed = $rawText | ConvertFrom-Json -Depth 32
+        if ($parsed.error) {
+            Write-Host ("    ❌ {0}" -f $parsed.error) -ForegroundColor Red
+            if ($parsed.details) { Write-Host ("       details: {0}" -f ($parsed.details | ConvertTo-Json -Depth 5 -Compress)) -ForegroundColor DarkRed }
+        } else {
+            $used = $parsed._meta.account_used
+            Write-Host ("    ✅ account {0}  range={1} ~ {2}  kind={3}" -f $used.account_number, $parsed.filter.start_date, $parsed.filter.end_date, $parsed.filter.kind) -ForegroundColor Green
+            Write-Host ("       transactions : {0}" -f $parsed.count)
+            foreach ($row in @($parsed.transactions) | Select-Object -First 5) {
+                Write-Host ("         - {0} #{1,-8} {2,-10} {3,-8} {4,-8} amt={5,12:N0} settle={6,12:N0}" -f `
+                    $row.trade_date, $row.trade_no, $row.category_name, $row.symbol, $row.summary_name, $row.amount, $row.settlement_amount)
+            }
+        }
+    } catch { Write-Host "    (non-JSON output):" -ForegroundColor Yellow; Write-Host $rawText }
+
+    # --- ls_account_performance ---
+    Write-Host ""
+    Write-Host "== ls_account_performance (FOCCQ33600, last 30 days daily) ==" -ForegroundColor Yellow
+    $resp = CallTool 'ls_account_performance' $accountArgs
+    $rawText = $resp.result.content[0].text
+    try {
+        $parsed = $rawText | ConvertFrom-Json -Depth 32
+        if ($parsed.error) {
+            Write-Host ("    ❌ {0}" -f $parsed.error) -ForegroundColor Red
+            if ($parsed.details) { Write-Host ("       details: {0}" -f ($parsed.details | ConvertTo-Json -Depth 5 -Compress)) -ForegroundColor DarkRed }
+        } else {
+            $used = $parsed._meta.account_used
+            Write-Host ("    ✅ account {0}  range={1} ~ {2}  term={3}" -f $used.account_number, $parsed.filter.start_date, $parsed.filter.end_date, $parsed.filter.term) -ForegroundColor Green
+            if ($parsed.summary) {
+                $s = $parsed.summary
+                Write-Host ("       summary      : traded={0:N0}  in={1:N0}  out={2:N0}  avg_principal={3:N0}  pnl={4:N0}  return={5:N2}%" -f `
+                    $s.traded_amount, $s.deposited_amount, $s.withdrawn_amount, $s.investment_average_principal, $s.investment_pnl, $s.investment_return_pct)
+            }
+            Write-Host ("       periods      : {0}" -f $parsed.count)
+        }
+    } catch { Write-Host "    (non-JSON output):" -ForegroundColor Yellow; Write-Host $rawText }
+
     # --- ls_account_max_order_qty ---
     Write-Host ""
     Write-Host "== ls_account_max_order_qty (CSPBQ00200, sym=005930 buy) ==" -ForegroundColor Yellow

@@ -806,6 +806,721 @@ internal static class AccountInquiryTools
         catch (LsTrException ex) { return McpJson.Error("TR call failed.", new { reason = ex.Message, status = ex.StatusCode, tr_code = trCode, account_used = ToAccountEcho(resolved) }); }
     }
 
+    [McpServerTool(Name = "ls_account_order_history")]
+    [Description("""
+        Returns the order/fill history for a specific date via TR CSPAQ13700. Per-order rows include the entire lifecycle — placed / modified / cancelled / executed — so the model sees both the live orders and what they ultimately became.
+
+        USE WHEN: the user asks "어제 주문 내역", "지난 주문 다 보여줘", or wants a forensic per-order log on a specific date.
+        AVOID WHEN: the user wants today's live order book — use ls_account_orders. AVOID WHEN: they want raw transaction history including deposits — use ls_account_transactions.
+
+        `order_date` defaults to today. Filters: `status` (all / filled / pending), `side` (all / buy / sell), `symbol`, `market` (all / kospi / kosdaq / freeboard), `sort` (asc default / desc).
+        """)]
+    public static async Task<string> OrderHistory(
+        LsApiClient apiClient,
+        LsAccountResolver accountResolver,
+        [Description("Optional account_number or nickname. Omit to use the active mode's default account.")]
+        string? account = null,
+        [Description("Date to inspect (YYYY-MM-DD or YYYYMMDD). Default = today.")]
+        string? order_date = null,
+        [Description("Status filter: 'all' (default), 'filled', or 'pending'.")]
+        string? status = null,
+        [Description("Side filter: 'all' (default), 'buy', or 'sell'.")]
+        string? side = null,
+        [Description("Optional 6-digit shcode. Omit for all symbols.")]
+        string? symbol = null,
+        [Description("Market filter: 'all' (default), 'kospi', 'kosdaq', 'freeboard'.")]
+        string? market = null,
+        [Description("Sort: 'asc' (default, oldest first) or 'desc'.")]
+        string? sort = null,
+        CancellationToken cancellationToken = default)
+    {
+        string ord = NormalizeYmdInput(order_date, out string? dateError, defaultToToday: true);
+        if (dateError is not null) return McpJson.Error(dateError);
+        string statusCode = NormalizeExecStatus(status, out string? statusError);
+        if (statusError is not null) return McpJson.Error(statusError);
+        string sideCode = NormalizeSide(side, out string? sideError);
+        if (sideError is not null) return McpJson.Error(sideError);
+        string marketCode = NormalizeOrderMarket(market, out string? marketError);
+        if (marketError is not null) return McpJson.Error(marketError);
+        string bkseq = NormalizeBkSort(sort, out string? sortError);
+        if (sortError is not null) return McpJson.Error(sortError);
+
+        Account resolved;
+        try { resolved = await accountResolver.ResolveAsync(account, cancellationToken).ConfigureAwait(false); }
+        catch (RequiresAccountException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code }); }
+        catch (AmbiguousAccountException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, candidates = ex.Candidates }); }
+        catch (AccountNotFoundException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, identifier = ex.Identifier, candidates = ex.Candidates }); }
+
+        const string trCode = "CSPAQ13700";
+        try
+        {
+            string sym = string.IsNullOrWhiteSpace(symbol) ? "" : $"A{symbol.Trim().ToUpperInvariant()}";
+            long startOrdNo = bkseq == "0" ? 999999999L : 0L;
+
+            var summary = new OrderHistorySummary();
+            var rows = new List<OrderHistoryRow>();
+            long cursorOrdNo = startOrdNo;
+            string? continuationKey = null;
+
+            for (int page = 0; page < MaxOrdersPages; page++)
+            {
+                var body = new JsonObject
+                {
+                    [$"{trCode}InBlock1"] = new JsonObject
+                    {
+                        ["OrdMktCode"] = marketCode,
+                        ["BnsTpCode"] = sideCode,
+                        ["IsuNo"] = sym,
+                        ["ExecYn"] = statusCode,
+                        ["OrdDt"] = ord,
+                        ["SrtOrdNo2"] = cursorOrdNo,
+                        ["BkseqTpCode"] = bkseq,
+                        ["OrdPtnCode"] = "00",
+                    },
+                };
+                LsTrResponse response = await apiClient.SendAsync(new LsTrRequest(trCode, body, continuationKey), cancellationToken).ConfigureAwait(false);
+
+                JsonElement? body3 = response.GetBlock($"{trCode}OutBlock3");
+                if (!IsCspaqSuccess(response.RspCode, body3))
+                {
+                    return McpJson.Error("LS reported a business-level error.", new
+                    {
+                        tr_code = trCode,
+                        rsp_cd = response.RspCode,
+                        rsp_msg = response.RspMessage,
+                        account_used = ToAccountEcho(resolved),
+                    });
+                }
+                ArgumentNullException.ThrowIfNull(body3);
+
+                if (page == 0)
+                {
+                    JsonElement? body2 = response.GetBlock($"{trCode}OutBlock2");
+                    if (body2 is not null)
+                    {
+                        JsonElement s = body2.Value;
+                        summary.SellFilledAmount = s.ReadLong("SellExecAmt");
+                        summary.BuyFilledAmount = s.ReadLong("BuyExecAmt");
+                        summary.SellFilledQuantity = s.ReadLong("SellExecQty");
+                        summary.BuyFilledQuantity = s.ReadLong("BuyExecQty");
+                        summary.SellOrderQuantity = s.ReadLong("SellOrdQty");
+                        summary.BuyOrderQuantity = s.ReadLong("BuyOrdQty");
+                    }
+                }
+
+                int beforeCount = rows.Count;
+                foreach (JsonElement row in body3.Value.EnumerateArray())
+                {
+                    string isuNo = (row.ReadString("IsuNo") ?? "").Trim();
+                    rows.Add(new OrderHistoryRow(
+                        OrderNo: row.ReadLong("OrdNo"),
+                        OriginalOrderNo: row.ReadLong("OrgOrdNo"),
+                        OrderDate: NormalizeYmd(row.ReadString("OrdDt")),
+                        Symbol: ExtractShcode(isuNo),
+                        Name: GetIndexQuoteTool.CompactName(row.ReadString("IsuNm")),
+                        Side: (row.ReadString("BnsTpNm") ?? "").Trim(),
+                        OrderType: (row.ReadString("OrdPtnNm") ?? "").Trim(),
+                        ProcessingType: (row.ReadString("OrdTrxPtnNm") ?? "").Trim(),
+                        ModifyOrCancel: (row.ReadString("MrcTpNm") ?? "").Trim(),
+                        OrderQuantity: row.ReadLong("OrdQty"),
+                        OrderPrice: row.ReadDouble("OrdPrc"),
+                        FilledQuantity: row.ReadLong("ExecQty"),
+                        FilledPrice: row.ReadDouble("ExecPrc"),
+                        AllFilledQuantity: row.ReadLong("AllExecQty"),
+                        OrderTime: FormatHmsFraction(row.ReadString("OrdTime")),
+                        LastFilledTime: FormatHmsFraction(row.ReadString("LastExecTime")),
+                        QuoteType: (row.ReadString("OrdprcPtnNm") ?? "").Trim(),
+                        OrderChannel: (row.ReadString("CommdaNm") ?? "").Trim()));
+                }
+
+                if (rows.Count == beforeCount)
+                    break;
+                if (!response.HasContinuation || string.IsNullOrEmpty(response.ContinuationKey))
+                    break;
+                continuationKey = response.ContinuationKey;
+                cursorOrdNo = rows[^1].OrderNo;
+            }
+
+            var payload = new
+            {
+                filter = new
+                {
+                    order_date = FormatYmdDisplay(ord),
+                    status = ExecStatusLabel(statusCode),
+                    side = SideLabel(sideCode),
+                    symbol = string.IsNullOrEmpty(sym) ? null : sym[1..],
+                    market = MarketLabel(marketCode),
+                    sort = bkseq == "0" ? "desc" : "asc",
+                },
+                summary,
+                count = rows.Count,
+                orders = rows,
+                _meta = new
+                {
+                    account_used = ToAccountEcho(resolved),
+                    data_as_of = GetIndexQuoteTool.SeoulNowIsoString(),
+                    tr_code = trCode,
+                    source = "live",
+                },
+            };
+            return JsonSerializer.Serialize(payload, McpJson.Tool);
+        }
+        catch (LsAuthException ex) { return McpJson.Error("LS authentication failed for the account inquiry.", new { reason = ex.Message, account_used = ToAccountEcho(resolved) }); }
+        catch (LsTrException ex) { return McpJson.Error("TR call failed.", new { reason = ex.Message, status = ex.StatusCode, tr_code = trCode, account_used = ToAccountEcho(resolved) }); }
+    }
+
+    [McpServerTool(Name = "ls_account_transactions")]
+    [Description("""
+        Returns the full transaction log over a date range via TR CDPCQ04700 — deposits, withdrawals, fills, transfers, all in one timeline. Differs from ls_account_order_history (orders only) and ls_account_balance (current snapshot).
+
+        USE WHEN: the user asks "거래내역", "입출금 내역", "통장", or wants reconciliation across a period.
+        Filter `kind` ('all' default / 'cashflow' (입출금) / 'transfer' (입출고) / 'trade' (매매) / 'fx' (환전) / 'misc' (기타)) lets the model narrow without re-querying.
+
+        Date range defaults to the past 7 days; both bounds inclusive.
+        """)]
+    public static async Task<string> Transactions(
+        LsApiClient apiClient,
+        LsAccountResolver accountResolver,
+        [Description("Optional account_number or nickname. Omit to use the active mode's default account.")]
+        string? account = null,
+        [Description("Start date YYYY-MM-DD or YYYYMMDD. Default = 7 days ago.")]
+        string? start_date = null,
+        [Description("End date YYYY-MM-DD or YYYYMMDD. Default = today.")]
+        string? end_date = null,
+        [Description("Kind filter: 'all' (default), 'cashflow' (입출금), 'transfer' (입출고), 'trade' (매매), 'fx' (환전), 'misc' (기타).")]
+        string? kind = null,
+        [Description("Optional 6-digit shcode to narrow to one symbol.")]
+        string? symbol = null,
+        CancellationToken cancellationToken = default)
+    {
+        string startYmd = NormalizeYmdInput(start_date, out string? startError, defaultToToday: false, defaultDaysBack: 7);
+        if (startError is not null) return McpJson.Error(startError);
+        string endYmd = NormalizeYmdInput(end_date, out string? endError, defaultToToday: true);
+        if (endError is not null) return McpJson.Error(endError);
+        string qryTp = NormalizeTransactionKind(kind, out string? kindError);
+        if (kindError is not null) return McpJson.Error(kindError);
+
+        Account resolved;
+        try { resolved = await accountResolver.ResolveAsync(account, cancellationToken).ConfigureAwait(false); }
+        catch (RequiresAccountException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code }); }
+        catch (AmbiguousAccountException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, candidates = ex.Candidates }); }
+        catch (AccountNotFoundException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, identifier = ex.Identifier, candidates = ex.Candidates }); }
+
+        const string trCode = "CDPCQ04700";
+        try
+        {
+            string sym = string.IsNullOrWhiteSpace(symbol) ? "" : $"A{symbol.Trim().ToUpperInvariant()}";
+            var rows = new List<TransactionRow>();
+            long srtNo = 0;
+            string? continuationKey = null;
+
+            for (int page = 0; page < MaxOrdersPages; page++)
+            {
+                var body = new JsonObject
+                {
+                    [$"{trCode}InBlock1"] = new JsonObject
+                    {
+                        ["QryTp"] = qryTp,
+                        ["QrySrtDt"] = startYmd,
+                        ["QryEndDt"] = endYmd,
+                        ["SrtNo"] = srtNo,
+                        ["PdptnCode"] = "01",
+                        ["IsuLgclssCode"] = "00",
+                        ["IsuNo"] = sym,
+                    },
+                };
+                LsTrResponse response = await apiClient.SendAsync(new LsTrRequest(trCode, body, continuationKey), cancellationToken).ConfigureAwait(false);
+
+                JsonElement? body3 = response.GetBlock($"{trCode}OutBlock3");
+                if (!IsCspaqSuccess(response.RspCode, body3))
+                {
+                    return McpJson.Error("LS reported a business-level error.", new
+                    {
+                        tr_code = trCode,
+                        rsp_cd = response.RspCode,
+                        rsp_msg = response.RspMessage,
+                        account_used = ToAccountEcho(resolved),
+                    });
+                }
+                ArgumentNullException.ThrowIfNull(body3);
+
+                int beforeCount = rows.Count;
+                foreach (JsonElement row in body3.Value.EnumerateArray())
+                {
+                    string isuNo = (row.ReadString("IsuNo") ?? "").Trim();
+                    rows.Add(new TransactionRow(
+                        TradeDate: NormalizeYmd(row.ReadString("TrdDt")),
+                        TradeNo: row.ReadLong("TrdNo"),
+                        CategoryName: (row.ReadString("TpCodeNm") ?? "").Trim(),
+                        SummaryName: (row.ReadString("SmryNm") ?? "").Trim(),
+                        CancellationName: (row.ReadString("CancTpNm") ?? "").Trim(),
+                        Symbol: string.IsNullOrEmpty(isuNo) ? "" : ExtractShcode(isuNo),
+                        Name: GetIndexQuoteTool.CompactName(row.ReadString("IsuNm")),
+                        Quantity: row.ReadLong("TrdQty"),
+                        UnitPrice: row.ReadDouble("TrdUprc"),
+                        Amount: row.ReadLong("TrdAmt"),
+                        Commission: row.ReadLong("CmsnAmt"),
+                        TransactionTax: row.ReadLong("Trtax"),
+                        TaxSum: row.ReadLong("TaxSumAmt"),
+                        SettlementAmount: row.ReadLong("AdjstAmt"),
+                        DepositBalanceAfter: row.ReadLong("DpsCrbalAmt"),
+                        ProcessingTime: FormatHmsFraction(row.ReadString("TrxTime")),
+                        Channel: (row.ReadString("TrdmdaNm") ?? "").Trim()));
+                }
+
+                if (rows.Count == beforeCount)
+                    break;
+                if (!response.HasContinuation || string.IsNullOrEmpty(response.ContinuationKey))
+                    break;
+                continuationKey = response.ContinuationKey;
+                srtNo = rows[^1].TradeNo;
+            }
+
+            var payload = new
+            {
+                filter = new
+                {
+                    start_date = FormatYmdDisplay(startYmd),
+                    end_date = FormatYmdDisplay(endYmd),
+                    kind = TransactionKindLabel(qryTp),
+                    symbol = string.IsNullOrEmpty(sym) ? null : sym[1..],
+                },
+                count = rows.Count,
+                transactions = rows,
+                _meta = new
+                {
+                    account_used = ToAccountEcho(resolved),
+                    data_as_of = GetIndexQuoteTool.SeoulNowIsoString(),
+                    tr_code = trCode,
+                    source = "live",
+                },
+            };
+            return JsonSerializer.Serialize(payload, McpJson.Tool);
+        }
+        catch (LsAuthException ex) { return McpJson.Error("LS authentication failed for the account inquiry.", new { reason = ex.Message, account_used = ToAccountEcho(resolved) }); }
+        catch (LsTrException ex) { return McpJson.Error("TR call failed.", new { reason = ex.Message, status = ex.StatusCode, tr_code = trCode, account_used = ToAccountEcho(resolved) }); }
+    }
+
+    [McpServerTool(Name = "ls_account_performance")]
+    [Description("""
+        Returns period P&L for the account via TR FOCCQ33600 — total invested principal, period return %, and a per-period breakdown (daily / weekly / monthly).
+
+        USE WHEN: the user asks "이번 달 수익률", "지난 분기 손익", "주간 성과", or any time-bucketed performance question.
+        Date range defaults to the last 30 days; `term` chooses bucket granularity (daily / weekly / monthly).
+        """)]
+    public static async Task<string> Performance(
+        LsApiClient apiClient,
+        LsAccountResolver accountResolver,
+        [Description("Optional account_number or nickname. Omit to use the active mode's default account.")]
+        string? account = null,
+        [Description("Start date YYYY-MM-DD or YYYYMMDD. Default = 30 days ago.")]
+        string? start_date = null,
+        [Description("End date YYYY-MM-DD or YYYYMMDD. Default = today.")]
+        string? end_date = null,
+        [Description("Bucket: 'daily' (default), 'weekly', or 'monthly'.")]
+        string? term = null,
+        CancellationToken cancellationToken = default)
+    {
+        string startYmd = NormalizeYmdInput(start_date, out string? startError, defaultToToday: false, defaultDaysBack: 30);
+        if (startError is not null) return McpJson.Error(startError);
+        string endYmd = NormalizeYmdInput(end_date, out string? endError, defaultToToday: true);
+        if (endError is not null) return McpJson.Error(endError);
+        string termCode = NormalizePerformanceTerm(term, out string? termError);
+        if (termError is not null) return McpJson.Error(termError);
+
+        Account resolved;
+        try { resolved = await accountResolver.ResolveAsync(account, cancellationToken).ConfigureAwait(false); }
+        catch (RequiresAccountException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code }); }
+        catch (AmbiguousAccountException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, candidates = ex.Candidates }); }
+        catch (AccountNotFoundException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, identifier = ex.Identifier, candidates = ex.Candidates }); }
+
+        const string trCode = "FOCCQ33600";
+        try
+        {
+            PerformanceSummary? summary = null;
+            var rows = new List<PerformanceRow>();
+            string? continuationKey = null;
+
+            for (int page = 0; page < MaxOrdersPages; page++)
+            {
+                var body = new JsonObject
+                {
+                    [$"{trCode}InBlock1"] = new JsonObject
+                    {
+                        ["QrySrtDt"] = startYmd,
+                        ["QryEndDt"] = endYmd,
+                        ["TermTp"] = termCode,
+                    },
+                };
+                LsTrResponse response = await apiClient.SendAsync(new LsTrRequest(trCode, body, continuationKey), cancellationToken).ConfigureAwait(false);
+
+                JsonElement? body3 = response.GetBlock($"{trCode}OutBlock3");
+                if (!IsCspaqSuccess(response.RspCode, body3))
+                {
+                    return McpJson.Error("LS reported a business-level error.", new
+                    {
+                        tr_code = trCode,
+                        rsp_cd = response.RspCode,
+                        rsp_msg = response.RspMessage,
+                        account_used = ToAccountEcho(resolved),
+                    });
+                }
+                ArgumentNullException.ThrowIfNull(body3);
+
+                if (page == 0)
+                {
+                    JsonElement? body2 = response.GetBlock($"{trCode}OutBlock2");
+                    if (body2 is not null)
+                    {
+                        JsonElement s = body2.Value;
+                        summary = new PerformanceSummary
+                        {
+                            AccountName = (s.ReadString("AcntNm") ?? "").Trim(),
+                            TradedAmount = s.ReadLong("BnsctrAmt"),
+                            DepositedAmount = s.ReadLong("MnyinAmt"),
+                            WithdrawnAmount = s.ReadLong("MnyoutAmt"),
+                            InvestmentAveragePrincipal = s.ReadLong("InvstAvrbalPramt"),
+                            InvestmentPnl = s.ReadLong("InvstPlAmt"),
+                            InvestmentReturnPct = s.ReadDouble("InvstErnrat"),
+                        };
+                    }
+                }
+
+                int beforeCount = rows.Count;
+                foreach (JsonElement row in body3.Value.EnumerateArray())
+                {
+                    rows.Add(new PerformanceRow(
+                        BaseDate: NormalizeYmd(row.ReadString("BaseDt")),
+                        OpeningEvaluation: row.ReadLong("FdEvalAmt"),
+                        ClosingEvaluation: row.ReadLong("EotEvalAmt"),
+                        AveragePrincipal: row.ReadLong("InvstAvrbalPramt"),
+                        TradedAmount: row.ReadLong("BnsctrAmt"),
+                        InflowAmount: row.ReadLong("MnyinSecinAmt"),
+                        OutflowAmount: row.ReadLong("MnyoutSecoutAmt"),
+                        EvaluationPnl: row.ReadLong("EvalPnlAmt"),
+                        PeriodReturnPct: row.ReadDouble("TermErnrat"),
+                        Index: row.ReadDouble("Idx")));
+                }
+
+                if (rows.Count == beforeCount)
+                    break;
+                if (!response.HasContinuation || string.IsNullOrEmpty(response.ContinuationKey))
+                    break;
+                continuationKey = response.ContinuationKey;
+            }
+
+            var payload = new
+            {
+                filter = new
+                {
+                    start_date = FormatYmdDisplay(startYmd),
+                    end_date = FormatYmdDisplay(endYmd),
+                    term = PerformanceTermLabel(termCode),
+                },
+                summary,
+                count = rows.Count,
+                periods = rows,
+                _meta = new
+                {
+                    account_used = ToAccountEcho(resolved),
+                    data_as_of = GetIndexQuoteTool.SeoulNowIsoString(),
+                    tr_code = trCode,
+                    source = "live",
+                },
+            };
+            return JsonSerializer.Serialize(payload, McpJson.Tool);
+        }
+        catch (LsAuthException ex) { return McpJson.Error("LS authentication failed for the account inquiry.", new { reason = ex.Message, account_used = ToAccountEcho(resolved) }); }
+        catch (LsTrException ex) { return McpJson.Error("TR call failed.", new { reason = ex.Message, status = ex.StatusCode, tr_code = trCode, account_used = ToAccountEcho(resolved) }); }
+    }
+
+    [McpServerTool(Name = "ls_account_daily_pnl")]
+    [Description("""
+        Returns the trade log + commission/tax summary for a single trading day via TR t0150 (today) or t0151 (any other date). Aggregate sell/buy quantities, fees, and net settlement; plus per-trade rows.
+
+        USE WHEN: the user asks "오늘 매매일지", "어제 매수/매도 내역", "수수료 얼마 냈어", or wants the day-level closing log with fees.
+        AVOID WHEN: the user wants a multi-day period — use ls_account_performance. AVOID WHEN: the user wants every transaction including deposits — use ls_account_transactions.
+
+        `date` defaults to today (t0150). Any other date uses t0151. The wrapper picks the right TR automatically.
+        """)]
+    public static async Task<string> DailyPnl(
+        LsApiClient apiClient,
+        LsAccountResolver accountResolver,
+        [Description("Optional account_number or nickname. Omit to use the active mode's default account.")]
+        string? account = null,
+        [Description("Date YYYY-MM-DD / YYYYMMDD / 'today' / 'yesterday'. Default = today.")]
+        string? date = null,
+        CancellationToken cancellationToken = default)
+    {
+        bool isToday = string.IsNullOrWhiteSpace(date)
+            || string.Equals(date.Trim(), "today", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(date.Trim(), "오늘", StringComparison.OrdinalIgnoreCase);
+
+        string ymd;
+        if (isToday)
+            ymd = SeoulYmd();
+        else
+        {
+            ymd = NormalizeYmdInput(date, out string? dateError, defaultToToday: false);
+            if (dateError is not null) return McpJson.Error(dateError);
+            if (string.Equals(ymd, SeoulYmd(), StringComparison.Ordinal)) isToday = true;
+        }
+
+        Account resolved;
+        try { resolved = await accountResolver.ResolveAsync(account, cancellationToken).ConfigureAwait(false); }
+        catch (RequiresAccountException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code }); }
+        catch (AmbiguousAccountException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, candidates = ex.Candidates }); }
+        catch (AccountNotFoundException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, identifier = ex.Identifier, candidates = ex.Candidates }); }
+
+        string trCode = isToday ? "t0150" : "t0151";
+        try
+        {
+            var inBlock = new JsonObject
+            {
+                ["cts_medosu"] = "",
+                ["cts_expcode"] = "",
+                ["cts_price"] = "",
+                ["cts_middiv"] = "",
+            };
+            if (!isToday) inBlock["date"] = ymd;
+
+            var summary = new DailyPnlSummary();
+            var rows = new List<DailyPnlRow>();
+            string? continuationKey = null;
+            bool sawSummary = false;
+
+            for (int page = 0; page < MaxOrdersPages; page++)
+            {
+                LsTrResponse response = await apiClient.CallTrAsync(trCode, inBlock, continuationKey, cancellationToken).ConfigureAwait(false);
+                if (!response.IsSuccess)
+                {
+                    return McpJson.Error("LS reported a business-level error.", new
+                    {
+                        tr_code = trCode,
+                        rsp_cd = response.RspCode,
+                        rsp_msg = response.RspMessage,
+                        account_used = ToAccountEcho(resolved),
+                    });
+                }
+
+                JsonElement? headerBlock = response.GetBlock($"{trCode}OutBlock");
+                if (headerBlock is not null && !sawSummary)
+                {
+                    JsonElement h = headerBlock.Value;
+                    summary.SellQuantity = h.ReadLong("mdqty");
+                    summary.SellAmount = h.ReadLong("mdamt");
+                    summary.SellFee = h.ReadLong("mdfee");
+                    summary.SellTax = h.ReadLong("mdtax");
+                    summary.SellSettlement = h.ReadLong("mdadjamt");
+                    summary.BuyQuantity = h.ReadLong("msqty");
+                    summary.BuyAmount = h.ReadLong("msamt");
+                    summary.BuyFee = h.ReadLong("msfee");
+                    summary.BuySettlement = h.ReadLong("msadjamt");
+                    summary.TotalQuantity = h.ReadLong("tqty");
+                    summary.TotalAmount = h.ReadLong("tamt");
+                    summary.TotalFee = h.ReadLong("tfee");
+                    summary.TotalTax = h.ReadLong("tottax");
+                    summary.TotalLevy = h.ReadLong("ttax");
+                    summary.TotalSettlement = h.ReadLong("tadjamt");
+                    sawSummary = true;
+                }
+
+                JsonElement? listBlock = response.GetBlock($"{trCode}OutBlock1");
+                int beforeCount = rows.Count;
+                if (listBlock is not null && listBlock.Value.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (JsonElement row in listBlock.Value.EnumerateArray())
+                    {
+                        string sym = (row.ReadString("expcode") ?? "").Trim();
+                        if (string.IsNullOrEmpty(sym)) continue;
+                        rows.Add(new DailyPnlRow(
+                            Side: (row.ReadString("medosu") ?? "").Trim(),
+                            Symbol: sym,
+                            Quantity: row.ReadLong("qty"),
+                            UnitPrice: row.ReadLong("price"),
+                            Amount: row.ReadLong("amt"),
+                            Fee: row.ReadLong("fee"),
+                            Tax: row.ReadLong("tax"),
+                            Settlement: row.ReadLong("adjamt"),
+                            Channel: (row.ReadString("middiv") ?? "").Trim()));
+                    }
+                }
+
+                if (rows.Count == beforeCount)
+                    break;
+                if (!response.HasContinuation || string.IsNullOrEmpty(response.ContinuationKey))
+                    break;
+                continuationKey = response.ContinuationKey;
+            }
+
+            var payload = new
+            {
+                filter = new { date = FormatYmdDisplay(ymd), is_today = isToday },
+                summary,
+                count = rows.Count,
+                trades = rows,
+                _meta = new
+                {
+                    account_used = ToAccountEcho(resolved),
+                    data_as_of = GetIndexQuoteTool.SeoulNowIsoString(),
+                    tr_code = trCode,
+                    source = "live",
+                },
+            };
+            return JsonSerializer.Serialize(payload, McpJson.Tool);
+        }
+        catch (LsAuthException ex) { return McpJson.Error("LS authentication failed for the account inquiry.", new { reason = ex.Message, account_used = ToAccountEcho(resolved) }); }
+        catch (LsTrException ex) { return McpJson.Error("TR call failed.", new { reason = ex.Message, status = ex.StatusCode, tr_code = trCode, account_used = ToAccountEcho(resolved) }); }
+    }
+
+    // ---- Date / filter helpers ----
+
+    static string SeoulYmd()
+    {
+        TimeZoneInfo zone;
+        try { zone = TimeZoneInfo.FindSystemTimeZoneById(OperatingSystem.IsWindows() ? "Korea Standard Time" : "Asia/Seoul"); }
+        catch (TimeZoneNotFoundException) { return DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(9)).ToString("yyyyMMdd"); }
+        return TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, zone).ToString("yyyyMMdd");
+    }
+
+    static string NormalizeYmdInput(string? input, out string? error, bool defaultToToday = true, int defaultDaysBack = 0)
+    {
+        error = null;
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            DateTime today = DateTime.UtcNow.AddHours(9).Date;
+            DateTime defaultDate = defaultToToday ? today : today.AddDays(-defaultDaysBack);
+            return defaultDate.ToString("yyyyMMdd");
+        }
+        string trimmed = input.Trim();
+        if (string.Equals(trimmed, "today", StringComparison.OrdinalIgnoreCase) || trimmed == "오늘")
+            return DateTime.UtcNow.AddHours(9).ToString("yyyyMMdd");
+        if (string.Equals(trimmed, "yesterday", StringComparison.OrdinalIgnoreCase) || trimmed == "어제")
+            return DateTime.UtcNow.AddHours(9).AddDays(-1).ToString("yyyyMMdd");
+        // Accept both YYYYMMDD and YYYY-MM-DD.
+        string digits = new(trimmed.Where(char.IsDigit).ToArray());
+        if (digits.Length != 8)
+        {
+            error = $"date '{input}' is not recognized. Use YYYY-MM-DD, YYYYMMDD, 'today', or 'yesterday'.";
+            return DateTime.UtcNow.AddHours(9).ToString("yyyyMMdd");
+        }
+        if (!DateTime.TryParseExact(digits, "yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _))
+        {
+            error = $"date '{input}' is not a valid calendar date.";
+            return digits;
+        }
+        return digits;
+    }
+
+    static string FormatYmdDisplay(string ymd) =>
+        ymd.Length == 8 ? $"{ymd[..4]}-{ymd.AsSpan(4, 2)}-{ymd.AsSpan(6, 2)}" : ymd;
+
+    static string NormalizeExecStatus(string? status, out string? error)
+    {
+        error = null;
+        string n = string.IsNullOrWhiteSpace(status) ? "all" : status.Trim().ToLowerInvariant();
+        return n switch
+        {
+            "all" or "0" => "0",
+            "filled" or "체결" or "1" => "1",
+            "pending" or "미체결" or "3" => "3",
+            _ => SetErrAndDefault($"status '{status}' is not recognized. Use 'all', 'filled', or 'pending'.", "0", out error),
+        };
+    }
+
+    static string ExecStatusLabel(string code) => code switch
+    {
+        "1" => "filled",
+        "3" => "pending",
+        _ => "all",
+    };
+
+    static string NormalizeOrderMarket(string? market, out string? error)
+    {
+        error = null;
+        string n = string.IsNullOrWhiteSpace(market) ? "all" : market.Trim().ToLowerInvariant();
+        return n switch
+        {
+            "all" or "00" => "00",
+            "kospi" or "거래소" or "10" => "10",
+            "kosdaq" or "코스닥" or "20" => "20",
+            "freeboard" or "프리보드" or "30" => "30",
+            _ => SetErrAndDefault($"market '{market}' is not recognized. Use 'all', 'kospi', 'kosdaq', or 'freeboard'.", "00", out error),
+        };
+    }
+
+    static string MarketLabel(string code) => code switch
+    {
+        "10" => "kospi",
+        "20" => "kosdaq",
+        "30" => "freeboard",
+        _ => "all",
+    };
+
+    static string NormalizeBkSort(string? sort, out string? error)
+    {
+        error = null;
+        string n = string.IsNullOrWhiteSpace(sort) ? "asc" : sort.Trim().ToLowerInvariant();
+        return n switch
+        {
+            "asc" or "ascending" or "1" => "1",
+            "desc" or "descending" or "0" => "0",
+            _ => SetErrAndDefault($"sort '{sort}' is not recognized. Use 'asc' or 'desc'.", "1", out error),
+        };
+    }
+
+    static string NormalizeTransactionKind(string? kind, out string? error)
+    {
+        error = null;
+        string n = string.IsNullOrWhiteSpace(kind) ? "all" : kind.Trim().ToLowerInvariant();
+        return n switch
+        {
+            "all" or "0" => "0",
+            "cashflow" or "입출금" or "1" => "1",
+            "transfer" or "입출고" or "2" => "2",
+            "trade" or "매매" or "3" => "3",
+            "fx" or "환전" or "4" => "4",
+            "misc" or "기타" or "9" => "9",
+            _ => SetErrAndDefault($"kind '{kind}' is not recognized. Use 'all', 'cashflow', 'transfer', 'trade', 'fx', or 'misc'.", "0", out error),
+        };
+    }
+
+    static string TransactionKindLabel(string code) => code switch
+    {
+        "1" => "cashflow",
+        "2" => "transfer",
+        "3" => "trade",
+        "4" => "fx",
+        "9" => "misc",
+        _ => "all",
+    };
+
+    static string NormalizePerformanceTerm(string? term, out string? error)
+    {
+        error = null;
+        string n = string.IsNullOrWhiteSpace(term) ? "daily" : term.Trim().ToLowerInvariant();
+        return n switch
+        {
+            "daily" or "일별" or "1" => "1",
+            "weekly" or "주별" or "2" => "2",
+            "monthly" or "월별" or "3" => "3",
+            _ => SetErrAndDefault($"term '{term}' is not recognized. Use 'daily', 'weekly', or 'monthly'.", "1", out error),
+        };
+    }
+
+    static string PerformanceTermLabel(string code) => code switch
+    {
+        "2" => "weekly",
+        "3" => "monthly",
+        _ => "daily",
+    };
+
+    static string SetErrAndDefault(string message, string fallback, out string? error)
+    {
+        error = message;
+        return fallback;
+    }
+
     static string ExtractShcode(string isuNo)
     {
         // LS uses "A005930" for stock IsuNo (A + 6-digit shcode) and "KR7000020008" ISIN
@@ -1011,6 +1726,108 @@ internal static class AccountInquiryTools
         public long TotalEvaluation { get; set; }
         public long TotalEvaluationPnl { get; set; }
     }
+
+    sealed class OrderHistorySummary
+    {
+        public long SellFilledAmount { get; set; }
+        public long BuyFilledAmount { get; set; }
+        public long SellFilledQuantity { get; set; }
+        public long BuyFilledQuantity { get; set; }
+        public long SellOrderQuantity { get; set; }
+        public long BuyOrderQuantity { get; set; }
+    }
+
+    sealed record OrderHistoryRow(
+        long OrderNo,
+        long OriginalOrderNo,
+        string? OrderDate,
+        string Symbol,
+        string Name,
+        string Side,
+        string OrderType,
+        string ProcessingType,
+        string ModifyOrCancel,
+        long OrderQuantity,
+        double OrderPrice,
+        long FilledQuantity,
+        double FilledPrice,
+        long AllFilledQuantity,
+        string? OrderTime,
+        string? LastFilledTime,
+        string QuoteType,
+        string OrderChannel);
+
+    sealed record TransactionRow(
+        string? TradeDate,
+        long TradeNo,
+        string CategoryName,
+        string SummaryName,
+        string CancellationName,
+        string Symbol,
+        string Name,
+        long Quantity,
+        double UnitPrice,
+        long Amount,
+        long Commission,
+        long TransactionTax,
+        long TaxSum,
+        long SettlementAmount,
+        long DepositBalanceAfter,
+        string? ProcessingTime,
+        string Channel);
+
+    sealed class PerformanceSummary
+    {
+        public string AccountName { get; set; } = "";
+        public long TradedAmount { get; set; }
+        public long DepositedAmount { get; set; }
+        public long WithdrawnAmount { get; set; }
+        public long InvestmentAveragePrincipal { get; set; }
+        public long InvestmentPnl { get; set; }
+        public double InvestmentReturnPct { get; set; }
+    }
+
+    sealed record PerformanceRow(
+        string? BaseDate,
+        long OpeningEvaluation,
+        long ClosingEvaluation,
+        long AveragePrincipal,
+        long TradedAmount,
+        long InflowAmount,
+        long OutflowAmount,
+        long EvaluationPnl,
+        double PeriodReturnPct,
+        double Index);
+
+    sealed class DailyPnlSummary
+    {
+        public long SellQuantity { get; set; }
+        public long SellAmount { get; set; }
+        public long SellFee { get; set; }
+        public long SellTax { get; set; }
+        public long SellSettlement { get; set; }
+        public long BuyQuantity { get; set; }
+        public long BuyAmount { get; set; }
+        public long BuyFee { get; set; }
+        public long BuySettlement { get; set; }
+        public long TotalQuantity { get; set; }
+        public long TotalAmount { get; set; }
+        public long TotalFee { get; set; }
+        public long TotalTax { get; set; }
+        public long TotalLevy { get; set; }
+        public long TotalSettlement { get; set; }
+    }
+
+    sealed record DailyPnlRow(
+        string Side,
+        string Symbol,
+        long Quantity,
+        long UnitPrice,
+        long Amount,
+        long Fee,
+        long Tax,
+        long Settlement,
+        string Channel);
 
     sealed class BepSummary
     {
