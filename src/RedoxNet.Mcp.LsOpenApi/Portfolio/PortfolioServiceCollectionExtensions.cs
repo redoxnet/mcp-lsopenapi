@@ -1,5 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using RedoxNet.LsOpenApi.Core.Auth;
+using RedoxNet.LsOpenApi.Core.Http;
 
 namespace RedoxNet.Mcp.LsOpenApi.Portfolio;
 
@@ -16,13 +19,21 @@ internal static class PortfolioServiceCollectionExtensions
         services.AddSingleton<IPortfolioRepository>(sp =>
         {
             string path = SqlitePortfolioRepository.ResolveDatabasePath();
+            // Account mode follows the same LsApiOptions.Market that the API
+            // client uses, so the repo and the API endpoint stay in lockstep
+            // even when tests override the market via Options.
+            LsMarket market = sp.GetRequiredService<IOptions<LsApiOptions>>().Value.Market;
             var repository = new SqlitePortfolioRepository(
                 path,
+                market.ToCanonical(),
                 sp.GetRequiredService<ILogger<SqlitePortfolioRepository>>());
             return repository;
         });
         services.AddSingleton<IQuoteService, LsQuoteService>();
         services.AddSingleton<IPortfolioService, PortfolioService>();
+        services.AddSingleton(sp => new LsAccountResolver(
+            sp.GetRequiredService<IPortfolioRepository>(),
+            sp.GetRequiredService<IOptions<LsApiOptions>>().Value.Market));
         return services;
     }
 }
