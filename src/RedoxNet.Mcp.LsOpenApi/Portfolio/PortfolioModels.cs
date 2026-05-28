@@ -65,6 +65,7 @@ internal sealed class Account
     public string AccountNo { get; init; } = "";
     public string Nickname { get; init; } = "";
     public string Broker { get; init; } = "";
+    public string Mode { get; init; } = "real";
     public bool IsDefault { get; init; }
     public string CreatedAt { get; init; } = "";
 }
@@ -220,7 +221,7 @@ internal sealed record RemoveResult(bool Removed);
 /// <summary>
 /// Account metadata returned to MCP hosts. Used inside <c>applied_to</c> echoes and error envelope candidates.
 /// </summary>
-internal sealed record AccountInfo(string AccountNumber, string Nickname, string Broker, bool IsDefault);
+internal sealed record AccountInfo(string AccountNumber, string Nickname, string Broker, bool IsDefault, string Mode = "real");
 
 /// <summary>
 /// Per-account summary row for the accounts_list response. Class form so Dapper can
@@ -232,6 +233,7 @@ internal sealed class AccountSummary
     public string AccountNumber { get; init; } = "";
     public string Nickname { get; init; } = "";
     public string Broker { get; init; } = "";
+    public string Mode { get; init; } = "real";
     public bool IsDefault { get; init; }
     public int HoldingsCount { get; init; }
 }

@@ -41,6 +41,39 @@ v1.4 슬라이스 A가 만든 것:
 
 `data_as_of` (응답 데이터 시점 timestamp) + `query_date_echo` (사용자 입력 반향) 두 필드는 *분류가 아니라 사실*이라 유지.
 
+### 1.4 저장소 경계 — local user state vs broker source of truth
+
+v1.6부터 계좌 관련 표면은 두 출처를 명확히 분리한다. `portfolio.db`는 사용자가 직접 관리하는 로컬 작업장이고, LS REST는 브로커가 들고 있는 실시간 원장이다. LS 계좌 조회 결과는 `portfolio.db`에 캐시하지 않는다.
+
+```text
+┌─ portfolio.db (existing + planned extension) ─ user / external state ─┐
+│  watchlist              ← 관심 종목                                    │
+│  watched_themes         ← 관심 테마/섹터 추적                           │
+│  stocks                 ← 종목 메타 캐시                                │
+│  accounts               ← 모든 브로커 계좌 label (LS + 타 브로커)        │
+│                           mode='real' | 'virtual' 로 LS 계좌 분리       │
+│  holdings               ← 수동 입력 잔고                                │
+│                           paper portfolio / multi-broker tracker        │
+│  stock_themes           ← 종목별 LS 테마 메타 캐시                       │
+│  order_audit (v1.7)     ← 우리가 LS에 보낸 주문 감사 로그                │
+└────────────────────────────────────────────────────────────────────────┘
+
+┌─ LS REST (live, no cache) ─ broker source of truth ────────────────────┐
+│  t0424          → 현재 LS 잔고 (실제)                                   │
+│  t0425          → 오늘 체결/미체결                                      │
+│  CSPAQ12200     → 예수금 / 주문가능금액 / 총평가                         │
+│  CSPAQ13700     → 주문체결내역 (history)                                │
+│  CDPCQ04700     → 거래내역 (입출금 포함)                                │
+│  FOCCQ33600     → 기간별 수익률                                         │
+│  t0150 / t0151  → 당일/전일 매매일지                                    │
+│  CSPAQ12300     → BEP 단가                                              │
+│  CSPAQ00600     → 신용한도                                              │
+│  CSPBQ00200     → 종목별 주문가능수량 (조회만, 발주 아님)                │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+Naming note: 과거 문서의 `watched_sectors`는 v0.6에서 `watched_themes`로 정리되었다. 사용자가 말하는 "섹터" UI 개념은 유지하되, 저장소와 응답 모델에서는 theme/industry 분리를 따른다.
+
 ---
 
 ## 2. 디자인 — Sub-change 1: Account inquiry tools (10)
@@ -80,27 +113,20 @@ ServerInstructions에 명시:
 LS에서 모의투자 계좌와 실투 계좌는 *완전히 다른 entity* — 다른 계좌번호, 다른 token scope, 다른 holdings/거래내역. 우리 portfolio.db도 이를 인지해야 함:
 
 - 같은 사용자가 real `123-456789-01` ("주식") + virtual `999-111222-01` ("모의 실험용") 보유 가능
-- `ls_account_*` 호출 시 *현재 mode에 맞는 계좌*로 자동 라우팅 필요 — env `LSOPENAPI_VIRTUAL=1` 이면 virtual 계좌만 candidates에 등장
+- `ls_account_*` 호출 시 *현재 mode에 맞는 계좌*로 자동 라우팅 필요 — `LS_MARKET=virtual` 이면 virtual 계좌만 candidates에 등장 (single source of truth — 별도 `LSOPENAPI_VIRTUAL` env 미도입; v1.7 trading 게이트도 동일 변수 재사용)
 - default account도 *mode별로 분리* — virtual default ≠ real default
 
-스키마 옵션 두 가지 (구현 시 결정):
-
-**Option A — 단일 테이블 + mode column** (conventional):
+**구현 결정 — Option A (단일 테이블 + mode column)**:
 ```sql
 ALTER TABLE accounts ADD COLUMN mode TEXT NOT NULL DEFAULT 'real';
--- account_no UNIQUE → (account_no, mode) composite UNIQUE
+CREATE UNIQUE INDEX idx_accounts_nickname_mode ON accounts(nickname, mode);
 -- is_default semantics: per-mode (한 mode에 하나의 default)
--- holdings.account_id FK 그대로
+-- holdings.account_id FK 그대로 (mode는 accounts에서 lookup)
 ```
 
-**Option B — 별도 테이블** (clearer separation):
-```sql
--- accounts → real_accounts (기존 데이터 migration)
--- 신규 virtual_accounts (동일 schema)
--- holdings 가 어느 mode인지 알아야 → composite FK 또는 mode 컬럼 추가
-```
+`account_no UNIQUE`는 v1 migration의 column-level 제약이라 SQLite ALTER로 drop 불가 (table rebuild 필요). 현실에서 LS는 real / virtual에 서로 다른 계좌번호를 발급하므로 (account_no, mode) composite UNIQUE의 실익이 없음. **column-level UNIQUE 유지** + 같은 번호를 다른 mode로 upsert 시 명시적 에러로 차단 (silent mode flip 방지). 구현은 [SqlitePortfolioRepository.UpsertAccountAsync](../src/RedoxNet.Mcp.LsOpenApi/Portfolio/SqlitePortfolioRepository.cs) 사전 SELECT 가드.
 
-Option A가 작업량 적음, B가 멘탈 모델 명확. 구현 시 A 선호 (holdings 테이블 영향 최소), 단 B로 가는 명분이 발견되면 변경 가능. **§4 Schema 변경 항목 영향** ([§4](#4-schema-변경) 참조).
+별도 테이블 (Option B) 안 채택 — holdings 테이블 컬럼 영향 + double migration 부담. mode 분리는 SELECT WHERE 필터로 충분.
 
 ### 2.4 응답 envelope
 
@@ -129,7 +155,7 @@ Option A가 작업량 적음, B가 멘탈 모델 명확. 구현 시 A 선호 (ho
 
 `/stock/order` + `/stock/accno`는 *계좌 권한 token*이 필요할 수 있음 — 시세 token과 다를 가능성. 기존 `LsTokenCache` ([RedoxNet.LsOpenApi.Core.Auth.LsTokenCache.cs](../src/RedoxNet.LsOpenApi.Core/Auth/LsTokenCache.cs))의 token scope 확인 필요. 한 가지 token으로 모두 커버되면 그대로, 분리되면 cache key에 scope 추가.
 
-실측: 첫 도구 (`ls_account_holdings`) 구현 시 `LSOPENAPI_VIRTUAL=1`로 모의투자 계좌에서 호출하여 token scope 확인.
+실측: 첫 도구 (`ls_account_holdings`) 구현 시 `LS_MARKET=virtual`로 모의투자 계좌에서 호출하여 token scope 확인.
 
 ---
 
@@ -235,39 +261,35 @@ v1.4가 추가한 *date envelope 해석 가이드* 단락은 *교체* — `query
 
 **Minor — accounts 테이블에 mode awareness 추가** ([§2.3](#23-account-인자-처리) 참조).
 
-기본 결정 (Option A — 단일 테이블):
+결정사항:
 - `accounts` 테이블에 `mode TEXT NOT NULL DEFAULT 'real'` 컬럼 추가
-- UNIQUE 제약: `(account_no)` → `(account_no, mode)` composite
-- `(nickname)` UNIQUE도 → `(nickname, mode)` composite (같은 nickname을 virtual/real에서 다른 의미로 쓸 수 있게)
+- `account_no` UNIQUE는 column-level 그대로 유지 (SQLite ALTER로 column 제약 drop 불가 — table rebuild의 비용 > composite key의 실익; LS가 real/virtual에 다른 번호 발급하기 때문)
+- `(nickname)` UNIQUE → `(nickname, mode)` composite (같은 nickname을 virtual/real에서 다른 의미로 쓸 수 있게)
 - `is_default` 의미: per-mode (한 mode에 하나의 default — 현재 default가 다른 mode면 mode 전환 시 candidate 자동 promote)
 - 기존 v1 데이터: 모두 `mode='real'`로 자동 backfill (사용자 명시적 declare가 없을 땐 real이 안전한 default)
+- Cross-mode account_no 충돌: 같은 번호를 다른 mode로 upsert 시 `InvalidOperationException` (사용자에게 `LS_MARKET` 전환 안내). silent mode flip 차단.
 
-Migration:
+Migration (실제 적용된 v6):
 ```sql
--- migration v1 → v1.5 (account mode awareness — v1.6 일환)
 ALTER TABLE accounts ADD COLUMN mode TEXT NOT NULL DEFAULT 'real';
-DROP INDEX IF EXISTS ix_accounts_account_no;
-DROP INDEX IF EXISTS ix_accounts_nickname;
-CREATE UNIQUE INDEX ix_accounts_account_no_mode ON accounts(account_no, mode);
-CREATE UNIQUE INDEX ix_accounts_nickname_mode ON accounts(nickname, mode);
--- is_default 보존 (기존 default = real default 자동 부여)
+DROP INDEX IF EXISTS idx_accounts_nickname;
+CREATE UNIQUE INDEX idx_accounts_nickname_mode ON accounts(nickname, mode);
+CREATE INDEX idx_accounts_mode_default ON accounts(mode, is_default, id);
 ```
 
 Holdings 테이블 무영향 (FK는 `account_id`로 유지 — mode는 accounts에서 lookup).
 
-v1.7에서 `order_audit` / `order_preview` / `trading_policy` 3개 테이블 추가 (migration v2).
-
-(만약 Option B로 가면 — `real_accounts` 테이블 rename + 신규 `virtual_accounts` + holdings의 mode 추적 → 더 큰 migration. 현재 Option A 권장.)
+v1.7에서 `order_audit` / `order_preview` / `trading_policy` 3개 테이블 추가 (migration v7+).
 
 ---
 
 ## 6.5. 위험 / 구현 시 결정 필요
 
-1. **Virtual vs Real schema 옵션 — A vs B** ([§2.3](#23-account-인자-처리), [§6](#6-schema-변경)). Option A 권장이나 holdings 테이블에 *mode 단위 분리 필요성*이 발견되면 B 검토 (구현 첫 PR에서 결정).
+1. ~~Virtual vs Real schema 옵션 A vs B~~ — **확정**: Option A (단일 테이블 + mode 컬럼) + column-level `account_no` UNIQUE 유지 + cross-mode upsert 명시적 reject. [§6](#6-schema-변경) 참조.
 2. **LS token scope** — `/stock/accno` + `/stock/order`가 시세 token과 다른 권한 token을 요구할 가능성. 첫 inquiry 도구 (`ls_account_holdings`) 구현 시 실측. 분리되면 `LsTokenCache` cache key에 scope 추가 (mode와 scope의 cartesian — 최대 4개 token).
 3. **TR 응답 정규화** — 각 TR의 한글 필드명 + numeric type을 영어 snake_case + 명시적 type으로 변환. 도구별 mapping을 wrapper 안에 captured + unit-pinned.
 4. **`sunikrt` 같은 % 필드 단위 모호성** — LS가 raw decimal vs %×100 반환하는지 확인 필요 ([LS-API-QUIRKS §3](./LS-API-QUIRKS.md) 패턴과 일치하는지).
-5. **모드 전환 시 default 자동 promote** — virtual default가 없는데 mode를 virtual로 전환 시 첫 등록된 virtual account 자동 promote? 또는 명시적 set 요구? UX 결정 필요.
+5. **모드 전환 시 default 자동 promote** — 첫 등록 계좌가 default로 자동 promote되는 기존 v0.7 컨벤션을 mode별로 이어받음 (`UpsertAccountAsync`가 해당 mode에 default 없으면 promote). 명시적 `set_default=true` 호출도 mode 경계 안에서만 동작. UX 추가 결정 불필요.
 
 ---
 
@@ -286,7 +308,7 @@ v1.7에서 `order_audit` / `order_preview` / `trading_policy` 3개 테이블 추
 
 ### 8.1 새 inquiry 도구 (각 도구당)
 
-- **모의투자 (`LSOPENAPI_VIRTUAL=1`)** 에서 happy path — 응답 정규화 + `_meta.account_used` + `_meta.data_as_of` 확인
+- **모의투자 (`LS_MARKET=virtual`)** 에서 happy path — 응답 정규화 + `_meta.account_used` + `_meta.data_as_of` 확인
 - account 인자 미지정 + default 있음 → default 자동 사용
 - account 인자 미지정 + default 없음 + 등록 0개 → `RequiresAccount`
 - account 인자 미지정 + default 없음 + 등록 2개+ → `AmbiguousAccount` + candidates
