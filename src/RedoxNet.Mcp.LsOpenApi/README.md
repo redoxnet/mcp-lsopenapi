@@ -112,7 +112,7 @@ on the response so the model can narrate honestly that no chart was shown.
 |---|---|---|
 | `LS_APPKEY` | yes | LS OpenAPI app key. |
 | `LS_APPSECRETKEY` | yes | LS OpenAPI app secret key. |
-| `LS_MARKET` | no | `real` or `virtual` (default `real`). |
+| `LS_MARKET` | no | `real` or `virtual` (default `real`). Runtime declaration of which appkey pair is loaded — the appkey itself determines actual account routing. Paper portfolios are mode-agnostic; `LS_MARKET` only labels the live `ls_accounts` row + namespaces the token cache. |
 | `LS_TOOL_PROFILE` | no | `standard` (default — hides the 3 catalog tools from `tools/list`) or `all` (exposes them). |
 | `LS_TOOL_PROFILE_STRICT` | no | `true` rejects a `tools/call` for a profile-hidden tool instead of honoring it (default `false`). |
 | `LS_BASEURL` | no | Override REST base URL (rarely needed). |
@@ -121,7 +121,7 @@ on the response so the model can narrate honestly that no chart was shown.
 
 Credentials are accepted **only** through the process environment — never through chat, tool arguments, or MCP elicitation. Prompting for them in conversation would either log them or train callers to share them in transcripts, so that input path is intentionally closed off.
 
-Local data lives at `%LOCALAPPDATA%\RedoxNet\LsOpenApi\` on Windows and `~/.local/share/redoxnet/lsopenapi/` on Linux/macOS: `token.db` (auth cache, SHA-256 keyed) and `portfolio.db` (user-supplied holdings/watchlists; never read or written by tools outside the portfolio family).
+Local data lives at `%LOCALAPPDATA%\RedoxNet\LsOpenApi\` on Windows and `~/.local/share/redoxnet/lsopenapi/` on Linux/macOS: `token.db` (auth cache, SHA-256 keyed) and `portfolio.db`. The portfolio file carries two logically distinct tables: the **paper-portfolio surface** (`accounts` / `holdings` / `watchlist_*` / `watched_themes`) — mode-agnostic, user-entered holdings and watchlists, never auto-synced — and the **live LS broker registry** (`ls_accounts`) — auto-populated from the AcntNo / branch / account-name echoed on the first successful `ls_account_*` call, keyed by `(account_no, mode)`, used purely to label `_meta.account_used`. Live balances / orders / holdings themselves are never cached; every `ls_account_*` call is a fresh REST snapshot.
 
 ## Tools (50 in the `standard` profile, 53 in `all`)
 

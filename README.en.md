@@ -9,9 +9,9 @@
 [![CI](https://github.com/redoxnet/mcp-lsopenapi/actions/workflows/ci.yml/badge.svg)](https://github.com/redoxnet/mcp-lsopenapi/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-MCP server over **LS Securities OpenAPI**: quotes, charts, screeners, ETF holdings, program-trading flow, index / industry / theme context, and your local portfolio — accessed in natural language.
+MCP server over **LS Securities OpenAPI**: quotes, charts, screeners, ETF holdings, program-trading flow, index / industry / theme context, the user's live LS broker account (read-only), and a local paper portfolio — accessed in natural language.
 
-> **v1.0 scope:** read-only market data + local portfolio notes. Portfolio tools persist user-supplied entries to a local SQLite store; they do not sync with brokerage accounts, fetch live balances, or place orders.
+> **v1.6 scope:** read-only market data + read-only LS broker inquiry (live holdings / balance / orders / BEP / order history / transactions / period P&L / max orderable quantity / credit limit, fresh REST snapshot per call, no caching) + local paper portfolio notes (manually-entered multi-broker holdings, watchlists, watched themes, JSON backup/restore). **No order placement** — that's v1.7 with paper-default + preview-required gating.
 
 ## Why it works well in chat
 
@@ -138,8 +138,8 @@ LS issues **two separate AppKey / AppSecretKey pairs** — one for the real (실
 
 What this means for `LS_MARKET`:
 - It is **NOT a switch that flips the same key between modes**. It is a **runtime declaration of which kind of key pair is currently injected** — real (실전용) or virtual (모의용).
-- The REST endpoint is already decided by the appkey pair itself. `LS_MARKET` only labels the server's own state: portfolio.db row namespacing, the model-facing `mode` echo on `_meta.account_used`, and (in v1.7) the placement-safety gating.
-- Set it to match the loaded appkey pair: `real` when `LS_APPKEY` is the real-account pair, `virtual` when it's the mock pair. A mismatch (real key + `LS_MARKET=virtual`) won't break anything — the broker still answers from the key — but the auto-discovered nickname will read `LS-virtual-{acntno}` even though the data is real. Relabel via `ls_account(action="upsert")` to clean it up.
+- The REST endpoint is already decided by the appkey pair itself. `LS_MARKET` only labels the server's own state, and the scope of that label is narrow: it tags the auto-discovered row in the live `ls_accounts` registry (keyed by `account_no + mode`), namespaces the token cache (so real and virtual tokens don't overwrite each other), echoes the resolved mode on `_meta.account_used`, and (in v1.7) will gate placement-safety. **Paper portfolios are mode-agnostic**: every paper account, holding, and watchlist row in `accounts` / `holdings` / `watchlist_*` is visible regardless of which mode is loaded.
+- Set it to match the loaded appkey pair: `real` when `LS_APPKEY` is the real-account pair, `virtual` when it's the mock pair. A mismatch (real key + `LS_MARKET=virtual`) won't break anything — the broker still answers from the key — but the auto-discovered nickname will read `LS-virtual-{acntno}` even though the data is real. Relabel the live row via `ls_account(action="set_live_nickname", account_number="...", nickname="...")` (the paper-account `upsert` action is a separate surface and does not touch the live registry).
 
 To switch between modes in practice, swap **both** the appkey pair **and** `LS_MARKET` in the host config and restart the MCP server.
 
@@ -191,7 +191,7 @@ Local storage lives at:
 - Windows: `%LOCALAPPDATA%\RedoxNet\LsOpenApi\` (`token.db` + `portfolio.db`)
 - Linux/macOS: `~/.local/share/redoxnet/lsopenapi/`
 
-Both files are SQLite (WAL mode). Token cache keys are `SHA256(appkey):market`, so the raw app key never lives on disk; tokens auto-refresh 5 minutes before expiry. The portfolio file holds user-supplied holdings and watchlist entries only — it is never read or written by tools other than the portfolio family below.
+Both files are SQLite (WAL mode). Token cache keys are `SHA256(appkey):market`, so the raw app key never lives on disk; tokens auto-refresh 5 minutes before expiry. `portfolio.db` carries two logically distinct tables: (1) the paper-portfolio surface (`accounts` / `holdings` / `watchlist_*` / `watched_themes`) — mode-agnostic, holds user-entered holdings and watchlist entries only, never auto-synced with any brokerage; and (2) the live LS broker registry (`ls_accounts`) — auto-populated from the AcntNo / branch / account-name echoed by the first successful `ls_account_*` call, keyed by `(account_no, mode)`, used purely to label the model-facing echoes. **Live balances / orders / holdings are never cached** — every `ls_account_*` call hits LS REST fresh.
 
 ## Credential handling policy
 
@@ -237,7 +237,7 @@ User: "Has KODEX AI Power Infrastructure ETF hit a sell signal on its 12-period 
 
 #### 4. Interactive Charts
 
-Chart-emitting tools can return a Plotly v5 JSON spec for inline rendering, gated (from v1.2) on what the connected host can render. **[AssistStudio](https://github.com/fieldcure/fieldcure-assiststudio)** renders charts inline in the chat. **Claude Desktop** connects fine and every tool works, but its MCP Apps renderer does not currently display inline charts — a chart request returns text analysis. **Codex CLI** and other text-only hosts are not offered the `include_chart` parameter at all. In every case the model receives a clean analytical summary, and the Plotly spec never enters its text context.
+Chart-emitting tools can return a Plotly v5 JSON spec for inline rendering, gated (from v1.2) on what the connected host can render. **Inline rendering works on AssistStudio, Claude Desktop Chat, Claude Cowork, and VS Code Chat** — every host that advertises the SEP-1865 `io.modelcontextprotocol/ui` capability. From v1.5 the PlotlyTemplate handshake was tightened so hosts that *advertise* the capability *actually render*; earlier blank-card / white-card behavior was a server-side bug that has been fixed. **Codex CLI**, **Claude Code CLI**, and any other host that doesn't advertise the capability are not offered the `include_chart` parameter at all — they receive `_meta.render_status: "stripped_text_only"` and the model narrates honestly that no chart was shown. In every case the model receives a clean analytical summary, and the Plotly spec never enters its text context. See [docs/MCP-APPS-INTEROP.md](docs/MCP-APPS-INTEROP.md) §3 for the empirical host matrix.
 
 ## Tools
 
