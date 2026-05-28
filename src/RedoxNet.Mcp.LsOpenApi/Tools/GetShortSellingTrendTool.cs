@@ -6,7 +6,6 @@ using System.Text.Json.Serialization;
 using ModelContextProtocol.Server;
 using RedoxNet.LsOpenApi.Core.Auth;
 using RedoxNet.LsOpenApi.Core.Http;
-using RedoxNet.LsOpenApi.Core.Time;
 
 namespace RedoxNet.Mcp.LsOpenApi.Tools;
 
@@ -31,7 +30,7 @@ public static class GetShortSellingTrendTool
 
         Date range: pass `from`/`to` (YYYYMMDD) to clip; otherwise the last `count` trading days up to today are returned. `short_value` and `total_short_value` are in 백만원; `short_ratio_pct` is the short-sale share of that day's total volume; `cumulative_short_volume` accumulates from the query start date.
 
-        Publishing lag: short-sale figures are reported on T+1 by KRX, so the latest row may trail today by one business day around market open. `data_as_of` reports the actual latest row date (not today).
+        Publishing lag: short-sale figures are reported on T+1 by KRX, so the latest row may trail today by one business day around market open. `data_as_of` reports the actual latest row date (not today). If `query_date` is a weekend or holiday, LS automatically returns data from the most recent prior trading day — `data_as_of` tells you which one.
 
         For 공매도 figures, prefer this LS-backed tool before web search; use web search only for narrative context.
         """)]
@@ -55,7 +54,7 @@ public static class GetShortSellingTrendTool
         if (count < 1 || count > MaxCount)
             return McpJson.Error($"count must be between 1 and {MaxCount}.", new { received = count });
 
-        if (!ResolveEndDate(to, query_date, out string todt, out DateEnvelope dateEnvelope, out string? dateError))
+        if (!ResolveEndDate(to, query_date, out string todt, out string? dateError))
             return McpJson.Error(dateError!);
 
         bool fromExplicit = TryParseYmd((from ?? "").Trim(), out _);
@@ -115,15 +114,15 @@ public static class GetShortSellingTrendTool
 
             // t1927 has T+1 publishing lag; anchor data_as_of to the actual
             // latest series row so the envelope tells the truth about what
-            // date this response represents.
-            string actualDataAsOf = series.Count > 0 ? series[0].Date : dateEnvelope.DataAsOf;
+            // date this response represents. Empty series falls back to the
+            // user's basis date so the LLM can read "no data" honestly.
+            string actualDataAsOf = series.Count > 0 ? series[0].Date : todt;
             var payload = new ShortSellingPayload
             {
                 Shcode = trimmed,
                 From = fromdt,
                 To = todt,
                 DataAsOf = actualDataAsOf,
-                QueryDateResolution = dateEnvelope.QueryDateResolution,
                 Count = series.Count,
                 Summary = BuildSummary(series),
                 Series = series,
@@ -162,12 +161,12 @@ public static class GetShortSellingTrendTool
             HighestRatioDay: peak);
     }
 
-    static bool ResolveEndDate(
-        string? to,
-        string? queryDate,
-        out string todt,
-        out DateEnvelope dateEnvelope,
-        out string? error)
+    /// <summary>
+    /// Resolves the end date: explicit `to` wins; otherwise `queryDate` (or
+    /// today) becomes the LS request anchor. LS handles weekend/holiday
+    /// clamping server-side, so we only validate yyyyMMdd format here.
+    /// </summary>
+    static bool ResolveEndDate(string? to, string? queryDate, out string todt, out string? error)
     {
         string toTrimmed = (to ?? "").Trim();
         if (toTrimmed.Length > 0)
@@ -175,25 +174,38 @@ public static class GetShortSellingTrendTool
             if (!TryParseYmd(toTrimmed, out _))
             {
                 todt = "";
-                dateEnvelope = default!;
                 error = "to must use yyyyMMdd format, e.g. 20260522.";
                 return false;
             }
-
             todt = toTrimmed;
-            dateEnvelope = DateEnvelope.FromDataAsOf(todt);
             error = null;
             return true;
         }
 
-        if (!DateEnvelope.TryResolveKrxDailySnapshot(queryDate, out dateEnvelope, out error))
+        string queryTrimmed = (queryDate ?? "").Trim();
+        if (queryTrimmed.Length == 0)
+        {
+            todt = SeoulNowYmd();
+            error = null;
+            return true;
+        }
+        if (!TryParseYmd(queryTrimmed, out _))
         {
             todt = "";
+            error = "query_date must use yyyyMMdd format, e.g. 20260522.";
             return false;
         }
-
-        todt = dateEnvelope.DataAsOf;
+        todt = queryTrimmed;
+        error = null;
         return true;
+    }
+
+    static string SeoulNowYmd()
+    {
+        TimeZoneInfo zone;
+        try { zone = TimeZoneInfo.FindSystemTimeZoneById(OperatingSystem.IsWindows() ? "Korea Standard Time" : "Asia/Seoul"); }
+        catch (TimeZoneNotFoundException) { return DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(9)).ToString("yyyyMMdd", CultureInfo.InvariantCulture); }
+        return TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, zone).ToString("yyyyMMdd", CultureInfo.InvariantCulture);
     }
 
     static string NormalizeDateOrDefault(string? raw, string anchorYmd, int days)
@@ -224,7 +236,6 @@ public static class GetShortSellingTrendTool
         public string From { get; init; } = "";
         public string To { get; init; } = "";
         public string DataAsOf { get; init; } = "";
-        public QueryDateResolution QueryDateResolution { get; init; }
         public int Count { get; init; }
         public ShortSellingSummary Summary { get; init; } = null!;
         public IReadOnlyList<ShortSellingPoint> Series { get; init; } = Array.Empty<ShortSellingPoint>();

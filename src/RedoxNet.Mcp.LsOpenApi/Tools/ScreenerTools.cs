@@ -6,7 +6,6 @@ using System.Text.Json.Serialization;
 using ModelContextProtocol.Server;
 using RedoxNet.LsOpenApi.Core.Auth;
 using RedoxNet.LsOpenApi.Core.Http;
-using RedoxNet.LsOpenApi.Core.Time;
 
 namespace RedoxNet.Mcp.LsOpenApi.Tools;
 
@@ -200,7 +199,6 @@ public static class ScreenerTools
                 }
             }
 
-            DateEnvelope.TryResolveKrxDailySnapshot(null, out DateEnvelope dateEnvelope, out _);
             int totalAvailable = (int)(response.GetBlock("t1825OutBlock")?.ReadLong("JongCnt") ?? rows.Count);
             var payload = new ScreenerRunPayload
             {
@@ -208,8 +206,7 @@ public static class ScreenerTools
                 Market = normalizedMarket,
                 Count = rows.Count,
                 TotalAvailable = Math.Max(totalAvailable, rows.Count),
-                DataAsOf = dateEnvelope.DataAsOf,
-                QueryDateResolution = dateEnvelope.QueryDateResolution,
+                DataAsOf = SeoulNowYmd(),
                 Results = rows,
                 SourceTr = "t1825",
             };
@@ -386,7 +383,6 @@ public static class ScreenerTools
                 if (combinedRows.Count >= limit) break;
             }
 
-            DateEnvelope.TryResolveKrxDailySnapshot(null, out DateEnvelope envelope, out _);
             var payload = new CombineScreenersPayload
             {
                 SignalsResolved = resolved.Select((s, i) => new SignalResolutionEntry(
@@ -399,8 +395,7 @@ public static class ScreenerTools
                 Market = normalizedMarket,
                 Count = combinedRows.Count,
                 TotalInCombination = combinedShcodes.Count,
-                DataAsOf = envelope.DataAsOf,
-                QueryDateResolution = envelope.QueryDateResolution,
+                DataAsOf = SeoulNowYmd(),
                 Results = combinedRows,
                 SourceTr = $"t1825 x {resolved.Count}",
             };
@@ -775,7 +770,6 @@ public static class ScreenerTools
         public int Count { get; init; }
         public int TotalAvailable { get; init; }
         public string DataAsOf { get; init; } = "";
-        public QueryDateResolution QueryDateResolution { get; init; }
         public IReadOnlyList<ScreenerRow> Results { get; init; } = Array.Empty<ScreenerRow>();
         public string SourceTr { get; init; } = "";
     }
@@ -807,7 +801,6 @@ public static class ScreenerTools
         public int Count { get; init; }
         public int TotalInCombination { get; init; }
         public string DataAsOf { get; init; } = "";
-        public QueryDateResolution QueryDateResolution { get; init; }
         public IReadOnlyList<CombinedScreenerRow> Results { get; init; } = Array.Empty<CombinedScreenerRow>();
         public string SourceTr { get; init; } = "";
     }
@@ -824,4 +817,17 @@ public static class ScreenerTools
         long Volume,
         double VolumeRatePct,
         IReadOnlyList<string> SignalsMatched);
+
+    /// <summary>
+    /// Renders today's Seoul yyyyMMdd for the screener payloads' data_as_of.
+    /// Q-Click signals are evaluated from the live tape at call time, so
+    /// "today" is the accurate anchor — no separate envelope abstraction needed.
+    /// </summary>
+    static string SeoulNowYmd()
+    {
+        TimeZoneInfo zone;
+        try { zone = TimeZoneInfo.FindSystemTimeZoneById(OperatingSystem.IsWindows() ? "Korea Standard Time" : "Asia/Seoul"); }
+        catch (TimeZoneNotFoundException) { return DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(9)).ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture); }
+        return TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, zone).ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture);
+    }
 }

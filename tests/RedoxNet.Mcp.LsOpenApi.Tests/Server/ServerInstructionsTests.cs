@@ -48,9 +48,9 @@ public sealed class ServerInstructionsTests
     [InlineData("ls_list_screeners")]           // Q-Click discovery entry point (v1.4)
     [InlineData("ls_combine_screeners")]        // compound AND/OR screening (v1.4)
     [InlineData("LS-curated catalog")]          // catalog provenance is curated, not user-saved (v1.4)
-    [InlineData("data_as_of")]                  // envelope field surfaced in natural language (v1.4)
-    [InlineData("query_date_resolution")]       // envelope resolution field (v1.4)
-    [InlineData("trails today")]                // KSD lag wording — model must not claim "today's data" when stale (v1.4)
+    [InlineData("data_as_of")]                  // envelope field surfaced in natural language (v1.4, kept in v1.6)
+    [InlineData("trails today")]                // KSD lag wording — model must not claim "today's data" when stale (v1.4, kept in v1.6)
+    [InlineData("LLM's clock + calendar")]      // v1.6 explicit handoff of session/holiday classification to the model (v1.6 §1.3)
     [InlineData("deduplicates inputs")]         // ls_combine_screeners dedupe contract (v1.4)
     [InlineData("rapid_change group")]          // minute-bucket noise caveat anchor (v1.4)
     // v1.5 narration-honesty + anti-synthesis paragraph (SPEC v1.5 §2.2 + §2.3).

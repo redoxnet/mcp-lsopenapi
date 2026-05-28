@@ -47,7 +47,9 @@ public sealed class GetMarketFundsTrendToolTests
 
         root.GetProperty("market").GetString().Should().Be("kospi");
         root.GetProperty("data_as_of").GetString().Should().MatchRegex(@"^\d{8}$");
-        root.GetProperty("query_date_resolution").GetString().Should().NotBeNullOrWhiteSpace();
+        // v1.6 §3.2 — query_date_resolution removed; data_as_of stays as the
+        // sole envelope field (factual, not classification).
+        root.TryGetProperty("query_date_resolution", out _).Should().BeFalse();
         root.GetProperty("count").GetInt32().Should().Be(2);
 
         JsonElement first = root.GetProperty("series")[0];
@@ -78,21 +80,24 @@ public sealed class GetMarketFundsTrendToolTests
     }
 
     [Fact]
-    public async Task GetMarketFundsTrend_QueryDateWeekend_UsesPriorFriday_AndAnchorsToActualLatestRow()
+    public async Task GetMarketFundsTrend_QueryDate_ForwardedToLsVerbatim_AndAnchorsToActualLatestRow()
     {
         var (client, handler) = TestClientFactory.Create((_, _) => Ok(Sample));
 
+        // v1.6 §3.1 — the WeekendOnlyCalendar / DateEnvelope.Resolve abstractions
+        // were deleted; we no longer clamp weekends client-side. LS handles the
+        // weekend / holiday rollback server-side. The wrapper forwards the
+        // user's query_date verbatim and the response's actual latest row date
+        // becomes data_as_of (the latest publishing date that LS could honor).
         string result = await GetMarketFundsTrendTool.GetMarketFundsTrend(client, query_date: "20260524");
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         string body = await handler.Requests[0].Content!.ReadAsStringAsync();
-        // tdate forwarded to LS reflects the resolved query day (weekend -> Friday).
-        body.Should().Contain("\"tdate\":\"20260522\"");
-        // data_as_of reflects the actual latest series row, not the query day.
-        // The Sample fixture's latest row is 20260518; data_as_of anchors there
-        // because t8428 publishing lag means the row date can trail the query day.
+        body.Should().Contain("\"tdate\":\"20260524\"", "query_date is now forwarded to LS verbatim");
+        // data_as_of still reflects the actual latest series row in the response;
+        // the Sample fixture's latest row is 20260518.
         root.GetProperty("data_as_of").GetString().Should().Be("20260518");
-        root.GetProperty("query_date_resolution").GetString().Should().Be("weekend");
+        root.TryGetProperty("query_date_resolution", out _).Should().BeFalse();
     }
 
     [Fact]

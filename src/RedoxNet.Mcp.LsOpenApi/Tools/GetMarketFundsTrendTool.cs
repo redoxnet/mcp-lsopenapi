@@ -6,7 +6,6 @@ using System.Text.Json.Serialization;
 using ModelContextProtocol.Server;
 using RedoxNet.LsOpenApi.Core.Auth;
 using RedoxNet.LsOpenApi.Core.Http;
-using RedoxNet.LsOpenApi.Core.Time;
 
 namespace RedoxNet.Mcp.LsOpenApi.Tools;
 
@@ -32,7 +31,7 @@ public static class GetMarketFundsTrendTool
 
         `market` selects the index context: 'kospi' (default) or 'kosdaq'. All monetary fields are in 억원.
 
-        Publishing lag: investor-deposit and credit-balance figures are sourced from KSD (한국예탁결제원) with a T+2~T+3 publishing delay, so the latest row often trails today by 2-3 business days. `data_as_of` reports the actual latest row date (not today); when narrating "최근" / "오늘" deposits, use that date.
+        Publishing lag: investor-deposit and credit-balance figures are sourced from KSD (한국예탁결제원) with a T+2~T+3 publishing delay, so the latest row often trails today by 2-3 business days. `data_as_of` reports the actual latest row date (not today); when narrating "최근" / "오늘" deposits, use that date. If the user's `query_date` falls on a weekend or holiday, LS returns the most recent prior trading day automatically — read `data_as_of` and tell the user.
         """)]
     public static async Task<string> GetMarketFundsTrend(
         LsApiClient apiClient,
@@ -48,10 +47,8 @@ public static class GetMarketFundsTrendTool
             return McpJson.Error($"market '{market}' is not recognized. Use 'kospi' or 'kosdaq'.");
         if (count < 1 || count > MaxCount)
             return McpJson.Error($"count must be between 1 and {MaxCount}.", new { received = count });
-        if (!DateEnvelope.TryResolveKrxDailySnapshot(query_date, out DateEnvelope dateEnvelope, out string? dateError))
+        if (!ResolveAnchorDate(query_date, out string tdate, out string? dateError))
             return McpJson.Error(dateError!);
-
-        string tdate = dateEnvelope.DataAsOf;
         // t8428 returns trading days only; pad the calendar window so weekends
         // and holidays don't truncate the requested count.
         int padded = (int)Math.Ceiling(count * 1.6) + 5;
@@ -113,16 +110,16 @@ public static class GetMarketFundsTrendTool
             // t8428 has T+2~T+3 publishing lag (KSD release schedule), so the
             // latest series row routinely trails today. Anchor data_as_of to
             // the actual latest row so the envelope tells the truth about
-            // what date this response represents. query_date_resolution still
-            // reflects how the user's query day was interpreted.
-            string actualDataAsOf = series.Count > 0 ? series[0].Date : dateEnvelope.DataAsOf;
+            // what date this response represents. If the response is empty
+            // we fall back to the user's basis date — the LLM can read that
+            // and explain "no data this far back" honestly.
+            string actualDataAsOf = series.Count > 0 ? series[0].Date : tdate;
             var payload = new MarketFundsPayload
             {
                 Market = normalizedMarket,
                 From = series.Count > 0 ? series[^1].Date : fdate,
                 To = series.Count > 0 ? series[0].Date : tdate,
                 DataAsOf = actualDataAsOf,
-                QueryDateResolution = dateEnvelope.QueryDateResolution,
                 Count = series.Count,
                 Summary = BuildSummary(series),
                 Series = series,
@@ -165,13 +162,45 @@ public static class GetMarketFundsTrendTool
         }
     }
 
+    /// <summary>
+    /// Validates and defaults the basis date. Empty/null = today (Seoul). LS
+    /// handles weekend/holiday clamping server-side, so we only ensure the
+    /// input parses as yyyyMMdd and leave the rest to LS.
+    /// </summary>
+    static bool ResolveAnchorDate(string? queryDate, out string ymd, out string? error)
+    {
+        string trimmed = (queryDate ?? "").Trim();
+        if (trimmed.Length == 0)
+        {
+            ymd = SeoulNowYmd();
+            error = null;
+            return true;
+        }
+        if (trimmed.Length != 8 || !DateOnly.TryParseExact(trimmed, "yyyyMMdd", CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _))
+        {
+            ymd = "";
+            error = "query_date must use yyyyMMdd format, e.g. 20260522.";
+            return false;
+        }
+        ymd = trimmed;
+        error = null;
+        return true;
+    }
+
+    static string SeoulNowYmd()
+    {
+        TimeZoneInfo zone;
+        try { zone = TimeZoneInfo.FindSystemTimeZoneById(OperatingSystem.IsWindows() ? "Korea Standard Time" : "Asia/Seoul"); }
+        catch (TimeZoneNotFoundException) { return DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(9)).ToString("yyyyMMdd", CultureInfo.InvariantCulture); }
+        return TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, zone).ToString("yyyyMMdd", CultureInfo.InvariantCulture);
+    }
+
     sealed record MarketFundsPayload
     {
         public string Market { get; init; } = "";
         public string From { get; init; } = "";
         public string To { get; init; } = "";
         public string DataAsOf { get; init; } = "";
-        public QueryDateResolution QueryDateResolution { get; init; }
         public int Count { get; init; }
 
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

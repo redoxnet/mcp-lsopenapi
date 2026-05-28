@@ -45,7 +45,8 @@ public sealed class GetShortSellingTrendToolTests
 
         root.GetProperty("count").GetInt32().Should().Be(2);
         root.GetProperty("data_as_of").GetString().Should().MatchRegex(@"^\d{8}$");
-        root.GetProperty("query_date_resolution").GetString().Should().NotBeNullOrWhiteSpace();
+        // v1.6 §3.2 — query_date_resolution removed; data_as_of is the sole envelope field.
+        root.TryGetProperty("query_date_resolution", out _).Should().BeFalse();
 
         JsonElement first = root.GetProperty("series")[0];
         first.GetProperty("date").GetString().Should().Be("20230601");
@@ -75,10 +76,13 @@ public sealed class GetShortSellingTrendToolTests
     }
 
     [Fact]
-    public async Task GetShortSellingTrend_QueryDateWeekend_UsesPriorFridayWhenToOmitted_AndAnchorsToActualLatestRow()
+    public async Task GetShortSellingTrend_QueryDate_ForwardedToLsVerbatim_AndAnchorsToActualLatestRow()
     {
         var (client, handler) = TestClientFactory.Create((_, _) => Ok(Sample));
 
+        // v1.6 §3.1 — WeekendOnlyCalendar removed. LS handles weekend/holiday
+        // clamping server-side; the wrapper now forwards query_date verbatim
+        // and the response's actual latest row date becomes data_as_of.
         string result = await GetShortSellingTrendTool.GetShortSellingTrend(
             client,
             "005930",
@@ -86,12 +90,11 @@ public sealed class GetShortSellingTrendToolTests
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
         string body = await handler.Requests[0].Content!.ReadAsStringAsync();
-        // edate forwarded to LS reflects the resolved query day (weekend -> Friday).
-        body.Should().Contain("\"edate\":\"20260522\"");
-        // data_as_of reflects the actual latest series row, not the query day —
-        // t1927 has T+1 publishing lag and short-sale data can trail.
+        body.Should().Contain("\"edate\":\"20260524\"", "query_date is now forwarded verbatim");
+        // data_as_of reflects the actual latest series row. The Sample fixture's
+        // latest row is 20230601; data_as_of anchors there.
         root.GetProperty("data_as_of").GetString().Should().Be("20230601");
-        root.GetProperty("query_date_resolution").GetString().Should().Be("weekend");
+        root.TryGetProperty("query_date_resolution", out _).Should().BeFalse();
     }
 
     [Fact]
