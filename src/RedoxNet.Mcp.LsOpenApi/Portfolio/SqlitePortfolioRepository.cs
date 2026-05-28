@@ -191,14 +191,31 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
             -- Backfill any v1.6-dev rows that were auto-discovered into the
             -- paper accounts table under broker='LS'. The convention there
             -- collides with paper "LS증권" labelling, which is why we split.
+            --
+            -- SAFETY (P0): the v1 schema set `broker TEXT NOT NULL DEFAULT 'LS'`,
+            -- so pre-v1.6 paper portfolios could ALSO carry broker='LS' and
+            -- own real holdings the user wants to keep. Combined with the
+            -- holdings ON DELETE CASCADE FK on accounts(id), a naive
+            -- `DELETE FROM accounts WHERE broker = 'LS'` would silently
+            -- destroy those holdings. We discriminate on a stronger signal:
+            -- v1.6-dev auto-discovery never writes holdings, so any row
+            -- with broker='LS' AND zero holdings is a ghost auto-discovery
+            -- row; any row with broker='LS' AND non-zero holdings is a
+            -- user-curated paper portfolio and stays in `accounts`
+            -- untouched. The same predicate gates the INSERT into
+            -- ls_accounts so we don't duplicate live label rows that
+            -- are still paper.
             INSERT OR IGNORE INTO ls_accounts(account_no, mode, nickname, discovered_at, last_seen_at)
             SELECT account_no, mode,
                    NULLIF(nickname, ''),
                    datetime('now'), datetime('now')
-            FROM accounts
-            WHERE broker = 'LS';
+            FROM accounts a
+            WHERE broker = 'LS'
+              AND NOT EXISTS (SELECT 1 FROM holdings h WHERE h.account_id = a.id);
 
-            DELETE FROM accounts WHERE broker = 'LS';
+            DELETE FROM accounts
+             WHERE broker = 'LS'
+               AND NOT EXISTS (SELECT 1 FROM holdings h WHERE h.account_id = accounts.id);
             """),
         (8, """
             -- v1.6 post-E2E correction (mode-agnostic paper): the v6 migration
@@ -218,11 +235,14 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
             DROP INDEX IF EXISTS idx_accounts_nickname_mode;
             DROP INDEX IF EXISTS idx_accounts_mode_default;
 
-            -- Defensive: if a user upserted the same nickname in both modes
-            -- under v6, collapse to one. Keep the lowest id; suffix others
-            -- with the mode tag so no information is lost outright.
+            -- Defensive nickname disambig (P2): if a user upserted the same
+            -- nickname in both modes under v6, collapse to one. Keep the
+            -- lowest id; suffix others with " (mode#id)". The id (PK) is
+            -- guaranteed unique so the disambig target cannot collide with
+            -- another pre-existing nickname that already matched the
+            -- " (mode)" pattern alone.
             UPDATE accounts
-               SET nickname = nickname || ' (' || mode || ')'
+               SET nickname = nickname || ' (' || mode || '#' || id || ')'
              WHERE id IN (
                 SELECT a2.id
                   FROM accounts a1
@@ -230,8 +250,25 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
                     ON a1.nickname = a2.nickname AND a1.id < a2.id
              );
 
+            -- Default consolidation (P1): v6 allowed `is_default=1` once per
+            -- mode partition; merging the partitions in v8 means we may now
+            -- have two is_default=1 rows. Keep the lowest-id one as the
+            -- canonical default; demote the others. UpsertAccountAsync's
+            -- self-heal only runs when no default exists, so without this
+            -- migration step the "two defaults" state would persist
+            -- indefinitely for existing v1.6-dev databases.
+            UPDATE accounts SET is_default = 0
+             WHERE is_default = 1
+               AND id != (SELECT MIN(id) FROM accounts WHERE is_default = 1);
+
             CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_nickname ON accounts(nickname);
-            CREATE INDEX IF NOT EXISTS idx_accounts_default ON accounts(is_default, id);
+
+            -- Schema-level guarantee: at most one is_default=1 row. SQLite
+            -- partial UNIQUE indexes are supported since 3.8. Pairs with
+            -- the migration step above so the "two defaults" state is
+            -- both repaired (data) and impossible going forward (schema).
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_one_default
+                ON accounts(is_default) WHERE is_default = 1;
 
             -- ALTER TABLE DROP COLUMN landed in SQLite 3.35 (March 2021);
             -- Microsoft.Data.Sqlite 8.x bundles a newer engine, so this is
@@ -601,6 +638,13 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
             transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         // Promote to default if requested OR if no default currently exists.
+        // The migration v8 partial UNIQUE on (is_default WHERE is_default=1)
+        // makes the single-statement "CASE WHEN ... THEN 1 ELSE 0 END"
+        // pattern racy under row-by-row constraint checking — if SQLite
+        // processes the to-be-promoted row before the to-be-demoted one
+        // mid-UPDATE, two rows are temporarily is_default=1 and the index
+        // fires. Demote-then-promote is two statements but guarantees the
+        // intermediate state stays valid.
         int existingDefaults = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
             "SELECT COUNT(*) FROM accounts WHERE is_default = 1;",
             transaction: transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
@@ -608,7 +652,10 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
         if (promote)
         {
             await connection.ExecuteAsync(new CommandDefinition(
-                "UPDATE accounts SET is_default = CASE WHEN account_no = @AccountNumber THEN 1 ELSE 0 END;",
+                "UPDATE accounts SET is_default = 0 WHERE is_default = 1;",
+                transaction: transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            await connection.ExecuteAsync(new CommandDefinition(
+                "UPDATE accounts SET is_default = 1 WHERE account_no = @AccountNumber;",
                 new { AccountNumber = normalizedAccountNumber },
                 transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
         }
@@ -644,6 +691,8 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
             new { account.Id }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         // Default succession: if removed account was default and others remain, promote id ASC.
+        // Split into demote-then-promote so the v8 partial UNIQUE on
+        // is_default never sees a transient double-default row.
         AccountInfo? newDefault = null;
         if (account.IsDefault)
         {
@@ -653,7 +702,10 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
             if (heir is not null)
             {
                 await connection.ExecuteAsync(new CommandDefinition(
-                    "UPDATE accounts SET is_default = CASE WHEN id = @Id THEN 1 ELSE 0 END;",
+                    "UPDATE accounts SET is_default = 0 WHERE is_default = 1;",
+                    transaction: transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+                await connection.ExecuteAsync(new CommandDefinition(
+                    "UPDATE accounts SET is_default = 1 WHERE id = @Id;",
                     new { heir.Id }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
                 newDefault = new AccountInfo(heir.AccountNo, heir.Nickname, heir.Broker, IsDefault: true);
             }
@@ -671,8 +723,12 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
         await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
+        // Demote-then-promote to satisfy the v8 partial UNIQUE on is_default.
         await connection.ExecuteAsync(new CommandDefinition(
-            "UPDATE accounts SET is_default = CASE WHEN id = @Id THEN 1 ELSE 0 END;",
+            "UPDATE accounts SET is_default = 0 WHERE is_default = 1;",
+            transaction: transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        await connection.ExecuteAsync(new CommandDefinition(
+            "UPDATE accounts SET is_default = 1 WHERE id = @Id;",
             new { account.Id }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         Account updated = await connection.QuerySingleAsync<Account>(new CommandDefinition(
@@ -1269,6 +1325,18 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
             }
 
             string createdAt = string.IsNullOrWhiteSpace(acc.CreatedAt) ? CurrentSqliteTimestamp() : acc.CreatedAt;
+            // Defensive: a pre-v8 export (when default was per-mode) could
+            // carry multiple IsDefault=true rows. The v8 partial UNIQUE on
+            // is_default would fail the second INSERT, so demote any existing
+            // default first when the imported row claims default. Last-writer-wins
+            // for default within a single import — acceptable for merge mode
+            // and natural for replace mode (post-wipe state).
+            if (acc.IsDefault)
+            {
+                await connection.ExecuteAsync(new CommandDefinition(
+                    "UPDATE accounts SET is_default = 0 WHERE is_default = 1;",
+                    transaction: transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            }
             await connection.ExecuteAsync(new CommandDefinition(
                 """
                 INSERT INTO accounts(account_no, nickname, broker, is_default, created_at)
