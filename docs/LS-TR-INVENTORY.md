@@ -233,7 +233,7 @@ Notes:
 - Multiple CSPAQxxx (modern) and t0xxx (legacy) variants — prefer the CSPAQ ones per the "API용" pattern seen elsewhere.
 - `CSPAQ13700` likely the canonical "today's orders" TR; `t0425` is the legacy.
 
-### [주식] 주문 — Order entry (🚧 v2.x `.Trading`)
+### [주식] 주문 — Order entry (🚧 planned v1.7, main package)
 
 | TR | 이름 |
 | --- | --- |
@@ -241,7 +241,7 @@ Notes:
 | `CSPAT00701` | 현물 정정주문 |
 | `CSPAT00801` | 현물 취소주문 |
 
-Trading is high-risk surface — will get its own package with elicitation/confirmation guards.
+Trading is high-risk surface — v1.7 wraps these as `ls_place_order` / `ls_modify_order` / `ls_cancel_order` with a preview-gate + `confirm=true` safety pattern (see [SPEC-v1.7.md](./SPEC-v1.7.md)). MCP elicitation is intentionally **not** the safety mechanism; the LLM-driven preview-then-confirm flow keeps the user-visible state in tool args / responses, not in elicitation prompts.
 
 ### [주식] 실시간시세 — Realtime feed (🚧 v1.1 `.Realtime`)
 

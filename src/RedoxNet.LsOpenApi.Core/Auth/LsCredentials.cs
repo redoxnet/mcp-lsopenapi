@@ -42,12 +42,16 @@ public sealed record LsCredentials(
 /// Resolves <see cref="LsCredentials"/> from the configured sources.
 /// </summary>
 /// <remarks>
-/// Implementations follow the ADR-001 resolution order:
-/// <list type="number">
-///   <item><description>Environment variables (<c>LS_APPKEY</c>, <c>LS_APPSECRETKEY</c>, <c>LS_MARKET</c>).</description></item>
-///   <item><description>MCP elicitation (when running as MCP server and creds are missing).</description></item>
-///   <item><description>CLI args (debug only).</description></item>
-/// </list>
+/// Per <see href="../../docs/ADR-001-credential-management.md">ADR-001</see>
+/// the only accepted source is process environment variables
+/// (<c>LS_APPKEY</c>, <c>LS_APPSECRETKEY</c>, optional <c>LS_MARKET</c>).
+/// There is no resolution chain — MCP elicitation and CLI arguments are
+/// intentionally **not** implementation paths. The MCP spec explicitly
+/// forbids elicitation for sensitive information, and CLI args leak
+/// through <c>ps</c>/Task Manager and shell history. The interface
+/// exists for test substitution (injecting a fake env source);
+/// production composition stays env-var-only via
+/// <see cref="EnvironmentLsCredentialsResolver"/>.
 /// </remarks>
 public interface ILsCredentialsResolver
 {
@@ -64,9 +68,11 @@ public interface ILsCredentialsResolver
 /// Reads <see cref="LsCredentials"/> from process environment variables.
 /// </summary>
 /// <remarks>
-/// This is the first link in the ADR-001 resolution chain. It is intentionally
-/// trivial — higher layers (e.g. MCP server with elicitation) compose this
-/// resolver with interactive fallbacks.
+/// The only <see cref="ILsCredentialsResolver"/> registered in production
+/// (see <c>ServiceCollectionExtensions.AddRedoxNetLsOpenApi</c>). Per
+/// ADR-001 there is no fallback chain — elicitation / CLI args / chat
+/// are not implementation paths. Do not introduce a composing resolver
+/// that adds interactive fallbacks without revising ADR-001 first.
 /// </remarks>
 public sealed class EnvironmentLsCredentialsResolver : ILsCredentialsResolver
 {
