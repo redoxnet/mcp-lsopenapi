@@ -243,7 +243,7 @@ Notes:
 
 Trading is high-risk surface — v1.7 wraps these as `ls_place_order` / `ls_modify_order` / `ls_cancel_order` with a preview-gate + `confirm=true` safety pattern (see [SPEC-v1.7.md](./SPEC-v1.7.md)). MCP elicitation is intentionally **not** the safety mechanism; the LLM-driven preview-then-confirm flow keeps the user-visible state in tool args / responses, not in elicitation prompts.
 
-### [주식] 실시간시세 — Realtime feed (🚧 v1.1 `.Realtime`)
+### [주식] 실시간시세 — Realtime feed (⏸ on hold; daemon-less design)
 
 WebSocket-based stream identifiers, not REST TRs. ~50 channels including:
 
@@ -262,6 +262,8 @@ WebSocket-based stream identifiers, not REST TRs. ~50 channels including:
 | `DS3` / `DK3` / `DH1` / `DHA` | 시간외 단일가 호가/체결 |
 | `h2_ELW` / `h3_ELW` / `k1_ELW` / `s2_ELW` / `s3_ELW` / `s4_ELW` / `Ys3_ELW` / `ESN` | ELW realtime |
 | `AFR` | 사용자 조건검색 실시간 |
+
+**Status (2026-05-27):** the WebSocket / push-based realtime plan is on hold per the project's daemon-less / stdio / single-binary design constraint — long-lived push connections do not fit an MCP assistant lifecycle (see `docs/LS-API-QUIRKS.md` §7.11). Any revisit is gated on first auditing whether each channel has a REST equivalent (`NS3` / `NBT` / `NH1` / `NBM` and friends — most likely do), in which case the WebSocket path stays unimplemented. The channel catalog above is preserved as audit input, not a roadmap commitment.
 
 ---
 
