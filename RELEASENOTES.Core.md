@@ -1,6 +1,6 @@
 ﻿# Release Notes — RedoxNet.LsOpenApi.Core
 
-## v1.6.0 (unreleased)
+## v1.6.0 (2026-05-28)
 
 **Lockstep release with `RedoxNet.Mcp.LsOpenApi` 1.6.0.** The v1.6 work
 is entirely in the Mcp package (`ls_account_*` family + portfolio.db

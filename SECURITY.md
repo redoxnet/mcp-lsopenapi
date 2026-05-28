@@ -2,14 +2,15 @@
 
 ## Supported versions
 
-Active maintenance follows the **latest minor release** on the current `0.x` line. Older minors don't receive backports; security fixes ship in the next minor (or a patch release on the latest minor).
+Active maintenance follows the **latest minor release** on the current `1.x` line. Older minors don't receive backports; security fixes ship in the next minor (or a patch release on the latest minor).
 
 | Version | Supported |
 |---|---|
-| Latest `0.x` minor (currently `0.5.x`) | ✅ |
-| Older `0.x` minors (`0.1.x` – `0.4.x`) | ❌ |
+| Latest `1.x` minor (currently `1.6.x`) | ✅ |
+| Older `1.x` minors (`1.0.x` – `1.5.x`) | ❌ |
+| `0.x` (any) | ❌ |
 
-`0.x` releases carry no API stability guarantee (per SemVer). Once `1.0.0` ships, this section will gain LTS columns.
+The MCP tool surface (names, model-facing params, response shapes) is frozen from `1.0.0` per `ToolSurfaceFreezeTests`; breaking changes to that surface require a major version bump.
 
 ## Reporting a vulnerability
 

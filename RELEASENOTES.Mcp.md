@@ -1,6 +1,6 @@
 ﻿# Release Notes — RedoxNet.Mcp.LsOpenApi
 
-## v1.6.0 (unreleased)
+## v1.6.0 (2026-05-28)
 
 **Account inquiry family + schema-split live registry.** v1.6 introduces
 the ten `ls_account_*` MCP tools (read-only inquiry against the
