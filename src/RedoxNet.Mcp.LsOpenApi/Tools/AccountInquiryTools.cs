@@ -32,6 +32,9 @@ internal static class AccountInquiryTools
     /// </summary>
     const int MaxHoldingsPages = 20;
 
+    /// <summary>Same upper bound for the t0425 cts_ordno cursor.</summary>
+    const int MaxOrdersPages = 20;
+
     [McpServerTool(Name = "ls_account_holdings")]
     [Description("""
         Returns the LIVE LS broker holdings for one of your registered accounts via TR t0424. Real-time read of what LS actually holds — separate from the manually-tracked ls_holdings_list (which lives in the local portfolio.db).
@@ -184,6 +187,181 @@ internal static class AccountInquiryTools
         }
     }
 
+    [McpServerTool(Name = "ls_account_orders")]
+    [Description("""
+        Returns today's orders (filled + pending) for one of your LS broker accounts via TR t0425. Real-time read from LS — no cache.
+
+        USE WHEN: the user asks "오늘 주문", "체결됐나", "미체결 남은 거", "오늘 매매 내역", or wants the live order book for the active account.
+        AVOID WHEN: the user wants a historical multi-day order log — use ls_account_order_history (TR CSPAQ13700) instead. AVOID WHEN: the user wants positions — use ls_account_holdings.
+
+        Filters: `status` ("all" default / "filled" / "pending") maps to LS chegb. `side` ("all" / "buy" / "sell") maps to medosu (매수/매도). `symbol` narrows to a specific shcode. Sort default is ascending by order number (older first).
+
+        Account resolution and envelopes match ls_account_holdings (RequiresAccount / AmbiguousAccount). _meta carries account_used / data_as_of / tr_code / source="live".
+        """)]
+    public static async Task<string> Orders(
+        LsApiClient apiClient,
+        LsAccountResolver accountResolver,
+        [Description("Optional account_number or nickname. Omit to use the active mode's default account.")]
+        string? account = null,
+        [Description("Order status filter: 'all' (default), 'filled', or 'pending'.")]
+        string? status = null,
+        [Description("Side filter: 'all' (default), 'buy' (매수), or 'sell' (매도).")]
+        string? side = null,
+        [Description("Optional 6-character Korean short code to narrow the result. Omit for all symbols.")]
+        string? symbol = null,
+        [Description("Sort order: 'asc' (default, oldest first by ordno) or 'desc'.")]
+        string? sort = null,
+        CancellationToken cancellationToken = default)
+    {
+        string chegb = NormalizeStatus(status, out string? statusError);
+        if (statusError is not null) return McpJson.Error(statusError);
+        string medosu = NormalizeSide(side, out string? sideError);
+        if (sideError is not null) return McpJson.Error(sideError);
+        string sortgb = NormalizeSort(sort, out string? sortError);
+        if (sortError is not null) return McpJson.Error(sortError);
+
+        Account resolved;
+        try
+        {
+            resolved = await accountResolver.ResolveAsync(account, cancellationToken).ConfigureAwait(false);
+        }
+        catch (RequiresAccountException ex)
+        {
+            return McpJson.Error(ex.Message, new { error_code = ex.Code });
+        }
+        catch (AmbiguousAccountException ex)
+        {
+            return McpJson.Error(ex.Message, new { error_code = ex.Code, candidates = ex.Candidates });
+        }
+        catch (AccountNotFoundException ex)
+        {
+            return McpJson.Error(ex.Message, new { error_code = ex.Code, identifier = ex.Identifier, candidates = ex.Candidates });
+        }
+
+        try
+        {
+            string normalizedSymbol = string.IsNullOrWhiteSpace(symbol) ? "" : symbol.Trim().ToUpperInvariant();
+            var summary = new OrdersSummary();
+            var rows = new List<OrderRow>();
+            string ctsOrdno = "";
+            string? continuationKey = null;
+
+            for (int page = 0; page < MaxOrdersPages; page++)
+            {
+                var inBlock = new JsonObject
+                {
+                    ["expcode"] = normalizedSymbol,
+                    ["chegb"] = chegb,
+                    ["medosu"] = medosu,
+                    ["sortgb"] = sortgb,
+                    ["cts_ordno"] = ctsOrdno,
+                };
+
+                LsTrResponse response = await apiClient.CallTrAsync(
+                    "t0425", inBlock, continuationKey, cancellationToken).ConfigureAwait(false);
+
+                if (!response.IsSuccess)
+                {
+                    return McpJson.Error("LS reported a business-level error.", new
+                    {
+                        tr_code = "t0425",
+                        rsp_cd = response.RspCode,
+                        rsp_msg = response.RspMessage,
+                        account_used = ToAccountEcho(resolved),
+                    });
+                }
+
+                JsonElement? headerBlock = response.GetBlock("t0425OutBlock");
+                if (headerBlock is not null && page == 0)
+                {
+                    JsonElement h = headerBlock.Value;
+                    summary.TotalOrderQuantity = h.ReadLong("tqty");
+                    summary.TotalFilledQuantity = h.ReadLong("tcheqty");
+                    summary.TotalPendingQuantity = h.ReadLong("tordrem");
+                    summary.EstimatedFee = h.ReadLong("cmss");
+                    summary.TotalOrderAmount = h.ReadLong("tamt");
+                    summary.TotalSellFilledAmount = h.ReadLong("tmdamt");
+                    summary.TotalBuyFilledAmount = h.ReadLong("tmsamt");
+                    summary.EstimatedTax = h.ReadLong("tax");
+                }
+
+                JsonElement? listBlock = response.GetBlock("t0425OutBlock1");
+                if (listBlock is not null && listBlock.Value.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (JsonElement row in listBlock.Value.EnumerateArray())
+                    {
+                        string sym = (row.ReadString("expcode") ?? "").Trim();
+                        if (string.IsNullOrEmpty(sym))
+                            continue;
+                        rows.Add(new OrderRow(
+                            OrderNo: row.ReadLong("ordno"),
+                            OriginalOrderNo: row.ReadLong("orgordno"),
+                            Symbol: sym,
+                            Side: (row.ReadString("medosu") ?? "").Trim(),
+                            OrderType: (row.ReadString("ordgb") ?? "").Trim(),
+                            QuoteType: (row.ReadString("hogagb") ?? "").Trim(),
+                            OrderQuantity: row.ReadLong("qty"),
+                            OrderPrice: row.ReadLong("price"),
+                            FilledQuantity: row.ReadLong("cheqty"),
+                            FilledPrice: row.ReadLong("cheprice"),
+                            PendingQuantity: row.ReadLong("ordrem"),
+                            ConfirmedQuantity: row.ReadLong("cfmqty"),
+                            Status: (row.ReadString("status") ?? "").Trim(),
+                            OrderTime: FormatHmsFraction(row.ReadString("ordtime")),
+                            OrderChannel: (row.ReadString("ordermtd") ?? "").Trim(),
+                            CurrentPrice: row.ReadLong("price1"),
+                            CreditType: (row.ReadString("singb") ?? "").Trim(),
+                            LoanDate: NormalizeYmd(row.ReadString("loandt")),
+                            Exchange: (row.ReadString("exchname") ?? "").Trim()));
+                    }
+                }
+
+                if (!response.HasContinuation || string.IsNullOrEmpty(response.ContinuationKey))
+                    break;
+                continuationKey = response.ContinuationKey;
+                if (headerBlock is not null)
+                    ctsOrdno = (headerBlock.Value.ReadString("cts_ordno") ?? "").Trim();
+            }
+
+            var payload = new
+            {
+                filter = new
+                {
+                    status = StatusLabel(chegb),
+                    side = SideLabel(medosu),
+                    symbol = string.IsNullOrEmpty(normalizedSymbol) ? null : normalizedSymbol,
+                    sort = sortgb == "1" ? "desc" : "asc",
+                },
+                summary,
+                count = rows.Count,
+                orders = rows,
+                _meta = new
+                {
+                    account_used = ToAccountEcho(resolved),
+                    data_as_of = GetIndexQuoteTool.SeoulNowIsoString(),
+                    tr_code = "t0425",
+                    source = "live",
+                },
+            };
+            return JsonSerializer.Serialize(payload, McpJson.Tool);
+        }
+        catch (LsAuthException ex)
+        {
+            return McpJson.Error("LS authentication failed for the account inquiry. Verify LS_APPKEY / LS_APPSECRETKEY / LS_MARKET match the requested account.",
+                new { reason = ex.Message, account_used = ToAccountEcho(resolved) });
+        }
+        catch (LsTrException ex)
+        {
+            return McpJson.Error("TR call failed.", new
+            {
+                reason = ex.Message,
+                status = ex.StatusCode,
+                tr_code = "t0425",
+                account_used = ToAccountEcho(resolved),
+            });
+        }
+    }
+
     static object ToAccountEcho(Account account) => new
     {
         account_number = account.AccountNo,
@@ -192,6 +370,86 @@ internal static class AccountInquiryTools
         mode = account.Mode,
         is_default = account.IsDefault,
     };
+
+    static string NormalizeStatus(string? status, out string? error)
+    {
+        error = null;
+        string normalized = string.IsNullOrWhiteSpace(status) ? "all" : status.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "all" or "0" => "0",
+            "filled" or "체결" or "1" => "1",
+            "pending" or "미체결" or "2" => "2",
+            _ => SetStatusError(status, out error),
+        };
+    }
+
+    static string SetStatusError(string? raw, out string? error)
+    {
+        error = $"status '{raw}' is not recognized. Use 'all' (default), 'filled', or 'pending'.";
+        return "0";
+    }
+
+    static string NormalizeSide(string? side, out string? error)
+    {
+        error = null;
+        string normalized = string.IsNullOrWhiteSpace(side) ? "all" : side.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "all" or "0" => "0",
+            "sell" or "매도" or "1" => "1",
+            "buy" or "매수" or "2" => "2",
+            _ => SetSideError(side, out error),
+        };
+    }
+
+    static string SetSideError(string? raw, out string? error)
+    {
+        error = $"side '{raw}' is not recognized. Use 'all' (default), 'buy', or 'sell'.";
+        return "0";
+    }
+
+    static string NormalizeSort(string? sort, out string? error)
+    {
+        error = null;
+        string normalized = string.IsNullOrWhiteSpace(sort) ? "asc" : sort.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "asc" or "ascending" or "2" => "2",
+            "desc" or "descending" or "1" => "1",
+            _ => SetSortError(sort, out error),
+        };
+    }
+
+    static string SetSortError(string? raw, out string? error)
+    {
+        error = $"sort '{raw}' is not recognized. Use 'asc' (default) or 'desc'.";
+        return "2";
+    }
+
+    static string StatusLabel(string chegb) => chegb switch
+    {
+        "1" => "filled",
+        "2" => "pending",
+        _ => "all",
+    };
+
+    static string SideLabel(string medosu) => medosu switch
+    {
+        "1" => "sell",
+        "2" => "buy",
+        _ => "all",
+    };
+
+    static string? FormatHmsFraction(string? raw)
+    {
+        // LS returns ordtime as HHMMSSff (8 chars, last 2 are 1/100 sec).
+        // Normalize to HH:MM:SS.ff so the model doesn't mistake it for a date.
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        string trimmed = raw.Trim();
+        if (trimmed.Length != 8 || !trimmed.All(char.IsDigit)) return trimmed;
+        return $"{trimmed.AsSpan(0, 2)}:{trimmed.AsSpan(2, 2)}:{trimmed.AsSpan(4, 2)}.{trimmed.AsSpan(6, 2)}";
+    }
 
     static string? NormalizeYmd(string? raw)
     {
@@ -229,6 +487,39 @@ internal static class AccountInquiryTools
         public long TotalEvaluation { get; set; }
         public long TotalEvaluationPnl { get; set; }
     }
+
+    sealed class OrdersSummary
+    {
+        public long TotalOrderQuantity { get; set; }
+        public long TotalFilledQuantity { get; set; }
+        public long TotalPendingQuantity { get; set; }
+        public long EstimatedFee { get; set; }
+        public long EstimatedTax { get; set; }
+        public long TotalOrderAmount { get; set; }
+        public long TotalSellFilledAmount { get; set; }
+        public long TotalBuyFilledAmount { get; set; }
+    }
+
+    sealed record OrderRow(
+        long OrderNo,
+        long OriginalOrderNo,
+        string Symbol,
+        string Side,
+        string OrderType,
+        string QuoteType,
+        long OrderQuantity,
+        long OrderPrice,
+        long FilledQuantity,
+        long FilledPrice,
+        long PendingQuantity,
+        long ConfirmedQuantity,
+        string Status,
+        string? OrderTime,
+        string OrderChannel,
+        long CurrentPrice,
+        string CreditType,
+        string? LoanDate,
+        string Exchange);
 
     sealed record HoldingsRow(
         string Symbol,
