@@ -192,29 +192,38 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
             -- paper accounts table under broker='LS'. The convention there
             -- collides with paper "LS증권" labelling, which is why we split.
             --
-            -- SAFETY (P0): the v1 schema set `broker TEXT NOT NULL DEFAULT 'LS'`,
-            -- so pre-v1.6 paper portfolios could ALSO carry broker='LS' and
-            -- own real holdings the user wants to keep. Combined with the
-            -- holdings ON DELETE CASCADE FK on accounts(id), a naive
+            -- SAFETY: the v1 schema set `broker TEXT NOT NULL DEFAULT 'LS'`
+            -- AND the v0.5 / v1.x C# layer defaulted a null broker arg to
+            -- 'LS' too. So pre-v1.6 paper portfolios could carry broker='LS'
+            -- entirely by inheritance — both empty (no holdings yet, just
+            -- registered) and populated (holdings already entered). With
+            -- the holdings ON DELETE CASCADE FK, a naive
             -- `DELETE FROM accounts WHERE broker = 'LS'` would silently
-            -- destroy those holdings. We discriminate on a stronger signal:
-            -- v1.6-dev auto-discovery never writes holdings, so any row
-            -- with broker='LS' AND zero holdings is a ghost auto-discovery
-            -- row; any row with broker='LS' AND non-zero holdings is a
-            -- user-curated paper portfolio and stays in `accounts`
-            -- untouched. The same predicate gates the INSERT into
-            -- ls_accounts so we don't duplicate live label rows that
-            -- are still paper.
+            -- destroy paper portfolios in either state.
+            --
+            -- The discriminator is therefore THREE predicates AND-combined:
+            --   1) broker = 'LS' (necessary, not sufficient)
+            --   2) nickname LIKE 'LS-' || mode || '-%' — matches the strict
+            --      v1.6-dev auto-discovery pattern $"LS-{Mode}-{accountNumber}".
+            --      A human user is essentially never going to hand-pick this
+            --      exact format with the correct mode prefix.
+            --   3) NOT EXISTS holdings — auto-discovery never writes holdings.
+            -- Only rows satisfying ALL THREE are flagged as v1.6-dev ghosts
+            -- and moved to ls_accounts. Pre-v1.6 paper portfolios survive
+            -- whether they have holdings or not, whether their nickname
+            -- looks anything like the auto-discovery template or not.
             INSERT OR IGNORE INTO ls_accounts(account_no, mode, nickname, discovered_at, last_seen_at)
             SELECT account_no, mode,
                    NULLIF(nickname, ''),
                    datetime('now'), datetime('now')
             FROM accounts a
             WHERE broker = 'LS'
+              AND nickname LIKE 'LS-' || mode || '-%'
               AND NOT EXISTS (SELECT 1 FROM holdings h WHERE h.account_id = a.id);
 
             DELETE FROM accounts
              WHERE broker = 'LS'
+               AND nickname LIKE 'LS-' || mode || '-%'
                AND NOT EXISTS (SELECT 1 FROM holdings h WHERE h.account_id = accounts.id);
             """),
         (8, """

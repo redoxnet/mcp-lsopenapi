@@ -207,9 +207,57 @@ public sealed class SqliteLsLiveAccountRepositoryTests
     }
 
     /// <summary>
-    /// P0 companion: a broker='LS' row with NO holdings IS the ghost
-    /// v1.6-dev auto-discovery shape — that one should still migrate
-    /// to ls_accounts and disappear from `accounts`.
+    /// P0 follow-up: pre-v1.6 paper account registration accepted
+    /// `broker=null` which the C# layer resolved to "LS" (the v1
+    /// schema DEFAULT). A user who registered an empty paper account
+    /// before v1.6 — e.g. "내 한투" with no broker label and no
+    /// holdings yet — carries broker='LS' purely by inheritance.
+    /// The holdings-only guard does NOT save them. The
+    /// nickname-pattern guard does: the row's friendly name doesn't
+    /// match `LS-{mode}-{acntno}`, so the row stays in `accounts`.
+    /// </summary>
+    [Fact]
+    public async Task MigrationV7_PreservesEmptyPaperRowWithBrokerLsAndNonPatternNickname()
+    {
+        await using Scratch s = new();
+        await s.PaperRepo.InitializeAsync();
+        await ResetToV6(s.DbPath);
+
+        await using (var conn = new SqliteConnection($"Data Source={s.DbPath}"))
+        {
+            await conn.OpenAsync();
+            using var cmd = conn.CreateCommand();
+            // Three pre-v1.6 paper rows, all with broker='LS' by null-default
+            // inheritance, all with zero holdings, none matching the auto-
+            // discovery nickname template. All must survive v7.
+            cmd.CommandText = """
+                INSERT INTO accounts(account_no, nickname, broker, mode, is_default)
+                VALUES ('HANTOO-01', '내 한투', 'LS', 'real', 1);
+                INSERT INTO accounts(account_no, nickname, broker, mode, is_default)
+                VALUES ('KB-99', 'KB 연금', 'LS', 'real', 0);
+                INSERT INTO accounts(account_no, nickname, broker, mode, is_default)
+                VALUES ('MIRAE-7', 'LS-something-non-pattern', 'LS', 'real', 0);
+                """;
+            await cmd.ExecuteNonQueryAsync();
+        }
+        SqliteConnection.ClearAllPools();
+
+        var freshPaper = new SqlitePortfolioRepository(s.DbPath);
+        await freshPaper.InitializeAsync();
+        var freshLive = new SqliteLsLiveAccountRepository(freshPaper, s.DbPath);
+
+        IReadOnlyList<Account> paperAfter = await freshPaper.ListAccountsAsync();
+        paperAfter.Should().HaveCount(3,
+            "broker='LS' alone does not flag a row as ghost — strict nickname pattern AND zero holdings AND broker='LS' must all hold");
+        paperAfter.Select(a => a.AccountNo).Should().BeEquivalentTo(["HANTOO-01", "KB-99", "MIRAE-7"]);
+        (await freshLive.ListAllAsync()).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// P0 companion: a broker='LS' row with NO holdings AND a nickname
+    /// that EXACTLY matches the v1.6-dev auto-discovery template
+    /// (`LS-{mode}-{acntno}`) IS the ghost auto-discovery shape and
+    /// migrates to ls_accounts.
     /// </summary>
     [Fact]
     public async Task MigrationV7_MovesEmptyBrokerLsGhostRowsToLiveRegistry()
