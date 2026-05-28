@@ -117,8 +117,12 @@ public sealed class AccountHoldingsToolTests
     }
 
     [Fact]
-    public async Task Holdings_ReturnsRequiresAccountWhenNoAccountsRegistered()
+    public async Task Holdings_WorksWithEmptyRegistry_AndEchoesSyntheticAccount()
     {
+        // v1.6 correction: empty registry is NOT an error. The TR call goes
+        // through (LS account-inquiry TRs are token-routed, no account_number
+        // input), data flows back, and the account_used echo synthesises a
+        // mode-tagged shape since t0424 doesn't carry AcntNo in its response.
         await using AccountScratch scratch = new();
         // No accounts seeded — empty registry.
 
@@ -131,8 +135,15 @@ public sealed class AccountHoldingsToolTests
         string result = await AccountInquiryTools.Holdings(client, scratch.Resolver);
         JsonElement root = JsonDocument.Parse(result).RootElement;
 
-        root.GetProperty("error").GetString().Should().Contain("No real accounts registered");
-        root.GetProperty("details").GetProperty("error_code").GetString().Should().Be("RequiresAccount");
+        // Data flows fine.
+        root.GetProperty("count").GetInt32().Should().Be(1);
+        // account_used is a synthetic mode-tagged shape (t0424 has no AcntNo
+        // to discover from). The model can guide the user to ls_account_balance
+        // for auto-discovery, or ls_account upsert for explicit registration.
+        JsonElement used = root.GetProperty("_meta").GetProperty("account_used");
+        used.GetProperty("mode").GetString().Should().Be("real");
+        used.GetProperty("account_number").ValueKind.Should().Be(JsonValueKind.Null);
+        used.GetProperty("is_default").GetBoolean().Should().BeFalse();
     }
 
     [Fact]

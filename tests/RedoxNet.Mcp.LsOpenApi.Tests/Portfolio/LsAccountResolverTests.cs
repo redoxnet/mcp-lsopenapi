@@ -32,18 +32,41 @@ public sealed class LsAccountResolverTests
     }
 
     [Fact]
-    public async Task ResolveAsync_RaisesRequiresAccountOnEmptyRegistry()
+    public async Task ResolveAsync_ReturnsNullOnEmptyRegistry()
     {
+        // v1.6 correction: an empty registry is NOT an error. LS account-
+        // inquiry TRs do not take account_number as input — the appkey's
+        // token tells LS which account to return — so the wrapper can call
+        // the TR and read AcntNo from the response. The resolver returns
+        // null and the calling tool auto-discovers from the broker response.
         await using ResolverScratch db = new();
         var repository = new SqlitePortfolioRepository(db.Path, "virtual");
         await repository.InitializeAsync();
 
         var resolver = new LsAccountResolver(repository, LsMarket.Virtual);
-        Func<Task> act = () => resolver.ResolveAsync(null);
+        Account? resolved = await resolver.ResolveAsync(null);
 
-        var ex = (await act.Should().ThrowAsync<RequiresAccountException>()).Which;
-        ex.Code.Should().Be("RequiresAccount");
-        ex.Message.Should().Contain("virtual");
+        resolved.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task RecordDiscoveredAsync_UpsertsAndIsIdempotent()
+    {
+        await using ResolverScratch db = new();
+        var repository = new SqlitePortfolioRepository(db.Path, "virtual");
+        await repository.InitializeAsync();
+        var resolver = new LsAccountResolver(repository, LsMarket.Virtual);
+
+        Account? first = await resolver.RecordDiscoveredAsync("99988877766", defaultNickname: null);
+        first.Should().NotBeNull();
+        first!.AccountNo.Should().Be("99988877766");
+        first.Mode.Should().Be("virtual");
+        first.Nickname.Should().Contain("99988877766");
+
+        // Idempotent: calling again does not throw and returns the same row.
+        Account? second = await resolver.RecordDiscoveredAsync("99988877766", defaultNickname: null);
+        second.Should().NotBeNull();
+        second!.Id.Should().Be(first.Id);
     }
 
     [Fact]

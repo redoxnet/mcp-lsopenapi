@@ -6,17 +6,32 @@ namespace RedoxNet.LsOpenApi.Core.Http;
 /// Connection options for the LS증권 OpenAPI client.
 /// </summary>
 /// <remarks>
-/// Default base URLs are the REST endpoints documented at
-/// <see href="https://openapi.ls-sec.co.kr/howto-use"/>. The virtual server
-/// shares the same host as real trading; callers can override either URL via
-/// <see cref="BaseUrl"/> if LS publishes a different paper-trading endpoint.
+/// LS's REST endpoint is the same for real and virtual (모의투자) modes —
+/// both flow through <c>https://openapi.ls-sec.co.kr:8080</c>. The mode is
+/// determined by the appkey/appsecretkey pair itself: LS issues a separate
+/// pair for the virtual account, and a token issued from a given pair is
+/// tied to that account. See <c>docs/LS-API-QUIRKS.md</c> §4.2d and
+/// programgarden's <c>URLS.LS_URL</c> for confirmation. <see cref="Market"/>
+/// here is informational (portfolio.db namespacing); the WSS endpoint is
+/// the only place real/virtual actually diverge, and this project does not
+/// use WSS.
 /// </remarks>
 public sealed class LsApiOptions
 {
-    /// <summary>Base URL used when <see cref="Market"/> is <see cref="LsMarket.Real"/>.</summary>
+    /// <summary>
+    /// Base URL used when <see cref="Market"/> is <see cref="LsMarket.Real"/>.
+    /// Intentionally identical to <see cref="DefaultVirtualBaseUrl"/> — see the
+    /// type-level remarks for why the LS REST endpoint doesn't split by mode.
+    /// </summary>
     public const string DefaultRealBaseUrl = "https://openapi.ls-sec.co.kr:8080";
 
-    /// <summary>Base URL used when <see cref="Market"/> is <see cref="LsMarket.Virtual"/>.</summary>
+    /// <summary>
+    /// Base URL used when <see cref="Market"/> is <see cref="LsMarket.Virtual"/>.
+    /// Intentionally identical to <see cref="DefaultRealBaseUrl"/> — the mode
+    /// is the appkey pair, not the URL. Documented as a separate constant so
+    /// a future LS change (if they ever split the REST endpoint) is a
+    /// one-line edit.
+    /// </summary>
     public const string DefaultVirtualBaseUrl = "https://openapi.ls-sec.co.kr:8080";
 
     /// <summary>Path of the OAuth2 token endpoint relative to <see cref="BaseUrl"/>.</summary>

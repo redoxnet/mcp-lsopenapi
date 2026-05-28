@@ -49,19 +49,12 @@ internal static class AccountInquiryTools
     public static async Task<string> Holdings(
         LsApiClient apiClient,
         LsAccountResolver accountResolver,
-        [Description("Optional account_number or nickname. Omit to use the active mode's default account.")]
+        [Description("Optional account_number or nickname. Omit to use the active mode's default account, or to auto-label from the broker response when no account is registered yet.")]
         string? account = null,
         CancellationToken cancellationToken = default)
     {
-        Account resolved;
-        try
-        {
-            resolved = await accountResolver.ResolveAsync(account, cancellationToken).ConfigureAwait(false);
-        }
-        catch (RequiresAccountException ex)
-        {
-            return McpJson.Error(ex.Message, new { error_code = ex.Code });
-        }
+        Account? resolved;
+        try { resolved = await accountResolver.ResolveAsync(account, cancellationToken).ConfigureAwait(false); }
         catch (AmbiguousAccountException ex)
         {
             return McpJson.Error(ex.Message, new { error_code = ex.Code, candidates = ex.Candidates });
@@ -99,7 +92,7 @@ internal static class AccountInquiryTools
                         tr_code = "t0424",
                         rsp_cd = response.RspCode,
                         rsp_msg = response.RspMessage,
-                        account_used = ToAccountEcho(resolved),
+                        account_used = EchoOrSynthetic(resolved, accountResolver.Mode),
                     });
                 }
 
@@ -162,7 +155,7 @@ internal static class AccountInquiryTools
                 holdings = rows,
                 _meta = new
                 {
-                    account_used = ToAccountEcho(resolved),
+                    account_used = EchoOrSynthetic(resolved, accountResolver.Mode),
                     data_as_of = GetIndexQuoteTool.SeoulNowIsoString(),
                     tr_code = "t0424",
                     source = "live",
@@ -173,7 +166,7 @@ internal static class AccountInquiryTools
         catch (LsAuthException ex)
         {
             return McpJson.Error("LS authentication failed for the account inquiry. Verify LS_APPKEY / LS_APPSECRETKEY / LS_MARKET match the requested account.",
-                new { reason = ex.Message, account_used = ToAccountEcho(resolved) });
+                new { reason = ex.Message, account_used = EchoOrSynthetic(resolved, accountResolver.Mode) });
         }
         catch (LsTrException ex)
         {
@@ -182,7 +175,7 @@ internal static class AccountInquiryTools
                 reason = ex.Message,
                 status = ex.StatusCode,
                 tr_code = "t0424",
-                account_used = ToAccountEcho(resolved),
+                account_used = EchoOrSynthetic(resolved, accountResolver.Mode),
             });
         }
     }
@@ -220,23 +213,10 @@ internal static class AccountInquiryTools
         string sortgb = NormalizeSort(sort, out string? sortError);
         if (sortError is not null) return McpJson.Error(sortError);
 
-        Account resolved;
-        try
-        {
-            resolved = await accountResolver.ResolveAsync(account, cancellationToken).ConfigureAwait(false);
-        }
-        catch (RequiresAccountException ex)
-        {
-            return McpJson.Error(ex.Message, new { error_code = ex.Code });
-        }
-        catch (AmbiguousAccountException ex)
-        {
-            return McpJson.Error(ex.Message, new { error_code = ex.Code, candidates = ex.Candidates });
-        }
-        catch (AccountNotFoundException ex)
-        {
-            return McpJson.Error(ex.Message, new { error_code = ex.Code, identifier = ex.Identifier, candidates = ex.Candidates });
-        }
+        Account? resolved;
+        try { resolved = await accountResolver.ResolveAsync(account, cancellationToken).ConfigureAwait(false); }
+        catch (AmbiguousAccountException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, candidates = ex.Candidates }); }
+        catch (AccountNotFoundException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, identifier = ex.Identifier, candidates = ex.Candidates }); }
 
         try
         {
@@ -267,7 +247,7 @@ internal static class AccountInquiryTools
                         tr_code = "t0425",
                         rsp_cd = response.RspCode,
                         rsp_msg = response.RspMessage,
-                        account_used = ToAccountEcho(resolved),
+                        account_used = EchoOrSynthetic(resolved, accountResolver.Mode),
                     });
                 }
 
@@ -337,7 +317,7 @@ internal static class AccountInquiryTools
                 orders = rows,
                 _meta = new
                 {
-                    account_used = ToAccountEcho(resolved),
+                    account_used = EchoOrSynthetic(resolved, accountResolver.Mode),
                     data_as_of = GetIndexQuoteTool.SeoulNowIsoString(),
                     tr_code = "t0425",
                     source = "live",
@@ -348,7 +328,7 @@ internal static class AccountInquiryTools
         catch (LsAuthException ex)
         {
             return McpJson.Error("LS authentication failed for the account inquiry. Verify LS_APPKEY / LS_APPSECRETKEY / LS_MARKET match the requested account.",
-                new { reason = ex.Message, account_used = ToAccountEcho(resolved) });
+                new { reason = ex.Message, account_used = EchoOrSynthetic(resolved, accountResolver.Mode) });
         }
         catch (LsTrException ex)
         {
@@ -357,19 +337,19 @@ internal static class AccountInquiryTools
                 reason = ex.Message,
                 status = ex.StatusCode,
                 tr_code = "t0425",
-                account_used = ToAccountEcho(resolved),
+                account_used = EchoOrSynthetic(resolved, accountResolver.Mode),
             });
         }
     }
 
     [McpServerTool(Name = "ls_account_balance")]
     [Description("""
-        Returns the LIVE cash, buying power, and total valuation for one of your LS broker accounts. Routes to TR CSPAQ12200 in real mode and CSPAQ22200 in virtual mode automatically — same response shape, with valuation/PnL fields available only in real mode where LS computes them.
+        Returns the LIVE cash, buying power, and total valuation for one of your LS broker accounts via TR CSPAQ12200. Reports the full asset snapshot: deposit, D1/D2, orderable amounts (cash / kospi / kosdaq / margin tiers), substitute amount, evaluation amount, deposited asset total, investment principal, investment P&L, and pledge ratios.
 
         USE WHEN: the user asks "예수금 얼마야", "내 잔고", "주문가능금액", "총 평가금액", "투자원금 대비 손익" — anything about cash, buying power, or roll-up portfolio value.
         AVOID WHEN: the user wants per-symbol positions — use ls_account_holdings. AVOID WHEN: the user wants per-day P&L history — use ls_account_performance.
 
-        Account resolution matches ls_account_holdings (default-account / RequiresAccount / AmbiguousAccount). _meta carries account_used, data_as_of, tr_code (CSPAQ12200 or CSPAQ22200), and source="live".
+        Account resolution matches ls_account_holdings (default-account / RequiresAccount / AmbiguousAccount). _meta carries account_used, data_as_of, tr_code, and source="live".
         """)]
     public static async Task<string> Balance(
         LsApiClient apiClient,
@@ -378,28 +358,20 @@ internal static class AccountInquiryTools
         string? account = null,
         CancellationToken cancellationToken = default)
     {
-        Account resolved;
-        try
-        {
-            resolved = await accountResolver.ResolveAsync(account, cancellationToken).ConfigureAwait(false);
-        }
-        catch (RequiresAccountException ex)
-        {
-            return McpJson.Error(ex.Message, new { error_code = ex.Code });
-        }
-        catch (AmbiguousAccountException ex)
-        {
-            return McpJson.Error(ex.Message, new { error_code = ex.Code, candidates = ex.Candidates });
-        }
-        catch (AccountNotFoundException ex)
-        {
-            return McpJson.Error(ex.Message, new { error_code = ex.Code, identifier = ex.Identifier, candidates = ex.Candidates });
-        }
+        Account? resolved;
+        try { resolved = await accountResolver.ResolveAsync(account, cancellationToken).ConfigureAwait(false); }
+        catch (AmbiguousAccountException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, candidates = ex.Candidates }); }
+        catch (AccountNotFoundException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, identifier = ex.Identifier, candidates = ex.Candidates }); }
 
-        bool isVirtual = string.Equals(resolved.Mode, "virtual", StringComparison.Ordinal);
-        string trCode = isVirtual ? "CSPAQ22200" : "CSPAQ12200";
-        string outBlock2Name = isVirtual ? "CSPAQ22200OutBlock2" : "CSPAQ12200OutBlock2";
-        string inBlockName = $"{trCode}InBlock1"; // suffix '1' is LS convention for the CSPAQ family.
+        // CSPAQ22200 is a v2 of CSPAQ12200, not a virtual variant — both TRs
+        // work with both real and virtual appkey pairs and return whatever
+        // account the appkey is tied to. The real/virtual distinction lives
+        // in the appkey, not in the TR code (see docs/LS-API-QUIRKS.md §4.2b).
+        // v12200 carries the richer field set (evaluation amount, investment
+        // P&L, withdrawable presumed), so we always send it.
+        const string trCode = "CSPAQ12200";
+        string outBlock2Name = $"{trCode}OutBlock2";
+        string inBlockName = $"{trCode}InBlock1";
 
         try
         {
@@ -422,7 +394,7 @@ internal static class AccountInquiryTools
                     tr_code = trCode,
                     rsp_cd = response.RspCode,
                     rsp_msg = response.RspMessage,
-                    account_used = ToAccountEcho(resolved),
+                    account_used = EchoOrSynthetic(resolved, accountResolver.Mode),
                 });
             }
             // After the success check, body2 cannot be null per IsCspaqSuccess.
@@ -450,26 +422,27 @@ internal static class AccountInquiryTools
                 LoanAmount = b.ReadLong("MloanAmt"),
             };
 
-            // Real-mode only fields. Virtual TR omits these because LS doesn't
-            // track investment basis on the paper-trading book.
-            if (!isVirtual)
-            {
-                balance.WithdrawableAmount = b.ReadLong("MnyoutAbleAmt");
-                balance.EvaluationAmount = b.ReadLong("BalEvalAmt");
-                balance.DepositedAssetTotal = b.ReadLong("DpsastTotamt");
-                balance.PnlPct = b.ReadDouble("PnlRat");
-                balance.InvestmentOriginal = b.ReadLong("InvstOrgAmt");
-                balance.InvestmentPnl = b.ReadLong("InvstPlAmt");
-                balance.D1WithdrawablePresumed = b.ReadLong("D1PrsmptWthdwAbleAmt");
-                balance.D2WithdrawablePresumed = b.ReadLong("D2PrsmptWthdwAbleAmt");
-            }
+            // CSPAQ12200 returns the full field set regardless of which
+            // appkey pair (real or virtual) was used to obtain the token.
+            // Some fields may be zero on virtual accounts that don't track
+            // investment basis, but we surface them either way — a zero is
+            // a real value, not a missing field.
+            balance.WithdrawableAmount = b.ReadLong("MnyoutAbleAmt");
+            balance.EvaluationAmount = b.ReadLong("BalEvalAmt");
+            balance.DepositedAssetTotal = b.ReadLong("DpsastTotamt");
+            balance.PnlPct = b.ReadDouble("PnlRat");
+            balance.InvestmentOriginal = b.ReadLong("InvstOrgAmt");
+            balance.InvestmentPnl = b.ReadLong("InvstPlAmt");
+            balance.D1WithdrawablePresumed = b.ReadLong("D1PrsmptWthdwAbleAmt");
+            balance.D2WithdrawablePresumed = b.ReadLong("D2PrsmptWthdwAbleAmt");
 
+            object accountEcho = await ResolveOrDiscoverEchoAsync(resolved, response, $"{trCode}OutBlock1", accountResolver, cancellationToken).ConfigureAwait(false);
             var payload = new
             {
                 balance,
                 _meta = new
                 {
-                    account_used = ToAccountEcho(resolved),
+                    account_used = accountEcho,
                     data_as_of = GetIndexQuoteTool.SeoulNowIsoString(),
                     tr_code = trCode,
                     source = "live",
@@ -480,7 +453,7 @@ internal static class AccountInquiryTools
         catch (LsAuthException ex)
         {
             return McpJson.Error("LS authentication failed for the account inquiry. Verify LS_APPKEY / LS_APPSECRETKEY / LS_MARKET match the requested account.",
-                new { reason = ex.Message, account_used = ToAccountEcho(resolved) });
+                new { reason = ex.Message, account_used = EchoOrSynthetic(resolved, accountResolver.Mode) });
         }
         catch (LsTrException ex)
         {
@@ -489,7 +462,7 @@ internal static class AccountInquiryTools
                 reason = ex.Message,
                 status = ex.StatusCode,
                 tr_code = trCode,
-                account_used = ToAccountEcho(resolved),
+                account_used = EchoOrSynthetic(resolved, accountResolver.Mode),
             });
         }
     }
@@ -512,9 +485,8 @@ internal static class AccountInquiryTools
         string? symbol = null,
         CancellationToken cancellationToken = default)
     {
-        Account resolved;
+        Account? resolved;
         try { resolved = await accountResolver.ResolveAsync(account, cancellationToken).ConfigureAwait(false); }
-        catch (RequiresAccountException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code }); }
         catch (AmbiguousAccountException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, candidates = ex.Candidates }); }
         catch (AccountNotFoundException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, identifier = ex.Identifier, candidates = ex.Candidates }); }
 
@@ -543,7 +515,7 @@ internal static class AccountInquiryTools
                     tr_code = trCode,
                     rsp_cd = response.RspCode,
                     rsp_msg = response.RspMessage,
-                    account_used = ToAccountEcho(resolved),
+                    account_used = EchoOrSynthetic(resolved, accountResolver.Mode),
                 });
             }
             ArgumentNullException.ThrowIfNull(body3);
@@ -588,6 +560,7 @@ internal static class AccountInquiryTools
                     PurchaseAmount: row.ReadLong("PchsAmt")));
             }
 
+            object accountEcho = await ResolveOrDiscoverEchoAsync(resolved, response, $"{trCode}OutBlock1", accountResolver, cancellationToken).ConfigureAwait(false);
             var payload = new
             {
                 summary,
@@ -596,7 +569,7 @@ internal static class AccountInquiryTools
                 holdings = rows,
                 _meta = new
                 {
-                    account_used = ToAccountEcho(resolved),
+                    account_used = accountEcho,
                     data_as_of = GetIndexQuoteTool.SeoulNowIsoString(),
                     tr_code = trCode,
                     source = "live",
@@ -604,8 +577,8 @@ internal static class AccountInquiryTools
             };
             return JsonSerializer.Serialize(payload, McpJson.Tool);
         }
-        catch (LsAuthException ex) { return McpJson.Error("LS authentication failed for the account inquiry.", new { reason = ex.Message, account_used = ToAccountEcho(resolved) }); }
-        catch (LsTrException ex) { return McpJson.Error("TR call failed.", new { reason = ex.Message, status = ex.StatusCode, tr_code = trCode, account_used = ToAccountEcho(resolved) }); }
+        catch (LsAuthException ex) { return McpJson.Error("LS authentication failed for the account inquiry.", new { reason = ex.Message, account_used = EchoOrSynthetic(resolved, accountResolver.Mode) }); }
+        catch (LsTrException ex) { return McpJson.Error("TR call failed.", new { reason = ex.Message, status = ex.StatusCode, tr_code = trCode, account_used = EchoOrSynthetic(resolved, accountResolver.Mode) }); }
     }
 
     [McpServerTool(Name = "ls_account_credit_limit")]
@@ -636,9 +609,8 @@ internal static class AccountInquiryTools
         string sym = string.IsNullOrWhiteSpace(symbol) ? "005930" : symbol.Trim().ToUpperInvariant();
         double price = order_price ?? 1.0;
 
-        Account resolved;
+        Account? resolved;
         try { resolved = await accountResolver.ResolveAsync(account, cancellationToken).ConfigureAwait(false); }
-        catch (RequiresAccountException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code }); }
         catch (AmbiguousAccountException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, candidates = ex.Candidates }); }
         catch (AccountNotFoundException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, identifier = ex.Identifier, candidates = ex.Candidates }); }
 
@@ -665,12 +637,13 @@ internal static class AccountInquiryTools
                     tr_code = trCode,
                     rsp_cd = response.RspCode,
                     rsp_msg = response.RspMessage,
-                    account_used = ToAccountEcho(resolved),
+                    account_used = EchoOrSynthetic(resolved, accountResolver.Mode),
                 });
             }
             ArgumentNullException.ThrowIfNull(body2);
 
             JsonElement b = body2.Value;
+            object accountEcho = await ResolveOrDiscoverEchoAsync(resolved, response, $"{trCode}OutBlock1", accountResolver, cancellationToken).ConfigureAwait(false);
             var payload = new
             {
                 filter = new { loan_type = LoanLabel(loanCode), symbol = sym, order_price = price },
@@ -692,7 +665,7 @@ internal static class AccountInquiryTools
                 },
                 _meta = new
                 {
-                    account_used = ToAccountEcho(resolved),
+                    account_used = accountEcho,
                     data_as_of = GetIndexQuoteTool.SeoulNowIsoString(),
                     tr_code = trCode,
                     source = "live",
@@ -700,8 +673,8 @@ internal static class AccountInquiryTools
             };
             return JsonSerializer.Serialize(payload, McpJson.Tool);
         }
-        catch (LsAuthException ex) { return McpJson.Error("LS authentication failed for the account inquiry.", new { reason = ex.Message, account_used = ToAccountEcho(resolved) }); }
-        catch (LsTrException ex) { return McpJson.Error("TR call failed.", new { reason = ex.Message, status = ex.StatusCode, tr_code = trCode, account_used = ToAccountEcho(resolved) }); }
+        catch (LsAuthException ex) { return McpJson.Error("LS authentication failed for the account inquiry.", new { reason = ex.Message, account_used = EchoOrSynthetic(resolved, accountResolver.Mode) }); }
+        catch (LsTrException ex) { return McpJson.Error("TR call failed.", new { reason = ex.Message, status = ex.StatusCode, tr_code = trCode, account_used = EchoOrSynthetic(resolved, accountResolver.Mode) }); }
     }
 
     [McpServerTool(Name = "ls_account_max_order_qty")]
@@ -731,9 +704,8 @@ internal static class AccountInquiryTools
         string bns = NormalizeOrderSide(side, out string? sideError);
         if (sideError is not null) return McpJson.Error(sideError);
 
-        Account resolved;
+        Account? resolved;
         try { resolved = await accountResolver.ResolveAsync(account, cancellationToken).ConfigureAwait(false); }
-        catch (RequiresAccountException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code }); }
         catch (AmbiguousAccountException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, candidates = ex.Candidates }); }
         catch (AccountNotFoundException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, identifier = ex.Identifier, candidates = ex.Candidates }); }
 
@@ -760,12 +732,13 @@ internal static class AccountInquiryTools
                     tr_code = trCode,
                     rsp_cd = response.RspCode,
                     rsp_msg = response.RspMessage,
-                    account_used = ToAccountEcho(resolved),
+                    account_used = EchoOrSynthetic(resolved, accountResolver.Mode),
                 });
             }
             ArgumentNullException.ThrowIfNull(body2);
 
             JsonElement b = body2.Value;
+            object accountEcho = await ResolveOrDiscoverEchoAsync(resolved, response, $"{trCode}OutBlock1", accountResolver, cancellationToken).ConfigureAwait(false);
             var payload = new
             {
                 filter = new { symbol = sym, side = bns == "1" ? "sell" : "buy", order_price },
@@ -794,7 +767,7 @@ internal static class AccountInquiryTools
                 },
                 _meta = new
                 {
-                    account_used = ToAccountEcho(resolved),
+                    account_used = accountEcho,
                     data_as_of = GetIndexQuoteTool.SeoulNowIsoString(),
                     tr_code = trCode,
                     source = "live",
@@ -802,8 +775,8 @@ internal static class AccountInquiryTools
             };
             return JsonSerializer.Serialize(payload, McpJson.Tool);
         }
-        catch (LsAuthException ex) { return McpJson.Error("LS authentication failed for the account inquiry.", new { reason = ex.Message, account_used = ToAccountEcho(resolved) }); }
-        catch (LsTrException ex) { return McpJson.Error("TR call failed.", new { reason = ex.Message, status = ex.StatusCode, tr_code = trCode, account_used = ToAccountEcho(resolved) }); }
+        catch (LsAuthException ex) { return McpJson.Error("LS authentication failed for the account inquiry.", new { reason = ex.Message, account_used = EchoOrSynthetic(resolved, accountResolver.Mode) }); }
+        catch (LsTrException ex) { return McpJson.Error("TR call failed.", new { reason = ex.Message, status = ex.StatusCode, tr_code = trCode, account_used = EchoOrSynthetic(resolved, accountResolver.Mode) }); }
     }
 
     [McpServerTool(Name = "ls_account_order_history")]
@@ -845,9 +818,8 @@ internal static class AccountInquiryTools
         string bkseq = NormalizeBkSort(sort, out string? sortError);
         if (sortError is not null) return McpJson.Error(sortError);
 
-        Account resolved;
+        Account? resolved;
         try { resolved = await accountResolver.ResolveAsync(account, cancellationToken).ConfigureAwait(false); }
-        catch (RequiresAccountException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code }); }
         catch (AmbiguousAccountException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, candidates = ex.Candidates }); }
         catch (AccountNotFoundException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, identifier = ex.Identifier, candidates = ex.Candidates }); }
 
@@ -861,6 +833,7 @@ internal static class AccountInquiryTools
             var rows = new List<OrderHistoryRow>();
             long cursorOrdNo = startOrdNo;
             string? continuationKey = null;
+            string? discoveredAcntNo = null;
 
             for (int page = 0; page < MaxOrdersPages; page++)
             {
@@ -888,7 +861,7 @@ internal static class AccountInquiryTools
                         tr_code = trCode,
                         rsp_cd = response.RspCode,
                         rsp_msg = response.RspMessage,
-                        account_used = ToAccountEcho(resolved),
+                        account_used = EchoOrSynthetic(resolved, accountResolver.Mode),
                     });
                 }
                 ArgumentNullException.ThrowIfNull(body3);
@@ -939,8 +912,14 @@ internal static class AccountInquiryTools
                     break;
                 continuationKey = response.ContinuationKey;
                 cursorOrdNo = rows[^1].OrderNo;
+
+                // First-page-only auto-discovery: read AcntNo so the
+                // account_used echo can be populated when the registry is empty.
+                if (page == 0 && resolved is null && discoveredAcntNo is null)
+                    discoveredAcntNo = TryReadAcntNo(response, $"{trCode}OutBlock1");
             }
 
+            resolved = await MaybeDiscoverAsync(resolved, discoveredAcntNo, accountResolver, cancellationToken).ConfigureAwait(false);
             var payload = new
             {
                 filter = new
@@ -957,7 +936,7 @@ internal static class AccountInquiryTools
                 orders = rows,
                 _meta = new
                 {
-                    account_used = ToAccountEcho(resolved),
+                    account_used = EchoOrSynthetic(resolved, accountResolver.Mode, discoveredAcntNo),
                     data_as_of = GetIndexQuoteTool.SeoulNowIsoString(),
                     tr_code = trCode,
                     source = "live",
@@ -965,8 +944,8 @@ internal static class AccountInquiryTools
             };
             return JsonSerializer.Serialize(payload, McpJson.Tool);
         }
-        catch (LsAuthException ex) { return McpJson.Error("LS authentication failed for the account inquiry.", new { reason = ex.Message, account_used = ToAccountEcho(resolved) }); }
-        catch (LsTrException ex) { return McpJson.Error("TR call failed.", new { reason = ex.Message, status = ex.StatusCode, tr_code = trCode, account_used = ToAccountEcho(resolved) }); }
+        catch (LsAuthException ex) { return McpJson.Error("LS authentication failed for the account inquiry.", new { reason = ex.Message, account_used = EchoOrSynthetic(resolved, accountResolver.Mode) }); }
+        catch (LsTrException ex) { return McpJson.Error("TR call failed.", new { reason = ex.Message, status = ex.StatusCode, tr_code = trCode, account_used = EchoOrSynthetic(resolved, accountResolver.Mode) }); }
     }
 
     [McpServerTool(Name = "ls_account_transactions")]
@@ -1000,9 +979,8 @@ internal static class AccountInquiryTools
         string qryTp = NormalizeTransactionKind(kind, out string? kindError);
         if (kindError is not null) return McpJson.Error(kindError);
 
-        Account resolved;
+        Account? resolved;
         try { resolved = await accountResolver.ResolveAsync(account, cancellationToken).ConfigureAwait(false); }
-        catch (RequiresAccountException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code }); }
         catch (AmbiguousAccountException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, candidates = ex.Candidates }); }
         catch (AccountNotFoundException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, identifier = ex.Identifier, candidates = ex.Candidates }); }
 
@@ -1013,6 +991,7 @@ internal static class AccountInquiryTools
             var rows = new List<TransactionRow>();
             long srtNo = 0;
             string? continuationKey = null;
+            string? discoveredAcntNo = null;
 
             for (int page = 0; page < MaxOrdersPages; page++)
             {
@@ -1039,7 +1018,7 @@ internal static class AccountInquiryTools
                         tr_code = trCode,
                         rsp_cd = response.RspCode,
                         rsp_msg = response.RspMessage,
-                        account_used = ToAccountEcho(resolved),
+                        account_used = EchoOrSynthetic(resolved, accountResolver.Mode),
                     });
                 }
                 ArgumentNullException.ThrowIfNull(body3);
@@ -1074,8 +1053,12 @@ internal static class AccountInquiryTools
                     break;
                 continuationKey = response.ContinuationKey;
                 srtNo = rows[^1].TradeNo;
+
+                if (page == 0 && resolved is null && discoveredAcntNo is null)
+                    discoveredAcntNo = TryReadAcntNo(response, $"{trCode}OutBlock1");
             }
 
+            resolved = await MaybeDiscoverAsync(resolved, discoveredAcntNo, accountResolver, cancellationToken).ConfigureAwait(false);
             var payload = new
             {
                 filter = new
@@ -1089,7 +1072,7 @@ internal static class AccountInquiryTools
                 transactions = rows,
                 _meta = new
                 {
-                    account_used = ToAccountEcho(resolved),
+                    account_used = EchoOrSynthetic(resolved, accountResolver.Mode, discoveredAcntNo),
                     data_as_of = GetIndexQuoteTool.SeoulNowIsoString(),
                     tr_code = trCode,
                     source = "live",
@@ -1097,8 +1080,8 @@ internal static class AccountInquiryTools
             };
             return JsonSerializer.Serialize(payload, McpJson.Tool);
         }
-        catch (LsAuthException ex) { return McpJson.Error("LS authentication failed for the account inquiry.", new { reason = ex.Message, account_used = ToAccountEcho(resolved) }); }
-        catch (LsTrException ex) { return McpJson.Error("TR call failed.", new { reason = ex.Message, status = ex.StatusCode, tr_code = trCode, account_used = ToAccountEcho(resolved) }); }
+        catch (LsAuthException ex) { return McpJson.Error("LS authentication failed for the account inquiry.", new { reason = ex.Message, account_used = EchoOrSynthetic(resolved, accountResolver.Mode) }); }
+        catch (LsTrException ex) { return McpJson.Error("TR call failed.", new { reason = ex.Message, status = ex.StatusCode, tr_code = trCode, account_used = EchoOrSynthetic(resolved, accountResolver.Mode) }); }
     }
 
     [McpServerTool(Name = "ls_account_performance")]
@@ -1128,9 +1111,8 @@ internal static class AccountInquiryTools
         string termCode = NormalizePerformanceTerm(term, out string? termError);
         if (termError is not null) return McpJson.Error(termError);
 
-        Account resolved;
+        Account? resolved;
         try { resolved = await accountResolver.ResolveAsync(account, cancellationToken).ConfigureAwait(false); }
-        catch (RequiresAccountException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code }); }
         catch (AmbiguousAccountException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, candidates = ex.Candidates }); }
         catch (AccountNotFoundException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, identifier = ex.Identifier, candidates = ex.Candidates }); }
 
@@ -1140,6 +1122,7 @@ internal static class AccountInquiryTools
             PerformanceSummary? summary = null;
             var rows = new List<PerformanceRow>();
             string? continuationKey = null;
+            string? discoveredAcntNo = null;
 
             for (int page = 0; page < MaxOrdersPages; page++)
             {
@@ -1162,7 +1145,7 @@ internal static class AccountInquiryTools
                         tr_code = trCode,
                         rsp_cd = response.RspCode,
                         rsp_msg = response.RspMessage,
-                        account_used = ToAccountEcho(resolved),
+                        account_used = EchoOrSynthetic(resolved, accountResolver.Mode),
                     });
                 }
                 ArgumentNullException.ThrowIfNull(body3);
@@ -1207,8 +1190,12 @@ internal static class AccountInquiryTools
                 if (!response.HasContinuation || string.IsNullOrEmpty(response.ContinuationKey))
                     break;
                 continuationKey = response.ContinuationKey;
+
+                if (page == 0 && resolved is null && discoveredAcntNo is null)
+                    discoveredAcntNo = TryReadAcntNo(response, $"{trCode}OutBlock1");
             }
 
+            resolved = await MaybeDiscoverAsync(resolved, discoveredAcntNo, accountResolver, cancellationToken).ConfigureAwait(false);
             var payload = new
             {
                 filter = new
@@ -1222,7 +1209,7 @@ internal static class AccountInquiryTools
                 periods = rows,
                 _meta = new
                 {
-                    account_used = ToAccountEcho(resolved),
+                    account_used = EchoOrSynthetic(resolved, accountResolver.Mode, discoveredAcntNo),
                     data_as_of = GetIndexQuoteTool.SeoulNowIsoString(),
                     tr_code = trCode,
                     source = "live",
@@ -1230,8 +1217,8 @@ internal static class AccountInquiryTools
             };
             return JsonSerializer.Serialize(payload, McpJson.Tool);
         }
-        catch (LsAuthException ex) { return McpJson.Error("LS authentication failed for the account inquiry.", new { reason = ex.Message, account_used = ToAccountEcho(resolved) }); }
-        catch (LsTrException ex) { return McpJson.Error("TR call failed.", new { reason = ex.Message, status = ex.StatusCode, tr_code = trCode, account_used = ToAccountEcho(resolved) }); }
+        catch (LsAuthException ex) { return McpJson.Error("LS authentication failed for the account inquiry.", new { reason = ex.Message, account_used = EchoOrSynthetic(resolved, accountResolver.Mode) }); }
+        catch (LsTrException ex) { return McpJson.Error("TR call failed.", new { reason = ex.Message, status = ex.StatusCode, tr_code = trCode, account_used = EchoOrSynthetic(resolved, accountResolver.Mode) }); }
     }
 
     [McpServerTool(Name = "ls_account_daily_pnl")]
@@ -1266,9 +1253,8 @@ internal static class AccountInquiryTools
             if (string.Equals(ymd, SeoulYmd(), StringComparison.Ordinal)) isToday = true;
         }
 
-        Account resolved;
+        Account? resolved;
         try { resolved = await accountResolver.ResolveAsync(account, cancellationToken).ConfigureAwait(false); }
-        catch (RequiresAccountException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code }); }
         catch (AmbiguousAccountException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, candidates = ex.Candidates }); }
         catch (AccountNotFoundException ex) { return McpJson.Error(ex.Message, new { error_code = ex.Code, identifier = ex.Identifier, candidates = ex.Candidates }); }
 
@@ -1299,7 +1285,7 @@ internal static class AccountInquiryTools
                         tr_code = trCode,
                         rsp_cd = response.RspCode,
                         rsp_msg = response.RspMessage,
-                        account_used = ToAccountEcho(resolved),
+                        account_used = EchoOrSynthetic(resolved, accountResolver.Mode),
                     });
                 }
 
@@ -1361,7 +1347,7 @@ internal static class AccountInquiryTools
                 trades = rows,
                 _meta = new
                 {
-                    account_used = ToAccountEcho(resolved),
+                    account_used = EchoOrSynthetic(resolved, accountResolver.Mode),
                     data_as_of = GetIndexQuoteTool.SeoulNowIsoString(),
                     tr_code = trCode,
                     source = "live",
@@ -1369,8 +1355,8 @@ internal static class AccountInquiryTools
             };
             return JsonSerializer.Serialize(payload, McpJson.Tool);
         }
-        catch (LsAuthException ex) { return McpJson.Error("LS authentication failed for the account inquiry.", new { reason = ex.Message, account_used = ToAccountEcho(resolved) }); }
-        catch (LsTrException ex) { return McpJson.Error("TR call failed.", new { reason = ex.Message, status = ex.StatusCode, tr_code = trCode, account_used = ToAccountEcho(resolved) }); }
+        catch (LsAuthException ex) { return McpJson.Error("LS authentication failed for the account inquiry.", new { reason = ex.Message, account_used = EchoOrSynthetic(resolved, accountResolver.Mode) }); }
+        catch (LsTrException ex) { return McpJson.Error("TR call failed.", new { reason = ex.Message, status = ex.StatusCode, tr_code = trCode, account_used = EchoOrSynthetic(resolved, accountResolver.Mode) }); }
     }
 
     // ---- Date / filter helpers ----
@@ -1582,13 +1568,21 @@ internal static class AccountInquiryTools
     }
 
     /// <summary>
-    /// /stock/accno family success check. LS routes account-inquiry TRs through
-    /// a gateway that stamps non-<c>"00000"</c> rsp_cd values alongside
-    /// "조회가 완료되었습니다." or "조회내역이 없습니다." — the docs catalog
-    /// includes <c>00133</c> (FOCCQ33600 paginated success), <c>00136</c>
-    /// (CSPAQ snapshot success), and <c>00200</c> (no-data success). Pair the
-    /// known codes with a present expected block so genuine error codes still
-    /// fall through to the business-error envelope.
+    /// /stock/accno family success check. LS routes account-inquiry TRs
+    /// through a gateway that stamps non-<c>"00000"</c> rsp_cd values
+    /// alongside "조회가 완료되었습니다." or "조회내역이 없습니다." —
+    /// the full success catalog observed in the wild and cross-checked
+    /// against programgarden's tracker.SUCCESS_CODES:
+    /// <list type="bullet">
+    ///   <item><c>00000</c> — standard success</item>
+    ///   <item><c>00001</c> — CSPAQ family generic success</item>
+    ///   <item><c>00133</c> — FOCCQ33600 paginated success</item>
+    ///   <item><c>00136</c> — CSPAQ snapshot success (live-confirmed CSPAQ22200)</item>
+    ///   <item><c>00200</c> — no-data success on CSPAQ13700 / CDPCQ04700</item>
+    ///   <item><c>00707</c> — overseas/derivatives "조회할 내역 없음" success</item>
+    /// </list>
+    /// Pair the known codes with a present expected block so genuine error
+    /// codes still fall through to the business-error envelope.
     /// </summary>
     /// <remarks>See <see cref="LsTrResponse.SuccessCode"/> for the global default and
     /// <c>docs/LS-API-QUIRKS.md</c> §4.2b for the catalog.</remarks>
@@ -1598,7 +1592,88 @@ internal static class AccountInquiryTools
             return false;
         if (string.IsNullOrEmpty(rspCode))
             return false;
-        return rspCode is LsTrResponse.SuccessCode or "00133" or "00136" or "00200";
+        return rspCode is LsTrResponse.SuccessCode
+            or "00001" or "00133" or "00136" or "00200" or "00707";
+    }
+
+    /// <summary>
+    /// Success-path echo for CSPAQ / CDPCQ / FOCCQ tools whose responses
+    /// carry <c>AcntNo</c> in their OutBlock1. When the resolver returned
+    /// a registered account, that wins. Otherwise reads <c>AcntNo</c> from
+    /// the response, fire-and-forget registers it into portfolio.db
+    /// (idempotent), and echoes back so the model sees the same account
+    /// label on a repeat call. Returns a synthetic shape with
+    /// <c>discovered=true</c> when registry upsert fails.
+    /// </summary>
+    static async Task<object> ResolveOrDiscoverEchoAsync(
+        Account? resolved,
+        LsTrResponse response,
+        string outBlockName,
+        LsAccountResolver resolver,
+        CancellationToken cancellationToken)
+    {
+        if (resolved is not null) return ToAccountEcho(resolved);
+        string? acntNo = TryReadAcntNo(response, outBlockName);
+        Account? discovered = await MaybeDiscoverAsync(null, acntNo, resolver, cancellationToken).ConfigureAwait(false);
+        return EchoOrSynthetic(discovered, resolver.Mode, acntNo);
+    }
+
+    /// <summary>
+    /// Builds the <c>_meta.account_used</c> echo synchronously. Used for
+    /// both success and error paths. When <paramref name="resolved"/> is
+    /// non-null we echo the registered account label; when null we fall
+    /// back to whatever <paramref name="acntNo"/> the broker handed back
+    /// (a synthetic shape with <c>discovered=true</c> so the model can
+    /// explain "this is the broker-reported account number; register a
+    /// nickname via ls_account if you want a friendly label").
+    /// </summary>
+    static object EchoOrSynthetic(Account? resolved, string mode, string? acntNo = null)
+    {
+        if (resolved is not null)
+            return ToAccountEcho(resolved);
+        string? trimmed = string.IsNullOrWhiteSpace(acntNo) ? null : acntNo.Trim();
+        return new
+        {
+            account_number = trimmed,
+            nickname = (string?)null,
+            broker = "LS",
+            mode,
+            is_default = false,
+            discovered = !string.IsNullOrEmpty(trimmed),
+        };
+    }
+
+    /// <summary>
+    /// Upserts a broker-discovered account into portfolio.db when the
+    /// registry was empty, so subsequent calls in the active mode resolve
+    /// it by nickname. Returns the upserted <see cref="Account"/> on
+    /// success, or null when the upsert failed or no <paramref name="acntNo"/>
+    /// was available.
+    /// </summary>
+    static async Task<Account?> MaybeDiscoverAsync(
+        Account? resolved,
+        string? acntNo,
+        LsAccountResolver resolver,
+        CancellationToken cancellationToken)
+    {
+        if (resolved is not null) return resolved;
+        if (string.IsNullOrWhiteSpace(acntNo)) return null;
+        return await resolver.RecordDiscoveredAsync(acntNo!, defaultNickname: null, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Reads an LS-style <c>AcntNo</c> field from the given output block.
+    /// Returns null when the block is missing or the field is blank.
+    /// Used after a CSPAQ/CDPCQ/FOCCQ success to surface the broker's own
+    /// view of which account answered.
+    /// </summary>
+    static string? TryReadAcntNo(LsTrResponse response, string outBlockName)
+    {
+        JsonElement? block = response.GetBlock(outBlockName);
+        if (block is null) return null;
+        string? acntNo = block.Value.ReadString("AcntNo");
+        if (string.IsNullOrWhiteSpace(acntNo)) return null;
+        return acntNo.Trim();
     }
 
     static object ToAccountEcho(Account account) => new
@@ -1859,7 +1934,6 @@ internal static class AccountInquiryTools
     {
         public string BranchName { get; set; } = "";
         public string AccountName { get; set; } = "";
-        // Common fields (both real and virtual TRs return these).
         public long Deposit { get; set; }
         public long D1Deposit { get; set; }
         public long D2Deposit { get; set; }
@@ -1875,24 +1949,14 @@ internal static class AccountInquiryTools
         public long MarginRate35Orderable { get; set; }
         public long ReceivableAmount { get; set; }
         public long LoanAmount { get; set; }
-        // Real-mode only fields — omitted from JSON when null so the virtual
-        // shape doesn't carry zeros that look like "definitely zero" answers.
-        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-        public long? WithdrawableAmount { get; set; }
-        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-        public long? EvaluationAmount { get; set; }
-        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-        public long? DepositedAssetTotal { get; set; }
-        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-        public double? PnlPct { get; set; }
-        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-        public long? InvestmentOriginal { get; set; }
-        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-        public long? InvestmentPnl { get; set; }
-        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-        public long? D1WithdrawablePresumed { get; set; }
-        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-        public long? D2WithdrawablePresumed { get; set; }
+        public long WithdrawableAmount { get; set; }
+        public long EvaluationAmount { get; set; }
+        public long DepositedAssetTotal { get; set; }
+        public double PnlPct { get; set; }
+        public long InvestmentOriginal { get; set; }
+        public long InvestmentPnl { get; set; }
+        public long D1WithdrawablePresumed { get; set; }
+        public long D2WithdrawablePresumed { get; set; }
     }
 
     sealed class OrdersSummary

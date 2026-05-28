@@ -241,28 +241,84 @@ saved condition; `ls_list_screeners` initially returned `rsp_cd=""`
 errors). Defensive unit tests cover both the quirk and the
 hypothetical `"00000"` future-fix path.
 
-### 4.2b CSPAQ accno TRs return `rsp_cd="00136"` on success ✅
+### 4.2b /stock/accno family returns non-`00000` success codes ✅
 
-**TRs:** the CSPAQ family on `/stock/accno` — `CSPAQ12200` /
-`CSPAQ22200` (예수금/총평가), `CSPAQ12300` (BEP), `CSPAQ13700`
-(주문체결내역), `CSPAQ00600` (신용한도), and likely the rest of the
-family discovered during v1.6 build-out.
+**TRs:** the `/stock/accno` family — `CSPAQ12200` / `CSPAQ22200`
+(예수금/총평가), `CSPAQ12300` (BEP), `CSPAQ13700` (주문체결내역),
+`CSPAQ00600` (신용한도), `CSPBQ00200` (주문가능수량), `CDPCQ04700`
+(거래내역), `FOCCQ33600` (기간별 수익률).
 
-LS's docs for these TRs show a successful response with
-`"rsp_cd": "00136"` + `"rsp_msg": "조회가 완료되었습니다."` — not
-`"00000"`. Strict `RspCode == "00000"` success check mis-classifies
-these as business-level errors and discards the payload, same shape as
-[§4.2](#42-t1825--t1826-return-rsp_cd-on-success).
+LS's docs and live traffic for these TRs return non-`"00000"` success
+codes alongside "조회가 완료되었습니다." or "조회내역이 없습니다." —
+strict `RspCode == "00000"` success check mis-classifies these as
+business-level errors and discards the payload. Codes observed in the
+wild (cross-checked against programgarden's `tracker.SUCCESS_CODES`):
 
-**Workaround:** `AccountInquiryTools.IsCspaqSuccess` accepts either
-`"00000"` or `"00136"` as success codes when the expected output block
-is present. `LsTrResponse.IsSuccess` stays untouched so the broader
-TR surface is unaffected.
+- `00000` — standard success
+- `00001` — CSPAQ family generic success
+- `00133` — FOCCQ33600 paginated success ("조회가 계속 됩니다")
+- `00136` — CSPAQ snapshot success (live-confirmed CSPAQ22200 against
+  user's real account 2026-05-28)
+- `00200` — no-data success on CSPAQ13700 / CDPCQ04700
+- `00707` — overseas/derivatives "조회할 내역 없음" success
 
-**Status:** ✅ v1.6-dev — discovered while wiring `ls_account_balance`
-against the LS-docs CSPAQ12200 / CSPAQ22200 fixtures. Pending live
-validation against the user's virtual account to confirm 00136 is the
-canonical envelope (not a docs-only artifact).
+**Workaround:** `AccountInquiryTools.IsCspaqSuccess` accepts any of
+those codes when the expected output block is present.
+`LsTrResponse.IsSuccess` stays untouched so the broader TR surface is
+unaffected.
+
+**Status:** ✅ v1.6 — code list confirmed against programgarden
+(tracker.py:33) and live-verified on CSPAQ22200 against a real account.
+
+### 4.2c CSPAQ22200 is v2 of CSPAQ12200, NOT a virtual variant ✅
+
+**TRs:** `CSPAQ12200` (현물계좌예수금 주문가능금액 총평가 조회) and
+`CSPAQ22200` (현물계좌예수금 주문가능금액 총평가2).
+
+The "22200" naming initially read as a virtual-mode counterpart to
+"12200" — that interpretation was wrong. Live verification 2026-05-28:
+calling CSPAQ22200 with a *real* appkey returned the *real* account's
+data, exactly as CSPAQ12200 would. The "2" suffix indicates an API
+revision (v2 with a slimmer field set), not a paper-trading switch.
+The real-vs-virtual mode lives in the appkey pair, not in the TR
+code — see [§4.2d](#42d-ls-rest-mode-is-the-appkey-not-the-endpoint).
+
+**Workaround:** `AccountInquiryTools.Balance` always calls CSPAQ12200
+regardless of `LS_MARKET`. The v1 has the richer field set
+(evaluation amount, investment P&L, withdrawable presumed) so we lose
+nothing by sending only the v1.
+
+**Status:** ✅ v1.6 — corrected after the initial v1.6 release branched
+on `LS_MARKET` between the two TRs (wrong assumption).
+
+### 4.2d LS REST mode is the appkey pair, not the endpoint or env var ✅
+
+**Endpoints (all modes):** `https://openapi.ls-sec.co.kr:8080`.
+
+programgarden's `URLS.LS_URL` confirms: real and paper REST traffic
+both flow through the same host:port. The
+`run_o3117.py` example header explicitly says "REST endpoint:
+paper/live 모두 https://openapi.ls-sec.co.kr:8080 동일". Only the
+WebSocket endpoint splits (`:9443` real vs `:29443` virtual), and this
+project does not use WebSocket per [[mcp-realtime-skeptic]].
+
+What actually determines the mode: LS issues **separate appkey /
+appsecretkey pairs** for the real account and the virtual (모의투자)
+account. The token issued from a given pair is tied to that account.
+Same REST URL + different keys → different account answers.
+
+**Implication for `LS_MARKET`:** the env var is *informational and
+namespacing*, not routing. It tags `portfolio.db` rows so two locally
+registered accounts (one real, one virtual) don't collide. The actual
+LS routing happens at the appkey level — set `LS_APPKEY` /
+`LS_APPSECRETKEY` to the pair that matches the intended account, and
+set `LS_MARKET` to match for the local labelling.
+
+**Status:** ✅ v1.6 — discovered after the user's smoke showed real
+account data with `LS_MARKET=virtual` set, because the loaded appkey
+was the real-account pair. The `LsApiOptions.DefaultRealBaseUrl` and
+`DefaultVirtualBaseUrl` constants are intentionally identical and a
+comment block explains why.
 
 ### 4.3 "Q-Click / 씽큐스마트" is LS-curated, not user-authored ✅
 

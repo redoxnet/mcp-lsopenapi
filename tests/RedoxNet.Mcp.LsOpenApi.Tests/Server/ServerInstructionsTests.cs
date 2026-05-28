@@ -18,13 +18,12 @@ public sealed class ServerInstructionsTests
     {
         ServerInstructions.Text.Should().NotBeNullOrWhiteSpace();
         // A system-message-level instruction — comprehensive but not an essay.
-        // Budget bumped to 10000 in v1.6 to cover the two-sources
-        // disambiguation paragraph + v1.7 non-goal callout (SPEC v1.6 §4).
-        // The paragraph is a system-message contract; trimming it risks the
-        // model conflating ls_holdings_list (local paper) with
-        // ls_account_holdings (live broker) — the exact confusion the v1.6
-        // routing language is meant to prevent.
-        ServerInstructions.Text.Length.Should().BeInRange(200, 10000);
+        // Budget bumped to 11000 in v1.6 after the LS-REST-mode correction
+        // (SPEC v1.6 §4 + LS-API-QUIRKS §4.2d): the routing paragraph now
+        // explains that LS_MARKET is informational (mode = appkey pair, not
+        // env var), which the model must understand to avoid suggesting
+        // wrong workflows.
+        ServerInstructions.Text.Length.Should().BeInRange(200, 11000);
     }
 
     [Theory]
