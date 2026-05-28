@@ -241,6 +241,29 @@ saved condition; `ls_list_screeners` initially returned `rsp_cd=""`
 errors). Defensive unit tests cover both the quirk and the
 hypothetical `"00000"` future-fix path.
 
+### 4.2b CSPAQ accno TRs return `rsp_cd="00136"` on success ✅
+
+**TRs:** the CSPAQ family on `/stock/accno` — `CSPAQ12200` /
+`CSPAQ22200` (예수금/총평가), `CSPAQ12300` (BEP), `CSPAQ13700`
+(주문체결내역), `CSPAQ00600` (신용한도), and likely the rest of the
+family discovered during v1.6 build-out.
+
+LS's docs for these TRs show a successful response with
+`"rsp_cd": "00136"` + `"rsp_msg": "조회가 완료되었습니다."` — not
+`"00000"`. Strict `RspCode == "00000"` success check mis-classifies
+these as business-level errors and discards the payload, same shape as
+[§4.2](#42-t1825--t1826-return-rsp_cd-on-success).
+
+**Workaround:** `AccountInquiryTools.IsCspaqSuccess` accepts either
+`"00000"` or `"00136"` as success codes when the expected output block
+is present. `LsTrResponse.IsSuccess` stays untouched so the broader
+TR surface is unaffected.
+
+**Status:** ✅ v1.6-dev — discovered while wiring `ls_account_balance`
+against the LS-docs CSPAQ12200 / CSPAQ22200 fixtures. Pending live
+validation against the user's virtual account to confirm 00136 is the
+canonical envelope (not a docs-only artifact).
+
 ### 4.3 "Q-Click / 씽큐스마트" is LS-curated, not user-authored ✅
 
 **TRs:** `t1825`, `t1826` (Q-Click signal pair) + HTS screens [1801]

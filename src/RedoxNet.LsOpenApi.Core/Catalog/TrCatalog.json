@@ -3686,6 +3686,119 @@
       ],
       "continuation": { "supported": true, "key_fields": ["cts_ordno"] },
       "rate_limit_per_sec": 2
+    },
+    {
+      "tr_code": "CSPAQ12200",
+      "name": "현물계좌예수금/주문가능금액/총평가 조회",
+      "category": "주식계좌",
+      "path": "/stock/accno",
+      "description": "실투자 계좌의 예수금, D1/D2 예수금, 주문가능금액, 잔고평가금액, 예탁자산총액, 손익률, 신용/대용 한도를 일괄 조회합니다. v1.6 ls_account_balance가 real 모드에서 wrapping. 초당 1건. 입력 블록명은 CSPAQ12200InBlock1 (suffix 1).",
+      "in_blocks": [
+        {
+          "name": "CSPAQ12200InBlock1",
+          "is_array": false,
+          "fields": [
+            { "name": "BalCreTp", "type": "char", "description": "잔고생성구분 (0:주식잔고 1:기타 2:재투자 등)", "required": true, "length": 1, "example": "0" }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "CSPAQ12200OutBlock1",
+          "is_array": false,
+          "fields": [
+            { "name": "RecCnt", "type": "int", "description": "레코드 갯수" },
+            { "name": "AcntNo", "type": "char", "description": "계좌번호", "length": 20 },
+            { "name": "BalCreTp", "type": "char", "description": "잔고생성구분", "length": 1 }
+          ]
+        },
+        {
+          "name": "CSPAQ12200OutBlock2",
+          "is_array": false,
+          "fields": [
+            { "name": "BrnNm", "type": "char", "description": "지점명", "length": 40 },
+            { "name": "AcntNm", "type": "char", "description": "계좌명", "length": 40 },
+            { "name": "MnyOrdAbleAmt", "type": "long", "description": "현금주문가능금액" },
+            { "name": "MnyoutAbleAmt", "type": "long", "description": "출금가능금액" },
+            { "name": "SeOrdAbleAmt", "type": "long", "description": "거래소(유가증권) 주문가능금액" },
+            { "name": "KdqOrdAbleAmt", "type": "long", "description": "코스닥 주문가능금액" },
+            { "name": "BalEvalAmt", "type": "long", "description": "잔고평가금액" },
+            { "name": "RcvblAmt", "type": "long", "description": "미수금액" },
+            { "name": "DpsastTotamt", "type": "long", "description": "예탁자산총액" },
+            { "name": "PnlRat", "type": "double", "description": "손익률 (%)" },
+            { "name": "InvstOrgAmt", "type": "long", "description": "투자원금" },
+            { "name": "InvstPlAmt", "type": "long", "description": "투자손익금액" },
+            { "name": "Dps", "type": "long", "description": "예수금" },
+            { "name": "SubstAmt", "type": "long", "description": "대용금액" },
+            { "name": "D1Dps", "type": "long", "description": "D1예수금" },
+            { "name": "D2Dps", "type": "long", "description": "D2예수금" },
+            { "name": "MnyrclAmt", "type": "long", "description": "현금미수금액" },
+            { "name": "SubstOrdAbleAmt", "type": "long", "description": "대용주문가능금액" },
+            { "name": "MgnRat100pctOrdAbleAmt", "type": "long", "description": "증거금률100% 주문가능금액" },
+            { "name": "MgnRat35ordAbleAmt", "type": "long", "description": "증거금률35% 주문가능금액" },
+            { "name": "MgnRat50ordAbleAmt", "type": "long", "description": "증거금률50% 주문가능금액" },
+            { "name": "D1PrsmptWthdwAbleAmt", "type": "long", "description": "D1추정인출가능금액" },
+            { "name": "D2PrsmptWthdwAbleAmt", "type": "long", "description": "D2추정인출가능금액" },
+            { "name": "MloanAmt", "type": "long", "description": "융자금액" },
+            { "name": "CrdtPldgOrdAmt", "type": "long", "description": "신용담보주문금액" },
+            { "name": "CrdtOrdAbleAmt", "type": "long", "description": "신용주문가능금액" }
+          ]
+        }
+      ],
+      "continuation": { "supported": false },
+      "rate_limit_per_sec": 1
+    },
+    {
+      "tr_code": "CSPAQ22200",
+      "name": "현물계좌예수금/주문가능금액/총평가2 (모의)",
+      "category": "주식계좌",
+      "path": "/stock/accno",
+      "description": "모의투자 계좌의 예수금/주문가능금액/총평가 조회. CSPAQ12200와 동일 입력이지만 모의 환경 전용. v1.6 ls_account_balance가 virtual 모드에서 wrapping. 입력 블록명은 CSPAQ22200InBlock1 (suffix 1).",
+      "in_blocks": [
+        {
+          "name": "CSPAQ22200InBlock1",
+          "is_array": false,
+          "fields": [
+            { "name": "BalCreTp", "type": "char", "description": "잔고생성구분 (0:주식잔고 1:기타 2:재투자 등)", "required": true, "length": 1, "example": "0" }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "CSPAQ22200OutBlock1",
+          "is_array": false,
+          "fields": [
+            { "name": "RecCnt", "type": "int", "description": "레코드 갯수" },
+            { "name": "AcntNo", "type": "char", "description": "계좌번호", "length": 20 },
+            { "name": "BalCreTp", "type": "char", "description": "잔고생성구분", "length": 1 }
+          ]
+        },
+        {
+          "name": "CSPAQ22200OutBlock2",
+          "is_array": false,
+          "fields": [
+            { "name": "BrnNm", "type": "char", "description": "지점명", "length": 40 },
+            { "name": "AcntNm", "type": "char", "description": "계좌명", "length": 40 },
+            { "name": "MnyOrdAbleAmt", "type": "long", "description": "현금주문가능금액" },
+            { "name": "SubstOrdAbleAmt", "type": "long", "description": "대용주문가능금액" },
+            { "name": "SeOrdAbleAmt", "type": "long", "description": "거래소 주문가능금액" },
+            { "name": "KdqOrdAbleAmt", "type": "long", "description": "코스닥 주문가능금액" },
+            { "name": "CrdtPldgOrdAmt", "type": "long", "description": "신용담보주문금액" },
+            { "name": "MgnRat100pctOrdAbleAmt", "type": "long", "description": "증거금률100% 주문가능금액" },
+            { "name": "MgnRat35ordAbleAmt", "type": "long", "description": "증거금률35% 주문가능금액" },
+            { "name": "MgnRat50ordAbleAmt", "type": "long", "description": "증거금률50% 주문가능금액" },
+            { "name": "CrdtOrdAbleAmt", "type": "long", "description": "신용주문가능금액" },
+            { "name": "Dps", "type": "long", "description": "예수금" },
+            { "name": "SubstAmt", "type": "long", "description": "대용금액" },
+            { "name": "D1Dps", "type": "long", "description": "D1예수금" },
+            { "name": "D2Dps", "type": "long", "description": "D2예수금" },
+            { "name": "RcvblAmt", "type": "long", "description": "미수금액" },
+            { "name": "MloanAmt", "type": "long", "description": "융자금액" }
+          ]
+        }
+      ],
+      "continuation": { "supported": false },
+      "rate_limit_per_sec": 1
     }
   ]
 }

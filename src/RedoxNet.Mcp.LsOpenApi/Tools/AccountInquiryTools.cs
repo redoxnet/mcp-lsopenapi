@@ -362,6 +362,157 @@ internal static class AccountInquiryTools
         }
     }
 
+    [McpServerTool(Name = "ls_account_balance")]
+    [Description("""
+        Returns the LIVE cash, buying power, and total valuation for one of your LS broker accounts. Routes to TR CSPAQ12200 in real mode and CSPAQ22200 in virtual mode automatically — same response shape, with valuation/PnL fields available only in real mode where LS computes them.
+
+        USE WHEN: the user asks "예수금 얼마야", "내 잔고", "주문가능금액", "총 평가금액", "투자원금 대비 손익" — anything about cash, buying power, or roll-up portfolio value.
+        AVOID WHEN: the user wants per-symbol positions — use ls_account_holdings. AVOID WHEN: the user wants per-day P&L history — use ls_account_performance.
+
+        Account resolution matches ls_account_holdings (default-account / RequiresAccount / AmbiguousAccount). _meta carries account_used, data_as_of, tr_code (CSPAQ12200 or CSPAQ22200), and source="live".
+        """)]
+    public static async Task<string> Balance(
+        LsApiClient apiClient,
+        LsAccountResolver accountResolver,
+        [Description("Optional account_number or nickname. Omit to use the active mode's default account.")]
+        string? account = null,
+        CancellationToken cancellationToken = default)
+    {
+        Account resolved;
+        try
+        {
+            resolved = await accountResolver.ResolveAsync(account, cancellationToken).ConfigureAwait(false);
+        }
+        catch (RequiresAccountException ex)
+        {
+            return McpJson.Error(ex.Message, new { error_code = ex.Code });
+        }
+        catch (AmbiguousAccountException ex)
+        {
+            return McpJson.Error(ex.Message, new { error_code = ex.Code, candidates = ex.Candidates });
+        }
+        catch (AccountNotFoundException ex)
+        {
+            return McpJson.Error(ex.Message, new { error_code = ex.Code, identifier = ex.Identifier, candidates = ex.Candidates });
+        }
+
+        bool isVirtual = string.Equals(resolved.Mode, "virtual", StringComparison.Ordinal);
+        string trCode = isVirtual ? "CSPAQ22200" : "CSPAQ12200";
+        string outBlock2Name = isVirtual ? "CSPAQ22200OutBlock2" : "CSPAQ12200OutBlock2";
+        string inBlockName = $"{trCode}InBlock1"; // suffix '1' is LS convention for the CSPAQ family.
+
+        try
+        {
+            var body = new JsonObject
+            {
+                [inBlockName] = new JsonObject { ["BalCreTp"] = "0" },
+            };
+            LsTrRequest request = new(trCode, body);
+            LsTrResponse response = await apiClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+
+            // CSPAQ accno TRs return rsp_cd="00136" alongside "조회가 완료되었습니다."
+            // as their success envelope, instead of the usual "00000". Treat
+            // both as success when the expected output block is present;
+            // anything else falls through to the business-error path.
+            JsonElement? body2 = response.GetBlock(outBlock2Name);
+            if (!IsCspaqSuccess(response.RspCode, body2))
+            {
+                return McpJson.Error("LS reported a business-level error.", new
+                {
+                    tr_code = trCode,
+                    rsp_cd = response.RspCode,
+                    rsp_msg = response.RspMessage,
+                    account_used = ToAccountEcho(resolved),
+                });
+            }
+            // After the success check, body2 cannot be null per IsCspaqSuccess.
+            ArgumentNullException.ThrowIfNull(body2);
+
+            JsonElement b = body2.Value;
+            var balance = new BalancePayload
+            {
+                BranchName = (b.ReadString("BrnNm") ?? "").Trim(),
+                AccountName = (b.ReadString("AcntNm") ?? "").Trim(),
+                Deposit = b.ReadLong("Dps"),
+                D1Deposit = b.ReadLong("D1Dps"),
+                D2Deposit = b.ReadLong("D2Dps"),
+                CashOrderableAmount = b.ReadLong("MnyOrdAbleAmt"),
+                SubstituteOrderableAmount = b.ReadLong("SubstOrdAbleAmt"),
+                SubstituteAmount = b.ReadLong("SubstAmt"),
+                KospiOrderableAmount = b.ReadLong("SeOrdAbleAmt"),
+                KosdaqOrderableAmount = b.ReadLong("KdqOrdAbleAmt"),
+                CreditOrderableAmount = b.ReadLong("CrdtOrdAbleAmt"),
+                CreditCollateralOrderAmount = b.ReadLong("CrdtPldgOrdAmt"),
+                MarginRate100Orderable = b.ReadLong("MgnRat100pctOrdAbleAmt"),
+                MarginRate50Orderable = b.ReadLong("MgnRat50ordAbleAmt"),
+                MarginRate35Orderable = b.ReadLong("MgnRat35ordAbleAmt"),
+                ReceivableAmount = b.ReadLong("RcvblAmt"),
+                LoanAmount = b.ReadLong("MloanAmt"),
+            };
+
+            // Real-mode only fields. Virtual TR omits these because LS doesn't
+            // track investment basis on the paper-trading book.
+            if (!isVirtual)
+            {
+                balance.WithdrawableAmount = b.ReadLong("MnyoutAbleAmt");
+                balance.EvaluationAmount = b.ReadLong("BalEvalAmt");
+                balance.DepositedAssetTotal = b.ReadLong("DpsastTotamt");
+                balance.PnlPct = b.ReadDouble("PnlRat");
+                balance.InvestmentOriginal = b.ReadLong("InvstOrgAmt");
+                balance.InvestmentPnl = b.ReadLong("InvstPlAmt");
+                balance.D1WithdrawablePresumed = b.ReadLong("D1PrsmptWthdwAbleAmt");
+                balance.D2WithdrawablePresumed = b.ReadLong("D2PrsmptWthdwAbleAmt");
+            }
+
+            var payload = new
+            {
+                balance,
+                _meta = new
+                {
+                    account_used = ToAccountEcho(resolved),
+                    data_as_of = GetIndexQuoteTool.SeoulNowIsoString(),
+                    tr_code = trCode,
+                    source = "live",
+                },
+            };
+            return JsonSerializer.Serialize(payload, McpJson.Tool);
+        }
+        catch (LsAuthException ex)
+        {
+            return McpJson.Error("LS authentication failed for the account inquiry. Verify LS_APPKEY / LS_APPSECRETKEY / LS_MARKET match the requested account.",
+                new { reason = ex.Message, account_used = ToAccountEcho(resolved) });
+        }
+        catch (LsTrException ex)
+        {
+            return McpJson.Error("TR call failed.", new
+            {
+                reason = ex.Message,
+                status = ex.StatusCode,
+                tr_code = trCode,
+                account_used = ToAccountEcho(resolved),
+            });
+        }
+    }
+
+    /// <summary>
+    /// CSPAQ family success check. LS routes these account TRs through a
+    /// gateway that stamps <c>rsp_cd="00136"</c> alongside "조회가 완료되었습니다."
+    /// rather than the usual <c>"00000"</c>. The presence of the expected
+    /// output block is the canonical "data arrived" signal; pair it with the
+    /// known success codes so non-success codes still fall through to the
+    /// business-error envelope.
+    /// </summary>
+    /// <remarks>See <see cref="LsTrResponse.SuccessCode"/> for the global default and
+    /// <c>docs/LS-API-QUIRKS.md</c> §4 for the broader pattern.</remarks>
+    static bool IsCspaqSuccess(string? rspCode, JsonElement? expectedBlock)
+    {
+        if (expectedBlock is null)
+            return false;
+        if (string.IsNullOrEmpty(rspCode))
+            return false;
+        return rspCode == LsTrResponse.SuccessCode || rspCode == "00136";
+    }
+
     static object ToAccountEcho(Account account) => new
     {
         account_number = account.AccountNo,
@@ -486,6 +637,46 @@ internal static class AccountInquiryTools
         public long EstimatedD2Deposit { get; set; }
         public long TotalEvaluation { get; set; }
         public long TotalEvaluationPnl { get; set; }
+    }
+
+    sealed class BalancePayload
+    {
+        public string BranchName { get; set; } = "";
+        public string AccountName { get; set; } = "";
+        // Common fields (both real and virtual TRs return these).
+        public long Deposit { get; set; }
+        public long D1Deposit { get; set; }
+        public long D2Deposit { get; set; }
+        public long CashOrderableAmount { get; set; }
+        public long SubstituteOrderableAmount { get; set; }
+        public long SubstituteAmount { get; set; }
+        public long KospiOrderableAmount { get; set; }
+        public long KosdaqOrderableAmount { get; set; }
+        public long CreditOrderableAmount { get; set; }
+        public long CreditCollateralOrderAmount { get; set; }
+        public long MarginRate100Orderable { get; set; }
+        public long MarginRate50Orderable { get; set; }
+        public long MarginRate35Orderable { get; set; }
+        public long ReceivableAmount { get; set; }
+        public long LoanAmount { get; set; }
+        // Real-mode only fields — omitted from JSON when null so the virtual
+        // shape doesn't carry zeros that look like "definitely zero" answers.
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public long? WithdrawableAmount { get; set; }
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public long? EvaluationAmount { get; set; }
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public long? DepositedAssetTotal { get; set; }
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public double? PnlPct { get; set; }
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public long? InvestmentOriginal { get; set; }
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public long? InvestmentPnl { get; set; }
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public long? D1WithdrawablePresumed { get; set; }
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public long? D2WithdrawablePresumed { get; set; }
     }
 
     sealed class OrdersSummary

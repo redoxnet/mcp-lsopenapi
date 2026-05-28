@@ -26,6 +26,7 @@ public sealed class ToolSurfaceFreezeTests
     static readonly string[] StandardToolNames =
     [
         "ls_account",
+        "ls_account_balance",
         "ls_account_holdings",
         "ls_account_orders",
         "ls_add_indicator",
@@ -83,7 +84,7 @@ public sealed class ToolSurfaceFreezeTests
         IReadOnlyList<ToolSurface> tools = DiscoverSurface(ToolProfile.Resolve("standard", null));
 
         tools.Select(t => t.Name).Should().Equal(StandardToolNames.Order(StringComparer.Ordinal));
-        tools.Should().HaveCount(42);
+        tools.Should().HaveCount(43);
     }
 
     [Fact]
@@ -92,7 +93,7 @@ public sealed class ToolSurfaceFreezeTests
         IReadOnlyList<ToolSurface> tools = DiscoverSurface(ToolProfile.Resolve("all", null));
 
         tools.Select(t => t.Name).Should().Equal(AllToolNames.Order(StringComparer.Ordinal));
-        tools.Should().HaveCount(45);
+        tools.Should().HaveCount(46);
     }
 
     [Fact]
