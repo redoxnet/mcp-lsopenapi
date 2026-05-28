@@ -120,7 +120,7 @@ LS증권 OpenAPI 키 한 쌍(`AppKey` + `AppSecretKey`)이 필요합니다 — *
       "env": {
         "LS_APPKEY": "...",       // 실투 키이면 실계좌, 모의투자 키이면 모의계좌가 응답
         "LS_APPSECRETKEY": "...",
-        "LS_MARKET": "real"       // portfolio.db 라벨. 키와 일치시키세요 (모의투자 키면 "virtual")
+        "LS_MARKET": "real"       // ls_accounts(live) 라벨 + 토큰 cache 분리. 키와 일치시키세요 (모의투자 키면 "virtual"). 페이퍼 포트폴리오는 mode 무관.
       }
     }
   }

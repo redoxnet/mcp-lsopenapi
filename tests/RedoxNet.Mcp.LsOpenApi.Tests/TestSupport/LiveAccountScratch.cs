@@ -16,14 +16,14 @@ internal sealed class LiveAccountScratch : IAsyncDisposable
     readonly SqlitePortfolioRepository _paperRepo;
     readonly SqliteLsLiveAccountRepository _liveRepo;
 
-    public LiveAccountScratch(string mode = "real", LsMarket market = LsMarket.Real, string? scope = null)
+    public LiveAccountScratch(LsMarket market = LsMarket.Real, string? scope = null)
     {
         _directory = System.IO.Path.Combine(
             System.IO.Path.GetTempPath(),
             $"mcp-lsopenapi-{scope ?? "live"}-{Guid.NewGuid():N}");
         Directory.CreateDirectory(_directory);
         DbPath = System.IO.Path.Combine(_directory, "portfolio.db");
-        _paperRepo = new SqlitePortfolioRepository(DbPath, mode);
+        _paperRepo = new SqlitePortfolioRepository(DbPath);
         _liveRepo = new SqliteLsLiveAccountRepository(_paperRepo, DbPath);
         Resolver = new LsAccountResolver(_liveRepo, market);
     }

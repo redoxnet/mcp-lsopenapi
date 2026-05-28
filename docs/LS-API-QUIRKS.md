@@ -369,6 +369,42 @@ parameter entirely — the resolver only echoes the live row. See
 shadowed live LS data; the user correctly diagnosed it as a structural
 issue rather than a relabel bug.
 
+### 4.2f Virtual (모의투자) mode blocks `ls_account_performance` and `ls_account_credit_limit` (rsp_cd `01900`) ✅
+
+**Symptoms** (empirically confirmed 2026-05-28 with a virtual appkey
+pair, `E2E-v1.6-3rd_codex.txt` + a follow-up virtual session):
+
+- `ls_account_performance` (FOCCQ33600) → `rsp_cd: "01900" / "모의투자에서는 해당업무가 제공되지 않습니다."`
+- `ls_account_credit_limit` (CSPAQ00600) → `rsp_cd: "01900" / "모의투자에서는 해당업무가 제공되지 않습니다."`
+
+The 9 other `ls_account_*` tools (`holdings`, `orders`, `balance`,
+`bep`, `max_order_qty`, `order_history`, `transactions`, `daily_pnl`)
+work normally against a virtual appkey, as does `ls_get_quote` /
+`ls_get_chart` / `ls_get_global_market_quote` (t3521) / Q-Click
+screeners and every other read-only market-data TR. LS explicitly
+gates `01900` only on period-P&L analytics and margin-loan limits —
+the rest of the surface is identical to the real-mode response shape.
+
+**Overseas individual stock TRs (`g3101` / `g3104` / `g3190` / `g3202`
+/ `g3203` / `g3204`)** silently fail on a virtual appkey pair — empty
+data or business-level error without a clear rsp_cd. This is a
+separate constraint: overseas stocks require the `해외주식 API` key
+track, which LS does not pair with a `모의투자 Open API` counterpart.
+See programgarden's product enum (`해외주식 (모의투자 미지원)` vs
+`해외선물 (모의투자 지원)` for the policy boundary). `t3521`
+(overseas indices / FX / futures snapshot) is in the KR domestic
+scope and works fine on virtual.
+
+**Workaround:** the wrapper passes the business-level error through
+unchanged in the `_meta.account_used` / `details` envelope so the
+model can narrate the limitation honestly ("모의계좌라 LS에서 미제공").
+For order placement (v1.7), the trading actuator's paper-default
+gate must treat `해외주식 거래`/`해외선물` differently from KR
+trading because the underlying mock surface is also different.
+
+**Status:** ✅ v1.6 — documented after 3rd E2E pass with a virtual
+appkey pair (`todo/E2E-v1.6-3rd_codex.txt` + follow-up).
+
 ### 4.3 "Q-Click / 씽큐스마트" is LS-curated, not user-authored ✅
 
 **TRs:** `t1825`, `t1826` (Q-Click signal pair) + HTS screens [1801]

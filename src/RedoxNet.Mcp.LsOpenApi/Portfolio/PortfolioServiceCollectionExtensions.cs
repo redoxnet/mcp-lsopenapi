@@ -18,16 +18,14 @@ internal static class PortfolioServiceCollectionExtensions
     {
         services.AddSingleton<IPortfolioRepository>(sp =>
         {
+            // Paper portfolios are LS-mode agnostic (v8 migration): the
+            // user-curated multi-broker book is visible regardless of
+            // which LS appkey pair is loaded. Mode-keyed routing is now
+            // a live-registry concern, see SqliteLsLiveAccountRepository.
             string path = SqlitePortfolioRepository.ResolveDatabasePath();
-            // Account mode follows the same LsApiOptions.Market that the API
-            // client uses, so the repo and the API endpoint stay in lockstep
-            // even when tests override the market via Options.
-            LsMarket market = sp.GetRequiredService<IOptions<LsApiOptions>>().Value.Market;
-            var repository = new SqlitePortfolioRepository(
+            return new SqlitePortfolioRepository(
                 path,
-                market.ToCanonical(),
                 sp.GetRequiredService<ILogger<SqlitePortfolioRepository>>());
-            return repository;
         });
         services.AddSingleton<IQuoteService, LsQuoteService>();
         services.AddSingleton<ILsLiveAccountRepository>(sp =>

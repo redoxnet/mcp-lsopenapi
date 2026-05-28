@@ -59,9 +59,11 @@ internal sealed class WatchedTheme
 /// <summary>
 /// Local portfolio account metadata. Used by the paper-portfolio surface
 /// (<c>ls_account</c> / <c>ls_holding</c> / <c>ls_holdings_list</c>); the
-/// <c>broker</c> field is purely a display label. LS live broker accounts
-/// (auto-discovered, appkey-routed) live in a separate store —
-/// see <see cref="LsLiveAccount"/>.
+/// <c>broker</c> field is purely a display label. Paper portfolios are
+/// LS-mode agnostic — they are visible regardless of which LS appkey
+/// pair (real or virtual) is currently loaded. LS live broker accounts
+/// (auto-discovered, appkey-routed, mode-keyed) live in a separate
+/// store — see <see cref="LsLiveAccount"/>.
 /// </summary>
 internal sealed class Account
 {
@@ -69,7 +71,6 @@ internal sealed class Account
     public string AccountNo { get; init; } = "";
     public string Nickname { get; init; } = "";
     public string Broker { get; init; } = "";
-    public string Mode { get; init; } = "real";
     public bool IsDefault { get; init; }
     public string CreatedAt { get; init; } = "";
 }
@@ -246,9 +247,11 @@ internal sealed record DeleteGroupResult(bool Deleted, int CascadedItems);
 internal sealed record RemoveResult(bool Removed);
 
 /// <summary>
-/// Account metadata returned to MCP hosts. Used inside <c>applied_to</c> echoes and error envelope candidates.
+/// Paper-portfolio account metadata returned to MCP hosts. Used inside
+/// <c>applied_to</c> echoes and error envelope candidates. Carries no
+/// LS mode field — paper portfolios are mode-agnostic in v1.6 onward.
 /// </summary>
-internal sealed record AccountInfo(string AccountNumber, string Nickname, string Broker, bool IsDefault, string Mode = "real");
+internal sealed record AccountInfo(string AccountNumber, string Nickname, string Broker, bool IsDefault);
 
 /// <summary>
 /// Live LS broker account echo for <c>_meta.account_used</c> in v1.6
@@ -285,7 +288,6 @@ internal sealed class AccountSummary
     public string AccountNumber { get; init; } = "";
     public string Nickname { get; init; } = "";
     public string Broker { get; init; } = "";
-    public string Mode { get; init; } = "real";
     public bool IsDefault { get; init; }
     public int HoldingsCount { get; init; }
 }

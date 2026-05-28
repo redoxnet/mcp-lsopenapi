@@ -55,101 +55,45 @@ public sealed class SqlitePortfolioRepositoryTests
     }
 
     [Fact]
-    public async Task Accounts_AreFilteredByConfiguredMode()
+    public async Task Accounts_AreVisibleRegardlessOfLsMarket()
     {
+        // v1.6 v8 migration: paper portfolios are LS-mode agnostic. The
+        // user's multi-broker book stays visible regardless of which LS
+        // appkey pair is currently loaded — mode is a live-registry
+        // concern (ls_accounts), not a paper-portfolio concern.
         await using TestDatabase db = new();
-        var realRepository = new SqlitePortfolioRepository(db.Path, "real");
-        var virtualRepository = new SqlitePortfolioRepository(db.Path, "virtual");
-        await realRepository.InitializeAsync();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
 
-        await realRepository.UpsertAccountAsync("REAL-01", "주식", null, setDefault: false);
-        await virtualRepository.UpsertAccountAsync("VIRT-01", "모의", null, setDefault: false);
+        await repository.UpsertAccountAsync("REAL-01", "주식", "한국투자", setDefault: false);
+        await repository.UpsertAccountAsync("VIRT-01", "모의", "유안타증권", setDefault: false);
 
-        IReadOnlyList<AccountSummary> realAccounts = await realRepository.ListAccountSummariesAsync();
-        IReadOnlyList<AccountSummary> virtualAccounts = await virtualRepository.ListAccountSummariesAsync();
+        IReadOnlyList<AccountSummary> all = await repository.ListAccountSummariesAsync();
+        all.Should().HaveCount(2);
+        all.Should().Contain(a => a.AccountNumber == "REAL-01");
+        all.Should().Contain(a => a.AccountNumber == "VIRT-01");
 
-        realAccounts.Should().ContainSingle(a => a.AccountNumber == "REAL-01" && a.Mode == "real" && a.IsDefault);
-        virtualAccounts.Should().ContainSingle(a => a.AccountNumber == "VIRT-01" && a.Mode == "virtual" && a.IsDefault);
-        (await realRepository.GetAccountByIdentifierAsync("모의")).Should().BeNull();
-        (await virtualRepository.GetAccountByIdentifierAsync("주식")).Should().BeNull();
+        (await repository.GetAccountByIdentifierAsync("모의")).Should().NotBeNull();
+        (await repository.GetAccountByIdentifierAsync("주식")).Should().NotBeNull();
     }
 
     [Fact]
-    public async Task Accounts_DefaultIsIndependentPerMode()
+    public async Task Holdings_AreVisibleAcrossEntirePaperPortfolio()
     {
+        // Same rationale as paper accounts: holdings ride with the account
+        // row and the account row is mode-independent.
         await using TestDatabase db = new();
-        var realRepository = new SqlitePortfolioRepository(db.Path, "real");
-        var virtualRepository = new SqlitePortfolioRepository(db.Path, "virtual");
-        await realRepository.InitializeAsync();
+        var repository = new SqlitePortfolioRepository(db.Path);
+        await repository.InitializeAsync();
 
-        await realRepository.UpsertAccountAsync("REAL-01", "real-main", null, setDefault: false);
-        await realRepository.UpsertAccountAsync("REAL-02", "real-sub", null, setDefault: true);
-        await virtualRepository.UpsertAccountAsync("VIRT-01", "virtual-main", null, setDefault: false);
+        Account a = await repository.UpsertAccountAsync("AAA-01", "한투", null, setDefault: false);
+        Account b = await repository.UpsertAccountAsync("BBB-01", "KB", null, setDefault: false);
+        await repository.SetHoldingAsync(a.Id, "005930", 3, 70000, null);
+        await repository.SetHoldingAsync(b.Id, "000660", 5, 120000, null);
 
-        (await realRepository.GetDefaultAccountAsync())!.AccountNo.Should().Be("REAL-02");
-        (await virtualRepository.GetDefaultAccountAsync())!.AccountNo.Should().Be("VIRT-01");
-    }
-
-    [Fact]
-    public async Task Holdings_AreFilteredByConfiguredMode()
-    {
-        await using TestDatabase db = new();
-        var realRepository = new SqlitePortfolioRepository(db.Path, "real");
-        var virtualRepository = new SqlitePortfolioRepository(db.Path, "virtual");
-        await realRepository.InitializeAsync();
-
-        Account real = await realRepository.UpsertAccountAsync("REAL-01", "real-main", null, setDefault: false);
-        Account virtualAccount = await virtualRepository.UpsertAccountAsync("VIRT-01", "virtual-main", null, setDefault: false);
-        await realRepository.SetHoldingAsync(real.Id, "005930", 3, 70000, null);
-        await virtualRepository.SetHoldingAsync(virtualAccount.Id, "000660", 5, 120000, null);
-
-        (await realRepository.ListAllHoldingsAsync()).Should().ContainSingle(h => h.Symbol == "005930");
-        (await virtualRepository.ListAllHoldingsAsync()).Should().ContainSingle(h => h.Symbol == "000660");
-        (await realRepository.FindAccountsHoldingAsync("000660")).Should().BeEmpty();
-        (await virtualRepository.FindAccountsHoldingAsync("005930")).Should().BeEmpty();
-    }
-
-    [Fact]
-    public async Task UpsertAccountAsync_RejectsCrossModeAccountNoCollision()
-    {
-        // Migration v6 keeps account_no UNIQUE column-level (table-rebuild avoided);
-        // cross-mode upserts must surface as explicit errors, not silent mode flips.
-        await using TestDatabase db = new();
-        var realRepository = new SqlitePortfolioRepository(db.Path, "real");
-        var virtualRepository = new SqlitePortfolioRepository(db.Path, "virtual");
-        await realRepository.InitializeAsync();
-
-        await realRepository.UpsertAccountAsync("SHARED-01", "주식", null, setDefault: false);
-
-        Func<Task> act = () => virtualRepository.UpsertAccountAsync("SHARED-01", "모의", null, setDefault: false);
-
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*mode='real'*");
-
-        // Original row stays real-mode and visible in real mode only.
-        Account? stillReal = await realRepository.GetAccountByIdentifierAsync("SHARED-01");
-        stillReal!.Mode.Should().Be("real");
-        (await virtualRepository.ListAccountsAsync()).Should().BeEmpty();
-    }
-
-    [Theory]
-    [InlineData("virtual", "virtual")]
-    [InlineData("paper", "virtual")]
-    [InlineData("mock", "virtual")]
-    [InlineData("sandbox", "virtual")]
-    [InlineData("test", "virtual")]
-    [InlineData("real", "real")]
-    [InlineData("prod", "real")]
-    [InlineData("production", "real")]
-    [InlineData("live", "real")]
-    [InlineData("", "real")]
-    [InlineData(null, "real")]
-    [InlineData("garbage", "real")]
-    public void NormalizeAccountMode_AcceptsLsMarketAliases(string? input, string expected)
-    {
-        // Repository delegates to LsMarketExtensions.Parse so the credentials
-        // resolver and the account repository agree on the same canonical mode.
-        SqlitePortfolioRepository.NormalizeAccountMode(input).Should().Be(expected);
+        IReadOnlyList<Holding> all = await repository.ListAllHoldingsAsync();
+        all.Should().HaveCount(2);
+        all.Select(h => h.Symbol).Should().BeEquivalentTo(["005930", "000660"]);
     }
 
     [Fact]

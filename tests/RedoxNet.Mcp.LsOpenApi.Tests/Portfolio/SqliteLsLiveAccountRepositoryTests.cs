@@ -117,49 +117,39 @@ public sealed class SqliteLsLiveAccountRepositoryTests
     }
 
     [Fact]
-    public async Task MigrationV7_BackfillsPreExistingBrokerLsRowFromPaperTable()
+    public async Task Migrations_ProduceCleanV8EndState()
     {
-        // v1.6 dev shipped auto-discovery that wrote broker='LS' rows into
-        // the paper-portfolio `accounts` table. Migration v7 moves those
-        // rows to `ls_accounts` and removes the originals so paper / live
-        // stay physically separate going forward. Migrations apply only
-        // when their version is greater than the current `_schema_version`,
-        // so the test simulates pre-v7 state by stopping migrations at v6
-        // (writing the broker='LS' row directly via SQL) then opening a
-        // fresh repository pair to let v7 land.
+        // v1.6 release-prep migrations (v6→v7→v8) cascade on first init.
+        // v6 added accounts.mode; v7 moved auto-discovered broker='LS'
+        // rows from `accounts` to the new `ls_accounts` table; v8 dropped
+        // the now-dead mode column and re-keyed the nickname uniqueness
+        // back to a single-column index. Pinning the end-state ensures
+        // a fresh install lands on the v8 schema directly without
+        // intermediate breakage.
         await using Scratch s = new();
         await s.PaperRepo.InitializeAsync();
-        // After InitializeAsync the migrations table has v7 logged. Roll
-        // it back by deleting the v7 marker and dropping ls_accounts so
-        // the next init reapplies v7's backfill INSERT against a paper
-        // row we plant directly.
-        await using (var conn = new SqliteConnection($"Data Source={s.DbPath}"))
-        {
-            await conn.OpenAsync();
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = """
-                DELETE FROM _schema_version WHERE version = 7;
-                DROP TABLE IF EXISTS ls_accounts;
-                INSERT INTO accounts(account_no, nickname, broker, mode, is_default)
-                VALUES ('12345-67890', 'LS-real-12345', 'LS', 'real', 0);
-                """;
-            await cmd.ExecuteNonQueryAsync();
-        }
 
-        // Fresh repo pair on the same file → migrations replay from v7
-        // forward, backfilling our planted row into ls_accounts.
-        var freshPaper = new SqlitePortfolioRepository(s.DbPath, "real");
-        var freshLive = new SqliteLsLiveAccountRepository(freshPaper, s.DbPath);
-        await freshLive.InitializeAsync();
+        // accounts.mode column is gone (v8 ALTER DROP COLUMN).
+        await using var conn = new SqliteConnection($"Data Source={s.DbPath}");
+        await conn.OpenAsync();
+        using var pragma = conn.CreateCommand();
+        pragma.CommandText = "SELECT name FROM pragma_table_info('accounts');";
+        using var reader = await pragma.ExecuteReaderAsync();
+        var columns = new List<string>();
+        while (await reader.ReadAsync())
+            columns.Add(reader.GetString(0));
+        columns.Should().NotContain("mode", "v8 migration drops the dead mode column from paper portfolios");
+        columns.Should().Contain(["account_no", "nickname", "broker", "is_default"]);
 
-        LsLiveAccount? migrated = await freshLive.GetByModeAsync("real");
-        migrated.Should().NotBeNull();
-        migrated!.AccountNo.Should().Be("12345-67890");
-        migrated.Nickname.Should().Be("LS-real-12345");
-
-        // And the source row in `accounts` is gone — paper table is paper-only.
-        IReadOnlyList<Account> paperAfter = await freshPaper.ListAccountsAsync();
-        paperAfter.Should().NotContain(a => a.Broker == "LS");
+        // ls_accounts table exists, mode-keyed.
+        await reader.DisposeAsync();
+        using var lsPragma = conn.CreateCommand();
+        lsPragma.CommandText = "SELECT name FROM pragma_table_info('ls_accounts');";
+        using var lsReader = await lsPragma.ExecuteReaderAsync();
+        var lsColumns = new List<string>();
+        while (await lsReader.ReadAsync())
+            lsColumns.Add(lsReader.GetString(0));
+        lsColumns.Should().Contain(["account_no", "mode", "nickname"], "live registry stays mode-keyed");
     }
 
     sealed class Scratch : IAsyncDisposable
@@ -170,7 +160,7 @@ public sealed class SqliteLsLiveAccountRepositoryTests
             _directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "mcp-lsopenapi-live-repo-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(_directory);
             DbPath = System.IO.Path.Combine(_directory, "portfolio.db");
-            PaperRepo = new SqlitePortfolioRepository(DbPath, "real");
+            PaperRepo = new SqlitePortfolioRepository(DbPath);
             Repo = new SqliteLsLiveAccountRepository(PaperRepo, DbPath);
         }
 

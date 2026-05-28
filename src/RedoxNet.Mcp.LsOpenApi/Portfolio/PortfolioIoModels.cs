@@ -26,7 +26,6 @@ internal sealed class AccountExportDto
     public string AccountNumber { get; set; } = "";
     public string Nickname { get; set; } = "";
     public string Broker { get; set; } = "";
-    public string Mode { get; set; } = "real";
     public bool IsDefault { get; set; }
     public string CreatedAt { get; set; } = "";
     public List<HoldingExportDto> Holdings { get; set; } = new();

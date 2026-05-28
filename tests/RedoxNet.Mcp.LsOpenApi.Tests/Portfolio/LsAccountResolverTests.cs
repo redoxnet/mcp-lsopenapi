@@ -39,7 +39,7 @@ public sealed class LsAccountResolverTests
         // in `accounts`, live in `ls_accounts`, and the resolver only
         // reads the latter.
         await using ResolverScratch db = new();
-        var paper = new SqlitePortfolioRepository(db.Path, "real");
+        var paper = new SqlitePortfolioRepository(db.Path);
         await paper.InitializeAsync();
         await paper.UpsertAccountAsync("유안타-001", "유안타", "유안타증권", setDefault: true);
         await paper.UpsertAccountAsync("카카오페이-001", "카카오페이", "카카오페이증권", setDefault: false);
@@ -156,7 +156,7 @@ public sealed class LsAccountResolverTests
     public async Task GetRegisteredAsync_DoesNotLeakAcrossModes()
     {
         await using ResolverScratch db = new();
-        var paper = new SqlitePortfolioRepository(db.Path, "real");
+        var paper = new SqlitePortfolioRepository(db.Path);
         await paper.InitializeAsync();
         ILsLiveAccountRepository live = new SqliteLsLiveAccountRepository(paper, db.Path);
 
@@ -171,7 +171,7 @@ public sealed class LsAccountResolverTests
 
     static ILsLiveAccountRepository NewLive(ResolverScratch db)
     {
-        var paper = new SqlitePortfolioRepository(db.Path, "real");
+        var paper = new SqlitePortfolioRepository(db.Path);
         return new SqliteLsLiveAccountRepository(paper, db.Path);
     }
 

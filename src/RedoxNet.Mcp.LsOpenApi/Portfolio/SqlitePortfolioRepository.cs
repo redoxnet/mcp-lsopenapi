@@ -1,8 +1,7 @@
-﻿using Dapper;
+using Dapper;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using RedoxNet.LsOpenApi.Core.Auth;
 
 namespace RedoxNet.Mcp.LsOpenApi.Portfolio;
 
@@ -22,12 +21,6 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
 
     /// <summary>Environment variable used to override the default database path.</summary>
     public const string DatabasePathEnvVar = "LSOPENAPI_DB_PATH";
-    /// <summary>
-    /// Single env var that selects real vs virtual account mode. Same variable
-    /// the LS credentials resolver reads — keeps account routing in lockstep
-    /// with the API endpoint we authenticate against.
-    /// </summary>
-    public const string MarketEnvVar = LsCredentials.MarketEnvVar;
     /// <summary>
     /// Default relative directory under the user local app data folder. Matches
     /// <c>LsTokenCache</c> so portfolio.db sits next to token.db.
@@ -207,28 +200,63 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
 
             DELETE FROM accounts WHERE broker = 'LS';
             """),
+        (8, """
+            -- v1.6 post-E2E correction (mode-agnostic paper): the v6 migration
+            -- added accounts.mode to keep real/virtual paper portfolios
+            -- separate, but paper portfolios are LS-independent by nature
+            -- (the user manually tracks multi-broker positions; LS_MARKET only
+            -- declares which LS appkey pair is currently loaded). With the
+            -- v7 schema-split moving live LS labels into ls_accounts, the
+            -- mode column on `accounts` became dead data — and worse, it
+            -- silently hid the user's paper portfolios when LS_MARKET was
+            -- swapped, breaking mental model continuity. v8 drops the
+            -- mode-keyed indexes, defensively disambiguates any duplicate
+            -- nicknames left over from v6's cross-mode tolerance, restores
+            -- a single nickname-only UNIQUE constraint, and drops the
+            -- column. See docs/LS-API-QUIRKS.md and RELEASENOTES.Mcp.md
+            -- v1.6.0 for the user-facing contract.
+            DROP INDEX IF EXISTS idx_accounts_nickname_mode;
+            DROP INDEX IF EXISTS idx_accounts_mode_default;
+
+            -- Defensive: if a user upserted the same nickname in both modes
+            -- under v6, collapse to one. Keep the lowest id; suffix others
+            -- with the mode tag so no information is lost outright.
+            UPDATE accounts
+               SET nickname = nickname || ' (' || mode || ')'
+             WHERE id IN (
+                SELECT a2.id
+                  FROM accounts a1
+                  JOIN accounts a2
+                    ON a1.nickname = a2.nickname AND a1.id < a2.id
+             );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_nickname ON accounts(nickname);
+            CREATE INDEX IF NOT EXISTS idx_accounts_default ON accounts(is_default, id);
+
+            -- ALTER TABLE DROP COLUMN landed in SQLite 3.35 (March 2021);
+            -- Microsoft.Data.Sqlite 8.x bundles a newer engine, so this is
+            -- safe at our target framework. The column is dead data once
+            -- the indexes above are gone.
+            ALTER TABLE accounts DROP COLUMN mode;
+            """),
     ];
 
     readonly string _databasePath;
     readonly string _connectionString;
-    readonly string _accountMode;
     readonly ILogger<SqlitePortfolioRepository> _logger;
     readonly SemaphoreSlim _initLock = new(1, 1);
     bool _initialized;
 
     /// <summary>
     /// Creates a repository backed by the specified SQLite database path.
+    /// Paper portfolios are LS-mode agnostic (v8 migration onward); the
+    /// live LS broker registry — which is mode-keyed — lives in
+    /// <see cref="SqliteLsLiveAccountRepository"/>.
     /// </summary>
     public SqlitePortfolioRepository(string databasePath, ILogger<SqlitePortfolioRepository>? logger = null)
-        : this(databasePath, ResolveAccountModeFromEnvironment(), logger)
-    {
-    }
-
-    internal SqlitePortfolioRepository(string databasePath, string accountMode, ILogger<SqlitePortfolioRepository>? logger = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
         _databasePath = databasePath;
-        _accountMode = NormalizeAccountMode(accountMode);
         _connectionString = new SqliteConnectionStringBuilder
         {
             DataSource = databasePath,
@@ -256,17 +284,6 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
         return Path.Combine(baseDir, DefaultRelativeDirectory.Replace('/', Path.DirectorySeparatorChar), DefaultFileName);
     }
 
-    internal static string ResolveAccountModeFromEnvironment() =>
-        NormalizeAccountMode(Environment.GetEnvironmentVariable(MarketEnvVar));
-
-    /// <summary>
-    /// Canonicalises a market string ("real" or "virtual"). Delegates to
-    /// <see cref="LsMarketExtensions.Parse"/> so aliases (paper / mock /
-    /// sandbox / test / prod / live) resolve the same way as the credentials
-    /// resolver — keeps API endpoint and account routing in sync.
-    /// </summary>
-    internal static string NormalizeAccountMode(string? mode) =>
-        LsMarketExtensions.Parse(mode).ToCanonical();
 
     /// <inheritdoc />
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
@@ -523,14 +540,13 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
         await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         const string sql = """
             SELECT a.account_no AS AccountNumber, a.nickname AS Nickname, a.broker AS Broker,
-                   a.mode AS Mode, a.is_default AS IsDefault,
+                   a.is_default AS IsDefault,
                    (SELECT COUNT(*) FROM holdings h WHERE h.account_id = a.id) AS HoldingsCount
             FROM accounts a
-            WHERE a.mode = @Mode
             ORDER BY a.is_default DESC, a.id ASC;
             """;
         IEnumerable<AccountSummary> rows = await connection.QueryAsync<AccountSummary>(
-            new CommandDefinition(sql, new { Mode = _accountMode }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            new CommandDefinition(sql, cancellationToken: cancellationToken)).ConfigureAwait(false);
         return rows.ToList();
     }
 
@@ -540,8 +556,8 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
         await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
         await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         IEnumerable<Account> rows = await connection.QueryAsync<Account>(
-            new CommandDefinition(AccountSelectSql + " WHERE a.mode = @Mode ORDER BY a.is_default DESC, a.id ASC;",
-                new { Mode = _accountMode }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            new CommandDefinition(AccountSelectSql + " ORDER BY a.is_default DESC, a.id ASC;",
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
         return rows.ToList();
     }
 
@@ -550,7 +566,7 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
     {
         await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
         await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        return await GetDefaultAccountAsync(connection, _accountMode, cancellationToken).ConfigureAwait(false);
+        return await GetDefaultAccountAsync(connection, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -559,7 +575,7 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
         await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
         string trimmed = NormalizeName(identifier, nameof(identifier));
         await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        return await GetAccountByIdentifierAsync(connection, trimmed, _accountMode, cancellationToken).ConfigureAwait(false);
+        return await GetAccountByIdentifierAsync(connection, trimmed, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -568,56 +584,38 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
         await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
         string normalizedAccountNumber = NormalizeName(accountNumber, nameof(accountNumber));
         string normalizedNickname = NormalizeName(nickname, nameof(nickname));
-        string normalizedBroker = NullIfWhiteSpace(broker) ?? "LS";
+        string normalizedBroker = NullIfWhiteSpace(broker) ?? "paper";
 
         await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
-        // account_no carries a column-level UNIQUE constraint from migration v1
-        // (SQLite can't drop it without a table rebuild). To prevent a same-number
-        // upsert in one mode from silently re-classifying a row owned by the other
-        // mode, refuse cross-mode collisions explicitly. In practice LS issues
-        // distinct numbers for real vs virtual, so this guard only fires on user
-        // error (e.g. typo while testing).
-        string? existingMode = await connection.ExecuteScalarAsync<string?>(new CommandDefinition(
-            "SELECT mode FROM accounts WHERE account_no = @AccountNumber;",
-            new { AccountNumber = normalizedAccountNumber },
-            transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
-        if (existingMode is not null && !string.Equals(existingMode, _accountMode, StringComparison.Ordinal))
-        {
-            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            throw new InvalidOperationException(
-                $"Account '{normalizedAccountNumber}' already exists with mode='{existingMode}'. " +
-                $"Switch LS_MARKET to '{existingMode}' before upserting, or use a different account number.");
-        }
-
         await connection.ExecuteAsync(new CommandDefinition(
             """
-            INSERT INTO accounts(account_no, nickname, broker, mode, is_default)
-            VALUES (@AccountNumber, @Nickname, @Broker, @Mode, 0)
+            INSERT INTO accounts(account_no, nickname, broker, is_default)
+            VALUES (@AccountNumber, @Nickname, @Broker, 0)
             ON CONFLICT(account_no) DO UPDATE SET
                 nickname = excluded.nickname,
                 broker = excluded.broker;
             """,
-            new { AccountNumber = normalizedAccountNumber, Nickname = normalizedNickname, Broker = normalizedBroker, Mode = _accountMode },
+            new { AccountNumber = normalizedAccountNumber, Nickname = normalizedNickname, Broker = normalizedBroker },
             transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         // Promote to default if requested OR if no default currently exists.
         int existingDefaults = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
-            "SELECT COUNT(*) FROM accounts WHERE mode = @Mode AND is_default = 1;",
-            new { Mode = _accountMode }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            "SELECT COUNT(*) FROM accounts WHERE is_default = 1;",
+            transaction: transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
         bool promote = setDefault || existingDefaults == 0;
         if (promote)
         {
             await connection.ExecuteAsync(new CommandDefinition(
-                "UPDATE accounts SET is_default = CASE WHEN account_no = @AccountNumber THEN 1 ELSE 0 END WHERE mode = @Mode;",
-                new { AccountNumber = normalizedAccountNumber, Mode = _accountMode },
+                "UPDATE accounts SET is_default = CASE WHEN account_no = @AccountNumber THEN 1 ELSE 0 END;",
+                new { AccountNumber = normalizedAccountNumber },
                 transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
         }
 
         Account result = await connection.QuerySingleAsync<Account>(new CommandDefinition(
-            AccountSelectSql + " WHERE a.account_no = @AccountNumber AND a.mode = @Mode;",
-            new { AccountNumber = normalizedAccountNumber, Mode = _accountMode }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            AccountSelectSql + " WHERE a.account_no = @AccountNumber;",
+            new { AccountNumber = normalizedAccountNumber }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         return result;
     }
@@ -650,14 +648,14 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
         if (account.IsDefault)
         {
             Account? heir = await connection.QuerySingleOrDefaultAsync<Account>(new CommandDefinition(
-                AccountSelectSql + " WHERE a.mode = @Mode ORDER BY a.id ASC LIMIT 1;",
-                new { account.Mode }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+                AccountSelectSql + " ORDER BY a.id ASC LIMIT 1;",
+                transaction: transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
             if (heir is not null)
             {
                 await connection.ExecuteAsync(new CommandDefinition(
-                    "UPDATE accounts SET is_default = CASE WHEN id = @Id THEN 1 ELSE 0 END WHERE mode = @Mode;",
-                    new { heir.Id, heir.Mode }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
-                newDefault = new AccountInfo(heir.AccountNo, heir.Nickname, heir.Broker, IsDefault: true, Mode: heir.Mode);
+                    "UPDATE accounts SET is_default = CASE WHEN id = @Id THEN 1 ELSE 0 END;",
+                    new { heir.Id }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+                newDefault = new AccountInfo(heir.AccountNo, heir.Nickname, heir.Broker, IsDefault: true);
             }
         }
 
@@ -674,8 +672,8 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         await connection.ExecuteAsync(new CommandDefinition(
-            "UPDATE accounts SET is_default = CASE WHEN id = @Id THEN 1 ELSE 0 END WHERE mode = @Mode;",
-            new { account.Id, account.Mode }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            "UPDATE accounts SET is_default = CASE WHEN id = @Id THEN 1 ELSE 0 END;",
+            new { account.Id }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         Account updated = await connection.QuerySingleAsync<Account>(new CommandDefinition(
             AccountSelectSql + " WHERE a.id = @Id;",
@@ -692,8 +690,8 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
         string normalizedTo = NormalizeName(toBroker, nameof(toBroker));
         await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         int affected = await connection.ExecuteAsync(new CommandDefinition(
-            "UPDATE accounts SET broker = @To WHERE broker = @From AND mode = @Mode;",
-            new { From = normalizedFrom, To = normalizedTo, Mode = _accountMode },
+            "UPDATE accounts SET broker = @To WHERE broker = @From;",
+            new { From = normalizedFrom, To = normalizedTo },
             cancellationToken: cancellationToken)).ConfigureAwait(false);
         return new RenameBrokerResult(normalizedFrom, normalizedTo, affected);
     }
@@ -707,10 +705,10 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
         IEnumerable<Account> rows = await connection.QueryAsync<Account>(new CommandDefinition(
             AccountSelectSql + """
              JOIN holdings h ON h.account_id = a.id
-             WHERE h.symbol = @Symbol AND a.mode = @Mode
+             WHERE h.symbol = @Symbol
              ORDER BY a.is_default DESC, a.id ASC;
             """,
-            new { Symbol = normalizedSymbol, Mode = _accountMode }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            new { Symbol = normalizedSymbol }, cancellationToken: cancellationToken)).ConfigureAwait(false);
         return rows.ToList();
     }
 
@@ -890,11 +888,9 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
                    h.quantity AS Quantity, h.avg_price AS AvgPriceFr, h.notes AS Notes, h.updated_at AS UpdatedAt
             FROM holdings h
             JOIN stocks s ON s.symbol = h.symbol
-            JOIN accounts a ON a.id = h.account_id
-            WHERE a.mode = @Mode
             ORDER BY h.account_id, h.updated_at DESC, h.symbol;
             """,
-            new { Mode = _accountMode }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            cancellationToken: cancellationToken)).ConfigureAwait(false);
         return rows.ToList();
     }
 
@@ -1153,7 +1149,6 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
                 AccountNumber = a.AccountNo,
                 Nickname = a.Nickname,
                 Broker = a.Broker,
-                Mode = a.Mode,
                 IsDefault = a.IsDefault,
                 CreatedAt = a.CreatedAt,
                 Holdings = holdingsByAccount.TryGetValue(a.Id, out List<Holding>? hs)
@@ -1233,16 +1228,16 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
         // these lookups still happen but every set is empty post-wipe, so the
         // duplicate paths short-circuit naturally.
         HashSet<string> existingAccountNumbers = new(StringComparer.Ordinal);
-        HashSet<string> existingNicknamesByMode = new(StringComparer.Ordinal);
+        HashSet<string> existingNicknames = new(StringComparer.Ordinal);
         Dictionary<string, long> accountIdByNumber = new(StringComparer.Ordinal);
 
         IEnumerable<AccountIdentityRow> accountRows = await connection.QueryAsync<AccountIdentityRow>(new CommandDefinition(
-            "SELECT account_no AS AccountNo, nickname AS Nickname, mode AS Mode, id AS Id FROM accounts;",
+            "SELECT account_no AS AccountNo, nickname AS Nickname, id AS Id FROM accounts;",
             transaction: transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
         foreach (AccountIdentityRow row in accountRows)
         {
             existingAccountNumbers.Add(row.AccountNo);
-            existingNicknamesByMode.Add(AccountModeKey(row.Nickname, row.Mode));
+            existingNicknames.Add(row.Nickname);
             accountIdByNumber[row.AccountNo] = row.Id;
         }
 
@@ -1265,8 +1260,7 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
                     holdingSkips.Add(new HoldingSkip(acc.AccountNumber, h.Shcode, "skipped_account_holdings_kept"));
                 continue;
             }
-            string accountMode = NormalizeAccountMode(acc.Mode);
-            if (existingNicknamesByMode.Contains(AccountModeKey(acc.Nickname, accountMode)))
+            if (existingNicknames.Contains(acc.Nickname))
             {
                 accountSkips.Add(new AccountSkip(acc.AccountNumber, acc.Nickname, "duplicate_nickname"));
                 foreach (HoldingExportDto h in acc.Holdings)
@@ -1277,22 +1271,21 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
             string createdAt = string.IsNullOrWhiteSpace(acc.CreatedAt) ? CurrentSqliteTimestamp() : acc.CreatedAt;
             await connection.ExecuteAsync(new CommandDefinition(
                 """
-                INSERT INTO accounts(account_no, nickname, broker, mode, is_default, created_at)
-                VALUES (@AccountNumber, @Nickname, @Broker, @Mode, @IsDefault, @CreatedAt);
+                INSERT INTO accounts(account_no, nickname, broker, is_default, created_at)
+                VALUES (@AccountNumber, @Nickname, @Broker, @IsDefault, @CreatedAt);
                 """,
                 new
                 {
                     acc.AccountNumber,
                     acc.Nickname,
-                    Broker = string.IsNullOrWhiteSpace(acc.Broker) ? "LS" : acc.Broker,
-                    Mode = accountMode,
+                    Broker = string.IsNullOrWhiteSpace(acc.Broker) ? "paper" : acc.Broker,
                     IsDefault = acc.IsDefault ? 1 : 0,
                     CreatedAt = createdAt,
                 },
                 transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
             importedAccounts++;
             existingAccountNumbers.Add(acc.AccountNumber);
-            existingNicknamesByMode.Add(AccountModeKey(acc.Nickname, accountMode));
+            existingNicknames.Add(acc.Nickname);
 
             long accountId = await connection.ExecuteScalarAsync<long>(new CommandDefinition(
                 "SELECT id FROM accounts WHERE account_no = @AccountNumber;",
@@ -1469,7 +1462,6 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
     {
         public string AccountNo { get; init; } = "";
         public string Nickname { get; init; } = "";
-        public string Mode { get; init; } = "real";
         public long Id { get; init; }
     }
 
@@ -1603,40 +1595,39 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
     /// </summary>
     const string AccountSelectSql = """
         SELECT a.id AS Id, a.account_no AS AccountNo, a.nickname AS Nickname, a.broker AS Broker,
-               a.mode AS Mode, a.is_default AS IsDefault, a.created_at AS CreatedAt
+               a.is_default AS IsDefault, a.created_at AS CreatedAt
         FROM accounts a
         """;
 
     /// <summary>
     /// Gets the default account from an open connection. Returns null when no accounts exist.
     /// </summary>
-    static Task<Account?> GetDefaultAccountAsync(SqliteConnection connection, string accountMode, CancellationToken cancellationToken, System.Data.IDbTransaction? transaction = null) =>
+    static Task<Account?> GetDefaultAccountAsync(SqliteConnection connection, CancellationToken cancellationToken, System.Data.IDbTransaction? transaction = null) =>
         connection.QuerySingleOrDefaultAsync<Account>(new CommandDefinition(
-            AccountSelectSql + " WHERE a.mode = @Mode AND a.is_default = 1 ORDER BY a.id LIMIT 1;",
-            new { Mode = accountMode },
+            AccountSelectSql + " WHERE a.is_default = 1 ORDER BY a.id LIMIT 1;",
             transaction: transaction,
             cancellationToken: cancellationToken));
 
     /// <summary>
     /// Resolves an account by account_number, falling back to nickname when no number matches.
     /// </summary>
-    static async Task<Account?> GetAccountByIdentifierAsync(SqliteConnection connection, string identifier, string accountMode, CancellationToken cancellationToken, System.Data.IDbTransaction? transaction = null)
+    static async Task<Account?> GetAccountByIdentifierAsync(SqliteConnection connection, string identifier, CancellationToken cancellationToken, System.Data.IDbTransaction? transaction = null)
     {
         Account? byNumber = await connection.QuerySingleOrDefaultAsync<Account>(new CommandDefinition(
-            AccountSelectSql + " WHERE a.account_no = @Identifier AND a.mode = @Mode;",
-            new { Identifier = identifier, Mode = accountMode }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            AccountSelectSql + " WHERE a.account_no = @Identifier;",
+            new { Identifier = identifier }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
         if (byNumber is not null)
             return byNumber;
         return await connection.QuerySingleOrDefaultAsync<Account>(new CommandDefinition(
-            AccountSelectSql + " WHERE a.nickname = @Identifier AND a.mode = @Mode;",
-            new { Identifier = identifier, Mode = accountMode }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            AccountSelectSql + " WHERE a.nickname = @Identifier;",
+            new { Identifier = identifier }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
     /// <summary>
     /// Converts a repository Account to the MCP-facing AccountInfo shape.
     /// </summary>
     internal static AccountInfo ToAccountInfo(Account account) =>
-        new(account.AccountNo, account.Nickname, account.Broker, account.IsDefault, account.Mode);
+        new(account.AccountNo, account.Nickname, account.Broker, account.IsDefault);
 
     /// <summary>
     /// Gets a holding from an open connection.
@@ -1710,6 +1701,5 @@ internal sealed class SqlitePortfolioRepository : IPortfolioRepository
     /// </summary>
     static string? NullIfWhiteSpace(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-    static string AccountModeKey(string value, string mode) => $"{NormalizeAccountMode(mode)}\u001F{value}";
 }
 

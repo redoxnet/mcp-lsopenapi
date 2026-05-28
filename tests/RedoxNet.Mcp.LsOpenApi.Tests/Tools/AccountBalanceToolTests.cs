@@ -44,7 +44,7 @@ public sealed class AccountBalanceToolTests
     [Fact]
     public async Task Balance_RealMode_HitsCSPAQ12200_AndCarriesValuationFields()
     {
-        await using LiveAccountScratch scratch = new("real", LsMarket.Real, scope: "bal");
+        await using LiveAccountScratch scratch = new(LsMarket.Real, scope: "bal");
         await scratch.SeedLiveAccount("12345-01", nickname: "주식");
 
         HttpRequestMessage? capturedRequest = null;
@@ -91,7 +91,7 @@ public sealed class AccountBalanceToolTests
         // v1.6 correction: virtual mode does NOT route to CSPAQ22200 — that
         // was a misunderstanding of the LS docs. The appkey pair determines
         // which account answers; the TR code is the same.
-        await using LiveAccountScratch scratch = new("virtual", LsMarket.Virtual, scope: "bal-v");
+        await using LiveAccountScratch scratch = new(LsMarket.Virtual, scope: "bal-v");
         await scratch.SeedLiveAccount("999-01", nickname: "모의");
 
         HttpRequestMessage? capturedRequest = null;
@@ -126,7 +126,7 @@ public sealed class AccountBalanceToolTests
     [Fact]
     public async Task Balance_SurfacesBusinessLevelErrorWithTrCode()
     {
-        await using LiveAccountScratch scratch = new("real", LsMarket.Real, scope: "bal");
+        await using LiveAccountScratch scratch = new(LsMarket.Real, scope: "bal");
         await scratch.SeedLiveAccount("12345-01", nickname: "주식");
 
         const string errorBody = """{"rsp_cd":"IGW00012","rsp_msg":"계좌가 존재하지 않습니다."}""";
