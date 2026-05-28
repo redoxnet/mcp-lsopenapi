@@ -18,14 +18,13 @@ public sealed class ServerInstructionsTests
     {
         ServerInstructions.Text.Should().NotBeNullOrWhiteSpace();
         // A system-message-level instruction — comprehensive but not an essay.
-        // Budget bumped to 8000 in v1.5 to cover the fidelity-first chart
-        // narration + anti-synthesis paragraph (SPEC v1.5 §2.2 + §2.3),
-        // which replaces the v1.4 wrap-and-route fallback at roughly twice
-        // the length (~7400 chars total). The paragraph is a system-message
-        // contract; trimming it risks the model losing the
-        // anti-self-synthesis guidance that 2026-05-26 Codex empirical and
-        // Cowork height-customization scenarios both exposed.
-        ServerInstructions.Text.Length.Should().BeInRange(200, 8000);
+        // Budget bumped to 10000 in v1.6 to cover the two-sources
+        // disambiguation paragraph + v1.7 non-goal callout (SPEC v1.6 §4).
+        // The paragraph is a system-message contract; trimming it risks the
+        // model conflating ls_holdings_list (local paper) with
+        // ls_account_holdings (live broker) — the exact confusion the v1.6
+        // routing language is meant to prevent.
+        ServerInstructions.Text.Length.Should().BeInRange(200, 10000);
     }
 
     [Theory]
@@ -37,9 +36,15 @@ public sealed class ServerInstructionsTests
     [InlineData("web search")]                  // the routing-boundary keyword
     [InlineData("news")]                        // web-search side of the boundary
     [InlineData("why did it move")]             // narrative questions go to web search
-    [InlineData("does not provide")]            // the explicit out-of-scope statement
-    [InlineData("order placement")]             // trading is out of scope
-    [InlineData("local manual notes")]          // portfolio scope is local-only
+    [InlineData("does not provide news")]       // news discovery still out of scope (v1.6 narrowed wording)
+    [InlineData("Order placement is NOT supported in v1.6")] // v1.6 explicitly defers placement to v1.7
+    [InlineData("ls_holdings_list")]            // local-portfolio entry point (v1.6 disambiguation anchor)
+    [InlineData("ls_account_holdings")]         // LS-live entry point (v1.6 disambiguation anchor)
+    [InlineData("TWO distinct sources")]        // the routing instruction the v1.6 paragraph builds (v1.6)
+    [InlineData("read-only inquiry")]           // v1.6 scope statement (v1.6)
+    [InlineData("LS_MARKET")]                   // mode-routing anchor (v1.6)
+    [InlineData("모의투자")]                     // virtual / paper account label users actually type (v1.6)
+    [InlineData("paper portfolio")]             // local-source positioning preserved across rewording
     [InlineData("ls_list_screeners")]           // Q-Click discovery entry point (v1.4)
     [InlineData("ls_combine_screeners")]        // compound AND/OR screening (v1.4)
     [InlineData("LS-curated catalog")]          // catalog provenance is curated, not user-saved (v1.4)
