@@ -131,6 +131,17 @@ You need an **AppKey** and **AppSecretKey** pair issued by LS Securities to use 
    - The **AppSecretKey is shown only once** at issuance — store it in a password manager (1Password, Bitwarden, etc.) immediately.
 4. Use `LS_MARKET=real` for normal read-only market data. The server still accepts `LS_MARKET=virtual` for LS mock-account workflows, but quote/chart/screener data is served from the same LS OpenAPI host and `real` is the default.
 
+### Real vs virtual (모의투자): separate AppKey pairs
+
+LS issues **two separate AppKey / AppSecretKey pairs** — one for the real (실투) account and one for the virtual (모의투자) account. They are issued from the same portal page (**LS Securities → 고객센터 → 매매시스템 → API** for the Korean menu): the `Open API` radio gives a real pair, the `모의투자 Open API` radio gives a virtual pair. The REST endpoint is identical for both — `https://openapi.ls-sec.co.kr:8080` — so the appkey pair itself determines which account answers a TR call. See [LS-API-QUIRKS §4.2d](docs/LS-API-QUIRKS.md) for the full explanation.
+
+What this means for `LS_MARKET`:
+- It is **informational and labelling** — tags rows in `portfolio.db` so a real-mode registration and a virtual-mode registration don't collide.
+- It does **NOT** switch the REST endpoint or otherwise route differently.
+- Set it to match the loaded appkey pair: `real` when `LS_APPKEY` is the real-account pair, `virtual` when it's the mock pair. A mismatch (real key + `LS_MARKET=virtual`) won't break anything — the broker still answers with the real account — but the auto-discovered nickname will read `LS-virtual-{acntno}` which is confusing later. The model can guide the user to rename via `ls_account(action="upsert")`.
+
+To switch between modes in practice, swap the appkey pair in your host config and restart the MCP server.
+
 ### Security Notes
 
 - Never commit the AppSecretKey to git or share it in chat transcripts. Store it in GitHub Secrets for CI workflows, or in your machine's environment variables for local use.
