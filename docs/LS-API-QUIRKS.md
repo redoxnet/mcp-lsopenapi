@@ -44,6 +44,39 @@ appears in **broker names** (`"I B K"` instead of `IBK`) from `t3401`
 
 ---
 
+### 1.2 OutBlock numeric field-width (`N.M`) widening is a no-op for us ✅
+
+**TRs (observed notices):** `t1511`, `t8402`, `t1633` (LS notice 2026-06-13,
+index/program `N.2` `6/7.2 → 10.2`); `t1901`–`t1904` (LS notice 2026-05-19,
+ETF `nav` family `8/9.2 → 12.2`). The same pattern recurs whenever an index
+or NAV outgrows its old digit ceiling.
+
+LS periodically widens the declared size of OutBlock numeric fields (e.g.
+`pricejisu` `7.2 → 10.2` = max `99999.99` → `9999999999.99`) and asks
+clients to "change their TR." **No action is required on our side.** All our
+numeric parsing is JSON → `double`/`long` via the defensive readers in
+`JsonElementExtensions` (`ReadDouble`/`ReadLong`, `NumberStyles.Any` +
+`InvariantCulture`). There is **no fixed-width / substring / column-offset
+parsing, no max-value validation, no clamping, and no fixed-width format
+string** anywhere in the numeric path. `TrCatalog.json` declares these fields
+by `type` (`double`/`char`/`long`), not by width, so the catalog needs no
+edit either.
+
+The `N.M` notation is a fixed-width *wire-protocol* contract (relevant to
+clients that byte-slice the legacy fixed-length response); the REST/JSON
+surface we consume is width-agnostic. `t8402` is not in our catalog or code
+at all.
+
+The only thing worth a glance on such a notice is **display-side** width
+assumptions (chart-axis tick formats, fixed-digit table columns) — none exist
+for these fields as of v1.6.
+
+**Status:** ✅ verified no-impact for the 2026-05/06 notices (this is the
+inverse of §1.1 — there the fixed-width contract *does* leak into the JSON
+`hname` value; numeric `N.M` sizes do not).
+
+---
+
 ## 2. Catalog & classification
 
 ### 2.1 `t8424` returns far more than 업종 ✅
