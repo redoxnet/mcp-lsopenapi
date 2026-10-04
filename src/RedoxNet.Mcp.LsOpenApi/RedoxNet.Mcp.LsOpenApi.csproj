@@ -11,7 +11,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 
-    <Version>1.6.0</Version>
+    <Version>1.6.1</Version>
     <PackageId>RedoxNet.Mcp.LsOpenApi</PackageId>
 	<Authors>Jong Hyun Kim</Authors>
     <Company>RedoxNet</Company>
@@ -24,7 +24,7 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>icon.png</PackageIcon>
     <Copyright>Copyright (c) 2026 RedoxNet</Copyright>
-    <PackageReleaseNotes>v1.6.0 — Account inquiry family + schema-split live registry. Ten new ls_account_* MCP tools (read-only inquiry against the appkey-bound LS broker account): holdings, orders, balance, bep, credit_limit, max_order_qty, order_history, transactions, performance, daily_pnl. Surface 40→50 standard / 43→53 all. portfolio.db now keeps paper portfolios (accounts table — broker is purely a display label) and the auto-discovered live LS row (new ls_accounts table) in physically separate stores so a paper "LS증권" label never shadows the live broker echo. BREAKING: ls_account(action="list") returns {paper_accounts, live_accounts}; ls_account_* tools drop the `account` parameter (LS account-inquiry TRs are appkey-routed server-side, not client-selectable). New ls_account(action="set_live_nickname"). LS REST endpoint is identical for real and virtual modes — only the appkey pair distinguishes them. Lockstep with RedoxNet.LsOpenApi.Core 1.6.0. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Mcp.md.</PackageReleaseNotes>
+    <PackageReleaseNotes>v1.6.1 — Adjusted KR chart prices + t8407 fix. ls_get_chart (day/week/month/year) now requests adjusted prices (수정주가). Before this release LS's t8410 defaulted to unadjusted because the server never sent sujung, so splits and bonus issues showed as price cliffs and skewed indicators. Behaviour change: pre-corporate-action KR candles now differ from 1.6.0. New optional `adjusted` parameter on ls_get_chart (default true, matching ls_get_overseas_chart); follow-up ls_add_indicator / ls_reframe_chart inherit it from the dataset. ls_get_multi_quote and portfolio price enrichment now send t8407's real count field (nrec), so LS stops padding responses to 50 rows. Surface unchanged (50 standard / 53 all). Lockstep with RedoxNet.LsOpenApi.Core 1.6.1. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Mcp.md.</PackageReleaseNotes>
 
     <PackageType>McpServer</PackageType>
     <PackAsTool>true</PackAsTool>

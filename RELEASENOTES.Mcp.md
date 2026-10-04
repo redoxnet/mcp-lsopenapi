@@ -1,5 +1,67 @@
 ﻿# Release Notes — RedoxNet.Mcp.LsOpenApi
 
+## v1.6.1 (2026-10-04)
+
+**Adjusted KR chart prices + t8407 count-field fix.** LS renewed its API
+documentation site in 2026. A spec-by-spec audit of the 76 catalogued
+TRs against the new docs found no endpoint, path, or block-name changes.
+It did surface two long-standing request-shape errors in this server,
+both confirmed against live LS responses. No new tools.
+
+### Fixed — KR charts were unadjusted (`ls_get_chart` day/week/month/year)
+
+`t8410` takes a `sujung` (수정주가여부) input. The server never sent it,
+and LS treats a missing `sujung` as `N`, so every Korean daily, weekly,
+monthly, and yearly chart came back **unadjusted**. Splits and bonus
+issues showed up as price cliffs. Every indicator or summary window
+spanning the event (MA, RSI, Bollinger, `change_1y`) was wrong. Example:
+Samsung (005930) around its 2018-05 50:1 split had a 2018-04-27 close of
+**2,650,000** (unadjusted) instead of **53,000** (adjusted).
+
+`ls_get_chart` now sends `sujung` explicitly and defaults to adjusted
+prices. Volume is adjusted along with price; `value` (거래대금) is not.
+
+> **Behaviour change.** KR candles before a corporate action now differ
+> from v1.6.0 output, by design. Overseas charts (`ls_get_overseas_chart`)
+> were already adjusted by default and are unchanged.
+
+### Added — `adjusted` parameter on `ls_get_chart`
+
+Optional `adjusted` parameter (default `true`, matching
+`ls_get_overseas_chart`). Pass `false` only when the user asks for the
+actual historical traded prices. The flag is stored on the dataset, so
+follow-up `ls_add_indicator` / `ls_reframe_chart` calls on the same
+`dataset_id` refetch with the same setting. Minute (`t8412`) and tick
+(`t1301`) charts have no adjusted-price option at LS and are unaffected.
+
+### Fixed — `t8407` multi-quote count field (`nrec`)
+
+`ls_get_multi_quote` and the portfolio / watchlist price enrichment sent
+the stock count as `qrycnt`, but `t8407`'s field is `nrec`. LS ignored
+the unknown field and padded the response to 50 rows (blank `shcode`).
+Results were already correct because blank rows were filtered. The
+request now sends `nrec`, and LS returns exactly the requested rows.
+
+### Catalog
+
+`TrCatalog.json` (embedded in Core 1.6.1):
+- adds `t8410InBlock.sujung`;
+- renames `t8407InBlock.qrycnt` → `nrec`;
+- drops `t1102OutBlock.eps` (absent from live responses).
+
+`ls_describe_tr` reflects the corrected shapes.
+
+### Documentation
+
+`docs/LS-API-QUIRKS.md` adds §2.3 (`t8407` `nrec`) and §3.5 (`t8410`
+without `sujung` returns unadjusted prices, with the live comparison
+table).
+
+### Surface
+
+50 standard / 53 all (unchanged). `ls_get_chart` gains the optional
+`adjusted` parameter.
+
 ## v1.6.0 (2026-05-28)
 
 **Account inquiry family + schema-split live registry.** v1.6 introduces

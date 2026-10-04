@@ -1,5 +1,21 @@
 ﻿# Release Notes — RedoxNet.LsOpenApi.Core
 
+## v1.6.1 (2026-10-04)
+
+**Lockstep release with `RedoxNet.Mcp.LsOpenApi` 1.6.1 — catalog
+corrections.** The embedded `TrCatalog.json` changes after an audit
+against LS's renewed API docs, with each change confirmed against live
+responses:
+
+- `t8410InBlock` gains `sujung` (수정주가여부). LS treats a missing value
+  as `N` (unadjusted).
+- `t8407InBlock` count field renamed `qrycnt` → `nrec`. LS ignores
+  `qrycnt` and pads the response to 50 rows.
+- `t1102OutBlock.eps` removed; it is absent from live responses.
+
+No API or behaviour changes in Core itself. Full context in
+[`RELEASENOTES.Mcp.md`](RELEASENOTES.Mcp.md) v1.6.1.
+
 ## v1.6.0 (2026-05-28)
 
 **Lockstep release with `RedoxNet.Mcp.LsOpenApi` 1.6.0.** The v1.6 work
