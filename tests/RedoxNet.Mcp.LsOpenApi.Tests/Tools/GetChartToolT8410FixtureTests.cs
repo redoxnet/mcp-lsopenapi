@@ -84,7 +84,6 @@ public class GetChartToolT8410FixtureTests
     [InlineData("day", "2")]
     [InlineData("week", "3")]
     [InlineData("month", "4")]
-    [InlineData("year", "5")]
     public async Task GetChart_T8410_DispatchesGubunByPeriodType(string periodType, string expectedGubun)
     {
         var (client, handler) = TestClientFactory.Create((_, _) => Ok(TestbedT8410Response));
@@ -96,6 +95,42 @@ public class GetChartToolT8410FixtureTests
 
         string body = await handler.Requests[0].Content!.ReadAsStringAsync();
         body.Should().Contain($"\"gubun\":\"{expectedGubun}\"");
+        body.Should().NotContain("exchgubun");
+    }
+
+    [Fact]
+    public async Task GetChart_Year_DispatchesT8451PinnedToKrxAndParsesCandles()
+    {
+        // t8410 answers gubun=5 with rsp_msg "해당자료가 없습니다" and no rows
+        // (LS-API-QUIRKS §3.6), so year bars come from the unified-market t8451.
+        const string t8451Year = """
+        {
+          "rsp_cd": "00000",
+          "rsp_msg": "정상적으로 조회가 완료되었습니다.",
+          "t8451OutBlock": { "shcode": "005930", "cts_date": "", "rec_count": 2 },
+          "t8451OutBlock1": [
+            { "date": "20251230", "open": 53000, "high": 121300, "low": 49900, "close": 120400, "jdiff_vol": 1000, "value": 500, "sign": "2", "rate": "0.00", "ratevalue": 0, "jongchk": 0, "pricechk": 0 },
+            { "date": "20261002", "open": 120500, "high": 374500, "low": 118000, "close": 276000, "jdiff_vol": 2000, "value": 900, "sign": "2", "rate": "0.00", "ratevalue": 0, "jongchk": 0, "pricechk": 0 }
+          ]
+        }
+        """;
+        var (client, handler) = TestClientFactory.Create((_, _) => Ok(t8451Year));
+
+        string result = await GetChartTool.GetChart(
+            client, "005930", "year", count: 2, output_mode: "export", with_warmup: false).TextContent();
+
+        handler.Requests.Should().ContainSingle();
+        handler.Requests[0].RequestUri!.AbsolutePath.Should().Be("/stock/chart");
+        handler.Requests[0].Headers.GetValues("tr_cd").Should().ContainSingle().Which.Should().Be("t8451");
+        string body = await handler.Requests[0].Content!.ReadAsStringAsync();
+        body.Should().Contain("\"gubun\":\"5\"");
+        body.Should().Contain("\"exchgubun\":\"K\"");
+        body.Should().Contain("\"sujung\":\"Y\"");
+
+        JsonElement root = JsonDocument.Parse(result).RootElement;
+        root.GetProperty("tr_cd").GetString().Should().Be("t8451");
+        root.GetProperty("count").GetInt32().Should().Be(2);
+        root.GetProperty("candles")[1].GetProperty("close").GetDecimal().Should().Be(276000m);
     }
 
     [Fact]

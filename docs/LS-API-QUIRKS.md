@@ -286,6 +286,42 @@ The flag is stored on the dataset, so `ls_add_indicator` /
 **Status:** ✅ fixed on main 2026-10-04. Every KR daily/weekly/monthly/
 yearly chart before this fix was unadjusted.
 
+### 3.6 `t8410` returns no rows for year bars (`gubun=5`) ✅
+
+**TRs:** `t8410` (API전용 주식차트 일주월년), `t8451` ((통합)주식챠트
+일주월년 API용). The LS spec lists `gubun` 5 = 년 for both.
+
+`t8410` with `gubun=5` answers `rsp_cd=00000` and `rsp_msg="해당자료가
+없습니다."` with no OutBlocks. This happens for every variant tried live on
+2026-10-04 (005930):
+- explicit ranges 2000–2026 and 1980–2026;
+- `sdate=""` with `edate="99999999"`;
+- `qrycnt` 20 and 500;
+- `sujung` `Y` and omitted.
+
+`gubun` 2/3/4 work normally. `ls_get_chart period_type="year"` therefore
+returned `count: 0` on every build up to 1.6.1.
+
+`t8451` serves year bars. Its InBlock is `t8410`'s plus `exchgubun` (K:KRX /
+N:NXT / U:통합), and its OutBlocks have the same shape:
+
+| `exchgubun` | Result for 005930 |
+| --- | --- |
+| `K` / `U` | 27 yearly bars, 2000–2026 |
+| `N` | 2 bars only — NXT opened in 2025 |
+
+`sujung` is honoured: the 2017 close is 50,960 adjusted and 2,548,000
+unadjusted. `t8451` may return more rows than `qrycnt`; the chart builder
+already trims to `count`.
+
+**Workaround:** `GetChartTool` routes `year` to `t8451` with `exchgubun=K`,
+so year bars come from the same market as the `t8410` day/week/month
+frames. All other parameters are shared with `t8410`, including `sujung`
+from the `adjusted` parameter (§3.5). `t8451` was added to the catalog, so
+`ls_describe_tr` / `ls_call_tr` work for it.
+
+**Status:** ✅ fixed on main 2026-10-04.
+
 ---
 
 ## 4. Screener semantics (surprising, not bugs)

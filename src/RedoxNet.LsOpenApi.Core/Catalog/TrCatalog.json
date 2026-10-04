@@ -581,6 +581,77 @@
       "rate_limit_per_sec": 1
     },
     {
+      "tr_code": "t8451",
+      "name": "(통합) 주식 차트 (일/주/월/년) API용",
+      "category": "주식차트",
+      "path": "/stock/chart",
+      "description": "KRX/NXT 통합 시장 기준 일봉/주봉/월봉/년봉 OHLCV. exchgubun(K:KRX N:NXT U:통합)으로 시장 선택. 년봉(gubun=5)은 이 TR로만 조회됨 — API전용 일주월년 차트는 gubun=5에 '해당자료가 없습니다'를 반환(2026-10-04 실측). tr_cont/cts_date로 페이징 지원.",
+      "in_blocks": [
+        {
+          "name": "t8451InBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "shcode", "type": "char", "description": "단축종목코드", "required": true, "length": 6, "example": "005930" },
+            { "name": "gubun", "type": "char", "description": "주기구분 (2일봉 3주봉 4월봉 5년봉)", "required": true, "length": 1, "example": "2" },
+            { "name": "qrycnt", "type": "int", "description": "요청건수 (최대 500)", "required": true, "example": "100" },
+            { "name": "sdate", "type": "char", "description": "시작일자 yyyyMMdd", "required": false, "length": 8 },
+            { "name": "edate", "type": "char", "description": "종료일자 yyyyMMdd", "required": false, "length": 8 },
+            { "name": "cts_date", "type": "char", "description": "연속조회 키", "required": false, "length": 8 },
+            { "name": "comp_yn", "type": "char", "description": "압축여부 (Y/N)", "required": false, "length": 1, "example": "N" },
+            { "name": "sujung", "type": "char", "description": "수정주가여부 (Y:적용 N:비적용)", "required": true, "length": 1, "example": "Y" },
+            { "name": "exchgubun", "type": "char", "description": "거래소구분코드 (K:KRX N:NXT U:통합). NXT는 2025년 개장 이후 데이터만 존재", "required": true, "length": 1, "example": "K" }
+          ]
+        }
+      ],
+      "out_blocks": [
+        {
+          "name": "t8451OutBlock",
+          "is_array": false,
+          "fields": [
+            { "name": "shcode", "type": "char", "description": "단축종목코드 (echo)" },
+            { "name": "cts_date", "type": "char", "description": "연속조회 키 — 다음 페이지를 위한 일자. 빈 문자열이면 더 이상 데이터 없음.", "length": 8 },
+            { "name": "jisiga", "type": "long", "description": "전일 시가" },
+            { "name": "jihigh", "type": "long", "description": "전일 고가" },
+            { "name": "jilow", "type": "long", "description": "전일 저가" },
+            { "name": "jiclose", "type": "long", "description": "전일 종가" },
+            { "name": "jivolume", "type": "long", "description": "전일 거래량" },
+            { "name": "disiga", "type": "long", "description": "당일 시가" },
+            { "name": "dihigh", "type": "long", "description": "당일 고가" },
+            { "name": "dilow", "type": "long", "description": "당일 저가" },
+            { "name": "diclose", "type": "long", "description": "당일 종가" },
+            { "name": "highend", "type": "long", "description": "상한가" },
+            { "name": "lowend", "type": "long", "description": "하한가" },
+            { "name": "svi_uplmtprice", "type": "long", "description": "정적VI 상승 발동가" },
+            { "name": "svi_dnlmtprice", "type": "long", "description": "정적VI 하락 발동가" },
+            { "name": "s_time", "type": "char", "description": "장 시작시각 HHmmss", "length": 6 },
+            { "name": "e_time", "type": "char", "description": "장 종료시각 HHmmss", "length": 6 },
+            { "name": "dshmin", "type": "char", "description": "동시호가/장종료 시간" },
+            { "name": "rec_count", "type": "int", "description": "OutBlock1 레코드 수" }
+          ]
+        },
+        {
+          "name": "t8451OutBlock1",
+          "is_array": true,
+          "fields": [
+            { "name": "date", "type": "char", "description": "일자 yyyyMMdd", "length": 8 },
+            { "name": "open", "type": "long", "description": "시가" },
+            { "name": "high", "type": "long", "description": "고가" },
+            { "name": "low", "type": "long", "description": "저가" },
+            { "name": "close", "type": "long", "description": "종가" },
+            { "name": "jdiff_vol", "type": "long", "description": "거래량" },
+            { "name": "value", "type": "long", "description": "거래대금 (백만원 단위)" },
+            { "name": "sign", "type": "char", "description": "전일대비 부호 (1상한 2상승 3보합 4하한 5하락)", "length": 1 },
+            { "name": "rate", "type": "char", "description": "등락율 (문자열 'NNN.NN' 형식)", "length": 6 },
+            { "name": "ratevalue", "type": "long", "description": "등락폭" },
+            { "name": "jongchk", "type": "long", "description": "수정구분" },
+            { "name": "pricechk", "type": "long", "description": "가격구분" }
+          ]
+        }
+      ],
+      "continuation": { "supported": true, "key_fields": ["cts_date"] },
+      "rate_limit_per_sec": 1
+    },
+    {
       "tr_code": "t8412",
       "name": "주식종목 분봉 데이터",
       "category": "주식차트",

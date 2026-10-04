@@ -62,7 +62,8 @@ A reference catalog of every TR LS exposes on its OpenAPI service for **국내�
 | TR | 이름 | Status | Tool / Notes |
 | --- | --- | --- | --- |
 | `t1665` | 기간별 투자자매매 추이 (차트) | ⚪ | |
-| `t8410` | 주식 차트 (일/주/월/년) API전용 | 🟢 💡 | `ls_get_chart period_type="day"|"week"|"month"|"year"` |
+| `t8410` | 주식 차트 (일/주/월/년) API전용 | 🟢 💡 | `ls_get_chart period_type="day"|"week"|"month"`. `gubun=5` (년) returns no rows — see `t8451` / LS-API-QUIRKS §3.6 |
+| `t8451` | (통합) 주식 차트 (일/주/월/년) API용 | 🟢 | `ls_get_chart period_type="year"` (`exchgubun=K`). Same InBlock as t8410 plus `exchgubun` (K/N/U) |
 | `t8411` | 주식 차트 (틱/n틱) | ⚪ | We use t1301 for tick today; t8411 may offer richer history |
 | `t8412` | 주식 차트 (N분) | 🟢 | `ls_get_chart period_type="min"` — multi-key continuation |
 

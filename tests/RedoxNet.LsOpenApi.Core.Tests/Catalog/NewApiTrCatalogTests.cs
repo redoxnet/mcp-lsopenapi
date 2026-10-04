@@ -35,6 +35,23 @@ public class NewApiTrCatalogTests
     }
 
     [Fact]
+    public void T8451_UnifiedChart_MirrorsT8410PlusExchgubun()
+    {
+        TrMeta meta = TrCatalog.Default.Get("t8451");
+        meta.Path.Should().Be("/stock/chart");
+        meta.Continuation.Supported.Should().BeTrue();
+        meta.Continuation.KeyFields!.Should().Equal("cts_date");
+
+        meta.InBlocks.Should().ContainSingle()
+            .Which.Fields.Select(f => f.Name).Should().Equal(
+                "shcode", "gubun", "qrycnt", "sdate", "edate", "cts_date", "comp_yn", "sujung", "exchgubun");
+
+        TrBlock candles = meta.OutBlocks.Single(b => b.Name == "t8451OutBlock1");
+        candles.IsArray.Should().BeTrue();
+        candles.Fields.Select(f => f.Name).Should().Contain(new[] { "date", "open", "high", "low", "close", "jdiff_vol", "value" });
+    }
+
+    [Fact]
     public void T9945_SlimMaster_HasFiveFieldsOnly()
     {
         TrMeta meta = TrCatalog.Default.Get("t9945");

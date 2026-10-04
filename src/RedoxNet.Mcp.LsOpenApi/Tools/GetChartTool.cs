@@ -20,6 +20,7 @@ namespace RedoxNet.Mcp.LsOpenApi.Tools;
 /// Dispatches by <c>period_type</c>:
 /// <list type="bullet">
 ///   <item><description><c>day</c> / <c>week</c> / <c>month</c> → TR <c>t8410</c>.</description></item>
+///   <item><description><c>year</c> → TR <c>t8451</c> with <c>exchgubun=K</c> (t8410 returns no rows for gubun 5 — LS-API-QUIRKS §3.6).</description></item>
 ///   <item><description><c>min</c> → TR <c>t8412</c> with <c>ncnt</c> = <c>minute_unit</c>.</description></item>
 ///   <item><description><c>tick</c> → TR <c>t1301</c>.</description></item>
 /// </list>
@@ -68,7 +69,7 @@ public static class GetChartTool
     /// <see langword="true"/> forces warm-up even with explicit <paramref name="from"/>;
     /// <see langword="false"/> skips warm-up even when <paramref name="from"/> is null.
     /// </param>
-    /// <param name="adjusted">Request adjusted prices (t8410 <c>sujung=Y</c>) for day/week/month/year frames. Default <see langword="true"/>; stored on the dataset so follow-ups inherit it. See docs/LS-API-QUIRKS.md §3.5.</param>
+    /// <param name="adjusted">Request adjusted prices (t8410 / t8451 <c>sujung=Y</c>) for day/week/month/year frames. Default <see langword="true"/>; stored on the dataset so follow-ups inherit it. See docs/LS-API-QUIRKS.md §3.5.</param>
     /// <param name="theme">Optional chart theme override: <c>"light"</c>, <c>"dark"</c>, or <c>"auto"</c>/<see langword="null"/> (default). Stored on the dataset so follow-up ls_add_indicator / ls_reframe_chart inherit it. See docs/MCP-APPS-INTEROP.md §3 Q8.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Text content with a compact analytical summary and dataset handle, plus an optional <c>structuredContent.chart</c> for inline rendering.</returns>
@@ -780,10 +781,10 @@ public static class GetChartTool
 
         (List<Candle> candles, string trCode) = period switch
         {
-            "day" => (await FetchDailyAsync(apiClient, shcode, "2", fetchCount, effectiveWarmup, from, to, adjusted, ct), "t8410"),
-            "week" => (await FetchDailyAsync(apiClient, shcode, "3", fetchCount, effectiveWarmup, from, to, adjusted, ct), "t8410"),
-            "month" => (await FetchDailyAsync(apiClient, shcode, "4", fetchCount, effectiveWarmup, from, to, adjusted, ct), "t8410"),
-            "year" => (await FetchDailyAsync(apiClient, shcode, "5", fetchCount, effectiveWarmup, from, to, adjusted, ct), "t8410"),
+            "day" => (await FetchDailyAsync(apiClient, "t8410", shcode, "2", fetchCount, effectiveWarmup, from, to, adjusted, ct), "t8410"),
+            "week" => (await FetchDailyAsync(apiClient, "t8410", shcode, "3", fetchCount, effectiveWarmup, from, to, adjusted, ct), "t8410"),
+            "month" => (await FetchDailyAsync(apiClient, "t8410", shcode, "4", fetchCount, effectiveWarmup, from, to, adjusted, ct), "t8410"),
+            "year" => (await FetchDailyAsync(apiClient, "t8451", shcode, "5", fetchCount, effectiveWarmup, from, to, adjusted, ct), "t8451"),
             "min" => (await FetchMinuteAsync(apiClient, shcode, minuteUnit, fetchCount, effectiveWarmup, from, to, ct), "t8412"),
             "tick" => (await FetchTickAsync(apiClient, shcode, fetchCount, ct), "t1301"),
             _ => throw new InvalidOperationException($"Unknown period '{period}'."),
@@ -925,13 +926,15 @@ public static class GetChartTool
         });
 
     /// <summary>
-    /// Fetches day/week/month/year candles via TR <c>t8410</c>. Auto-derives a
-    /// generous lookback range when <paramref name="from"/> is unset so
+    /// Fetches day/week/month/year candles via TR <c>t8410</c> (or <c>t8451</c>,
+    /// which shares its InBlock/OutBlock shape plus <c>exchgubun</c>). Auto-derives
+    /// a generous lookback range when <paramref name="from"/> is unset so
     /// <c>qrycnt</c> actually bounds the result.
     /// </summary>
     /// <param name="apiClient">LS API client.</param>
+    /// <param name="trCode"><c>t8410</c> for day/week/month; <c>t8451</c> for year (t8410 returns no rows for gubun 5).</param>
     /// <param name="shcode">Stock code.</param>
-    /// <param name="gubun">t8410 period gubun (<c>2</c>=day / <c>3</c>=week / <c>4</c>=month / <c>5</c>=year).</param>
+    /// <param name="gubun">Period gubun (<c>2</c>=day / <c>3</c>=week / <c>4</c>=month / <c>5</c>=year).</param>
     /// <param name="count">Total candles to request (display window + warm-up).</param>
     /// <param name="warmup">Leading warm-up portion of <paramref name="count"/>; pushes an explicit <paramref name="from"/> back so indicators are populated from the first displayed candle. Zero leaves <paramref name="from"/> untouched.</param>
     /// <param name="from">Optional explicit start (yyyyMMdd).</param>
@@ -941,6 +944,7 @@ public static class GetChartTool
     /// <returns>Ordered candles (oldest first).</returns>
     static async Task<List<Candle>> FetchDailyAsync(
         LsApiClient apiClient,
+        string trCode,
         string shcode,
         string gubun,
         int count,
@@ -987,11 +991,15 @@ public static class GetChartTool
             // split/bonus-issue cliffs in the series — see LS-API-QUIRKS §3.5.
             ["sujung"] = adjusted ? "Y" : "N",
         };
+        // t8451 is the KRX/NXT unified chart. Pin it to KRX so year bars come
+        // from the same market as the t8410 day/week/month frames.
+        if (trCode == "t8451")
+            inBlock["exchgubun"] = "K";
 
-        LsTrResponse response = await apiClient.CallTrAsync("t8410", inBlock, cancellationToken: ct);
+        LsTrResponse response = await apiClient.CallTrAsync(trCode, inBlock, cancellationToken: ct);
         EnsureSuccess(response);
 
-        return ParseDailyCandles(response.GetBlock("t8410OutBlock1"));
+        return ParseDailyCandles(response.GetBlock($"{trCode}OutBlock1"));
     }
 
     /// <summary>
