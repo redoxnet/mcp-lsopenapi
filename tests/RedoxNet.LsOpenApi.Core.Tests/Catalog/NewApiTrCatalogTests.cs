@@ -19,7 +19,7 @@ public class NewApiTrCatalogTests
         meta.Category.Should().Be("주식시세");
 
         meta.InBlocks.Should().ContainSingle()
-            .Which.Fields.Select(f => f.Name).Should().Equal("qrycnt", "shcode");
+            .Which.Fields.Select(f => f.Name).Should().Equal("nrec", "shcode");
 
         TrBlock outBlock = meta.OutBlocks.Should().ContainSingle().Subject;
         outBlock.Name.Should().Be("t8407OutBlock1");

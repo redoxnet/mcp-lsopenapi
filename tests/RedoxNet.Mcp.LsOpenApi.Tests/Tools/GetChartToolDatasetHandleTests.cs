@@ -113,4 +113,24 @@ public class GetChartToolDatasetHandleTests
             "reframe should replace the current view, not leave a multi-frame dataset requiring period_type");
         addText.GetProperty("period_type").GetString().Should().Be("week");
     }
+
+    [Fact]
+    public async Task FollowUps_InheritUnadjustedPricesFromDataset()
+    {
+        var (client, handler) = TestClientFactory.Create((_, _) => Ok(DailyBody(5)));
+
+        CallToolResult first = await GetChartTool.GetChart(
+            client, "005930", "day", count: 5, output_mode: "reference", adjusted: false);
+        string datasetId = ParseText(first).GetProperty("dataset_id").GetString()!;
+
+        await GetChartTool.AddIndicator(client, datasetId, "ma:2", include_chart: false);
+        await GetChartTool.ReframeChart(client, datasetId, "week", count: 3, include_chart: false);
+
+        handler.Requests.Should().HaveCount(3);
+        foreach (HttpRequestMessage request in handler.Requests)
+        {
+            string body = await request.Content!.ReadAsStringAsync();
+            body.Should().Contain("\"sujung\":\"N\"");
+        }
+    }
 }

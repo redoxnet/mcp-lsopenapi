@@ -527,7 +527,8 @@
             { "name": "sdate", "type": "char", "description": "시작일자 yyyyMMdd", "required": false, "length": 8 },
             { "name": "edate", "type": "char", "description": "종료일자 yyyyMMdd", "required": false, "length": 8 },
             { "name": "cts_date", "type": "char", "description": "연속조회 키", "required": false, "length": 8 },
-            { "name": "comp_yn", "type": "char", "description": "압축여부 (Y/N)", "required": false, "length": 1, "example": "N" }
+            { "name": "comp_yn", "type": "char", "description": "압축여부 (Y/N)", "required": false, "length": 1, "example": "N" },
+            { "name": "sujung", "type": "char", "description": "수정주가여부 (Y:적용 N:비적용). 생략 시 N(비수정)으로 처리됨", "required": true, "length": 1, "example": "Y" }
           ]
         }
       ],
@@ -756,7 +757,6 @@
             { "name": "per", "type": "char", "description": "PER (문자열 'NNN.NN' 형식)" },
             { "name": "t_per", "type": "char", "description": "예상 PER" },
             { "name": "pbrx", "type": "char", "description": "PBR" },
-            { "name": "eps", "type": "long", "description": "EPS (현재 가용 시)" },
             { "name": "bfsales", "type": "long", "description": "전분기 매출액" },
             { "name": "bfsales2", "type": "long", "description": "전전분기 매출액" },
             { "name": "bfoperatingincome", "type": "long", "description": "전분기 영업이익" },
@@ -1611,7 +1611,7 @@
           "name": "t8407InBlock",
           "is_array": false,
           "fields": [
-            { "name": "qrycnt", "type": "int", "description": "조회 종목 수 (최대 50)", "required": true, "example": "3" },
+            { "name": "nrec", "type": "int", "description": "조회 종목 수 (최대 50). 누락 시 50행(빈 행 패딩)으로 응답", "required": true, "example": "3" },
             { "name": "shcode", "type": "char", "description": "단축종목코드를 공백 없이 6자리씩 연결한 문자열 (예: 3종목이면 18자)", "required": true, "example": "005930000660078020" }
           ]
         }

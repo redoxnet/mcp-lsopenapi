@@ -9,7 +9,7 @@ Each entry: **symptom → cause (as understood) → workaround → status**.
 Status legend: ✅ handled · ⚠️ partially handled · 🔲 open (backlog) ·
 💭 investigated but not productized (kept here so the investigation is not repeated).
 
-Last updated: 2026-05-27.
+Last updated: 2026-10-04.
 
 ---
 
@@ -130,6 +130,26 @@ Quirks:
 **Status:** 🔲 known; callers handle the empty case. Documented here so
 the `"FICS "` prefix and 6-char constraint are not rediscovered.
 
+### 2.3 `t8407` count field is `nrec`, not `qrycnt` ✅
+
+**TR:** `t8407` (API용 주식 멀티 현재가). InBlock is `nrec` (건수) +
+`shcode` (6-char codes concatenated).
+
+The original catalog seed named the count field `qrycnt` (the name the
+chart TRs use). LS silently ignores the unknown field, and with `nrec`
+missing it pads `t8407OutBlock1` to 50 rows — the requested codes first,
+then blank rows (`shcode: ""`, all zeros). With `nrec: 3` the array
+holds exactly 3 rows. Confirmed live 2026-10-04 (005930/000660/078020).
+
+The padding is why the multi-quote parsers index rows by `shcode` and
+skip blanks; that defence stays in place.
+
+**Workaround:** `ls_get_multi_quote` and the portfolio quote service send
+`nrec`. Request-body tests pin it.
+
+**Status:** ✅ fixed on main 2026-10-04 (functionally harmless before
+because of the blank-row filter).
+
 ---
 
 ## 3. Numeric / value anomalies
@@ -231,6 +251,40 @@ overseas chart TRs. A test pins `\"comp_yn\":\"N\"` on the request
 body so a regression to `"Y"` fails CI.
 
 **Status:** ✅ since v1.3.0 (fixed during release-prep E2E).
+
+### 3.5 `t8410` without `sujung` returns unadjusted prices ✅
+
+**TR:** `t8410` (API전용 주식차트 일주월년). InBlock `sujung`
+(수정주가여부, `Y` = 적용, `N` = 비적용) is a required field in the
+LS spec, but the request still succeeds without it.
+
+When `sujung` is omitted, LS behaves as if `N` was sent: candles come back
+**unadjusted**. Splits and bonus issues then show up as price cliffs, and
+any indicator window that spans the event (MA, RSI, Bollinger, the 1Y/5Y
+change in the summary) is wrong. Samsung (005930) around its 2018-05 50:1
+split, 2018-04-27 close:
+
+| `sujung` | close | jdiff_vol |
+| --- | --- | --- |
+| omitted | 2,650,000 | 606,216 |
+| `N` | 2,650,000 | 606,216 |
+| `Y` | 53,000 | 30,310,800 |
+
+Volume is adjusted along with price; `value` (거래대금) is not. Confirmed
+live 2026-10-04.
+
+The original catalog seed left `sujung` out, so the KR chart wrapper never
+sent it. The overseas wrapper (`g3204`) always sent `sujung` and defaulted
+to adjusted.
+
+**Workaround:** `ls_get_chart` sends `sujung` explicitly and exposes an
+`adjusted` parameter (default `true`, matching `ls_get_overseas_chart`).
+The flag is stored on the dataset, so `ls_add_indicator` /
+`ls_reframe_chart` refetch with the same setting. Minute (`t8412`) and tick
+(`t1301`) charts have no adjusted-price option.
+
+**Status:** ✅ fixed on main 2026-10-04. Every KR daily/weekly/monthly/
+yearly chart before this fix was unadjusted.
 
 ---
 

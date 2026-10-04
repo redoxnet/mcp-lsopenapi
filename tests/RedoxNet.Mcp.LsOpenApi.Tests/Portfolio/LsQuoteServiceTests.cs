@@ -63,6 +63,8 @@ public sealed class LsQuoteServiceTests
 
         handler.Requests.Should().ContainSingle();
         handler.Requests[0].Headers.GetValues("tr_cd").Should().ContainSingle().Which.Should().Be("t8407");
+        string sent = await handler.Requests[0].Content!.ReadAsStringAsync();
+        sent.Should().Contain("\"nrec\":3");
         result.TopLevelError.Should().BeNull();
         result.Quotes["005930"]!.Change.Should().Be(-500);
         result.Quotes["000660"]!.Change.Should().Be(123);

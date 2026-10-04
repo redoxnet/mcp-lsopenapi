@@ -68,6 +68,7 @@ public static class GetChartTool
     /// <see langword="true"/> forces warm-up even with explicit <paramref name="from"/>;
     /// <see langword="false"/> skips warm-up even when <paramref name="from"/> is null.
     /// </param>
+    /// <param name="adjusted">Request adjusted prices (t8410 <c>sujung=Y</c>) for day/week/month/year frames. Default <see langword="true"/>; stored on the dataset so follow-ups inherit it. See docs/LS-API-QUIRKS.md §3.5.</param>
     /// <param name="theme">Optional chart theme override: <c>"light"</c>, <c>"dark"</c>, or <c>"auto"</c>/<see langword="null"/> (default). Stored on the dataset so follow-up ls_add_indicator / ls_reframe_chart inherit it. See docs/MCP-APPS-INTEROP.md §3 Q8.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Text content with a compact analytical summary and dataset handle, plus an optional <c>structuredContent.chart</c> for inline rendering.</returns>
@@ -125,6 +126,8 @@ public static class GetChartTool
         string? name = null,
         [Description("Warm-up policy override. Omit (null) for auto: pad when `from` is unspecified, skip when `from` is given. Pass true to force pad with explicit `from` (analyze trends inside a narrow window). Pass false to skip pad even without `from` (fastest read; long-period indicators may be null — check summary.coverage to explain why).")]
         bool? with_warmup = null,
+        [Description("For day/week/month/year charts, apply adjusted prices (수정주가). Default true; pass false only when the user asks for actual historical traded prices. Follow-up ls_add_indicator / ls_reframe_chart inherit it.")]
+        bool adjusted = true,
         [Description("Optional chart theme override: \"light\", \"dark\", or \"auto\" (default). Pass when the user explicitly asks for a dark/light chart (e.g. \"다크 차트로 보여줘\") — the iframe overrides hostContext.theme. Follow-up ls_add_indicator / ls_reframe_chart on the same dataset_id inherit this unless overridden.")]
         string? theme = null,
         CancellationToken cancellationToken = default)
@@ -172,7 +175,7 @@ public static class GetChartTool
             foreach (string p in periods)
             {
                 FrameResult frame = await BuildFrameAsync(
-                    apiClient, shcode, name, p, cappedCount, from, to, minute_unit, parsedIndicators, with_warmup, cancellationToken);
+                    apiClient, shcode, name, p, cappedCount, from, to, minute_unit, parsedIndicators, adjusted, with_warmup, cancellationToken);
                 frames.Add(frame);
             }
 
@@ -196,7 +199,8 @@ public static class GetChartTool
                 periods,
                 datasetFrames,
                 DateTimeOffset.UtcNow,
-                themeHint));
+                themeHint,
+                adjusted));
 
             if (periods.Count == 1)
             {
@@ -435,6 +439,7 @@ public static class GetChartTool
                 frame.SourceTo,
                 frame.MinuteUnit,
                 specs,
+                dataset.Adjusted,
                 withWarmup: null,
                 cancellationToken);
 
@@ -561,6 +566,7 @@ public static class GetChartTool
                 to,
                 minute_unit,
                 specs,
+                dataset.Adjusted,
                 withWarmup: null,
                 cancellationToken);
 
@@ -732,6 +738,7 @@ public static class GetChartTool
     /// <param name="to">Optional end date (yyyyMMdd).</param>
     /// <param name="minuteUnit">Minute interval; ignored unless <paramref name="period"/> is <c>min</c>.</param>
     /// <param name="specs">Parsed indicator specs.</param>
+    /// <param name="adjusted">Request adjusted prices (t8410 <c>sujung</c>); ignored for <c>min</c>/<c>tick</c>.</param>
     /// <param name="withWarmup">
     /// Summary warm-up policy. <see langword="null"/> auto-applies warm-up when
     /// <paramref name="from"/> is unspecified; <see langword="true"/> forces it
@@ -750,6 +757,7 @@ public static class GetChartTool
         string? to,
         int minuteUnit,
         IReadOnlyList<IndicatorSpec> specs,
+        bool adjusted,
         bool? withWarmup,
         CancellationToken ct)
     {
@@ -772,10 +780,10 @@ public static class GetChartTool
 
         (List<Candle> candles, string trCode) = period switch
         {
-            "day" => (await FetchDailyAsync(apiClient, shcode, "2", fetchCount, effectiveWarmup, from, to, ct), "t8410"),
-            "week" => (await FetchDailyAsync(apiClient, shcode, "3", fetchCount, effectiveWarmup, from, to, ct), "t8410"),
-            "month" => (await FetchDailyAsync(apiClient, shcode, "4", fetchCount, effectiveWarmup, from, to, ct), "t8410"),
-            "year" => (await FetchDailyAsync(apiClient, shcode, "5", fetchCount, effectiveWarmup, from, to, ct), "t8410"),
+            "day" => (await FetchDailyAsync(apiClient, shcode, "2", fetchCount, effectiveWarmup, from, to, adjusted, ct), "t8410"),
+            "week" => (await FetchDailyAsync(apiClient, shcode, "3", fetchCount, effectiveWarmup, from, to, adjusted, ct), "t8410"),
+            "month" => (await FetchDailyAsync(apiClient, shcode, "4", fetchCount, effectiveWarmup, from, to, adjusted, ct), "t8410"),
+            "year" => (await FetchDailyAsync(apiClient, shcode, "5", fetchCount, effectiveWarmup, from, to, adjusted, ct), "t8410"),
             "min" => (await FetchMinuteAsync(apiClient, shcode, minuteUnit, fetchCount, effectiveWarmup, from, to, ct), "t8412"),
             "tick" => (await FetchTickAsync(apiClient, shcode, fetchCount, ct), "t1301"),
             _ => throw new InvalidOperationException($"Unknown period '{period}'."),
@@ -928,6 +936,7 @@ public static class GetChartTool
     /// <param name="warmup">Leading warm-up portion of <paramref name="count"/>; pushes an explicit <paramref name="from"/> back so indicators are populated from the first displayed candle. Zero leaves <paramref name="from"/> untouched.</param>
     /// <param name="from">Optional explicit start (yyyyMMdd).</param>
     /// <param name="to">Optional explicit end (yyyyMMdd).</param>
+    /// <param name="adjusted">Send <c>sujung=Y</c> (adjusted prices) when true, <c>N</c> otherwise.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>Ordered candles (oldest first).</returns>
     static async Task<List<Candle>> FetchDailyAsync(
@@ -938,6 +947,7 @@ public static class GetChartTool
         int warmup,
         string? from,
         string? to,
+        bool adjusted,
         CancellationToken ct)
     {
         // LS empirically returns only today's partial candle when sdate/edate
@@ -973,6 +983,9 @@ public static class GetChartTool
             ["sdate"] = effectiveStart,
             ["edate"] = effectiveEnd,
             ["comp_yn"] = "N",
+            // LS treats a missing sujung as "N" (unadjusted), which leaves
+            // split/bonus-issue cliffs in the series — see LS-API-QUIRKS §3.5.
+            ["sujung"] = adjusted ? "Y" : "N",
         };
 
         LsTrResponse response = await apiClient.CallTrAsync("t8410", inBlock, cancellationToken: ct);

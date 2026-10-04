@@ -75,7 +75,9 @@ public class GetMultiQuoteToolFixtureTests
         handler.Requests[0].Headers.GetValues("tr_cd").Should().ContainSingle().Which.Should().Be("t8407");
 
         string body = await handler.Requests[0].Content!.ReadAsStringAsync();
-        body.Should().Contain("\"qrycnt\":3");
+        // The count field is nrec; LS ignores qrycnt and pads to 50 rows.
+        body.Should().Contain("\"nrec\":3");
+        body.Should().NotContain("qrycnt");
         body.Should().Contain("\"shcode\":\"078020000660005930\"");
     }
 

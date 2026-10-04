@@ -64,7 +64,7 @@ public static class GetMultiQuoteTool
 
         var inBlock = new JsonObject
         {
-            ["qrycnt"] = normalized.Count,
+            ["nrec"] = normalized.Count,
             ["shcode"] = string.Concat(normalized),
         };
 
@@ -84,10 +84,9 @@ public static class GetMultiQuoteTool
             if (block is null || block.Value.ValueKind != JsonValueKind.Array)
                 return McpJson.Error("t8407OutBlock1 array was missing from the response.");
 
-            // LS empirically returns up to 50 rows regardless of qrycnt,
-            // padding with default codes when fewer were requested. Index by
-            // shcode, then emit only the codes the caller asked for, in the
-            // order they asked for them.
+            // Without a valid nrec LS pads the array to 50 rows (blank
+            // shcode), so stay defensive: index by shcode, then emit only the
+            // codes the caller asked for, in the order they asked for them.
             var byShcode = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
             foreach (JsonElement row in block.Value.EnumerateArray())
             {

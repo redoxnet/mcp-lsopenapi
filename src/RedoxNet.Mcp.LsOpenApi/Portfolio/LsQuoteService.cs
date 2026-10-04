@@ -57,7 +57,7 @@ internal sealed class LsQuoteService : IQuoteService
             {
                 var inBlock = new JsonObject
                 {
-                    ["qrycnt"] = batch.Length,
+                    ["nrec"] = batch.Length,
                     ["shcode"] = string.Concat(batch),
                 };
 

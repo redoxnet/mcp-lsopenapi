@@ -98,6 +98,30 @@ public class GetChartToolT8410FixtureTests
         body.Should().Contain($"\"gubun\":\"{expectedGubun}\"");
     }
 
+    [Fact]
+    public async Task GetChart_T8410_RequestsAdjustedPricesByDefault()
+    {
+        var (client, handler) = TestClientFactory.Create((_, _) => Ok(TestbedT8410Response));
+
+        await GetChartTool.GetChart(client, "078020", "day", count: 1);
+
+        // LS treats a missing sujung as "N" (unadjusted) — the default must be
+        // explicit, or split/bonus-issue cliffs leak into every daily series.
+        string body = await handler.Requests[0].Content!.ReadAsStringAsync();
+        body.Should().Contain("\"sujung\":\"Y\"");
+    }
+
+    [Fact]
+    public async Task GetChart_T8410_AdjustedFalse_RequestsUnadjustedPrices()
+    {
+        var (client, handler) = TestClientFactory.Create((_, _) => Ok(TestbedT8410Response));
+
+        await GetChartTool.GetChart(client, "078020", "day", count: 1, adjusted: false);
+
+        string body = await handler.Requests[0].Content!.ReadAsStringAsync();
+        body.Should().Contain("\"sujung\":\"N\"");
+    }
+
     /// <summary>
     /// Builds a synthetic t8410 response with <paramref name="candleCount"/>
     /// candles in ascending date order (oldest first), as t8410 returns them.
