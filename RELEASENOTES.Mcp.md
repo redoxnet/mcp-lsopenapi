@@ -1,5 +1,43 @@
 ﻿# Release Notes — RedoxNet.Mcp.LsOpenApi
 
+## v1.6.2 (2026-10-05)
+
+**KR year charts work.** `ls_get_chart period_type="year"` always returned
+`count: 0`, in every build up to 1.6.1. LS's `t8410` takes `gubun=5` (년)
+per its spec, but it answers `rsp_msg="해당자료가 없습니다."` with no
+OutBlocks. That held for every date range, `qrycnt`, and `sujung` value
+tried live. `gubun` 2/3/4 (day/week/month) were unaffected.
+
+### Fixed — year bars come from `t8451`
+
+`t8451` ((통합) 주식차트 일주월년 API용) shares `t8410`'s InBlock and
+OutBlock shape, plus an `exchgubun` market selector, and it serves year
+bars.
+- Year frames call `t8451` with `exchgubun=K`, so they come from the same
+  KRX market as the `t8410` day/week/month frames.
+- The `adjusted` parameter added in 1.6.1 applies here too. Example:
+  Samsung (005930) 2017 close is **50,960** adjusted and **2,548,000**
+  unadjusted.
+- Multi-timeframe calls (`"month,year"`) and follow-ups also get year bars
+  (`ls_reframe_chart` to `year`, `ls_add_indicator` on a year frame).
+- A year frame's `tr_cd` now reads `t8451`.
+
+### Catalog
+
+`t8451` was added to the embedded TR catalog (Core 1.6.2; 76 → 77 TRs),
+so `ls_describe_tr` and `ls_call_tr` can reach it.
+
+### Documentation
+
+- `docs/LS-API-QUIRKS.md` §3.6 records the `t8410` `gubun=5` empty
+  response and the `t8451` `exchgubun` behaviour. `N` (NXT) only has
+  bars from 2025 onward.
+- `docs/LS-TR-INVENTORY.md` lists `t8451`.
+
+### Surface
+
+50 standard / 53 all (unchanged). No new parameters.
+
 ## v1.6.1 (2026-10-04)
 
 **Adjusted KR chart prices + t8407 count-field fix.** LS renewed its API

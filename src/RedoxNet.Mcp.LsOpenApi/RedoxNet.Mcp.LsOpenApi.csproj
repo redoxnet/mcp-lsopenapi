@@ -11,7 +11,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 
-    <Version>1.6.1</Version>
+    <Version>1.6.2</Version>
     <PackageId>RedoxNet.Mcp.LsOpenApi</PackageId>
 	<Authors>Jong Hyun Kim</Authors>
     <Company>RedoxNet</Company>
@@ -24,7 +24,7 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>icon.png</PackageIcon>
     <Copyright>Copyright (c) 2026 RedoxNet</Copyright>
-    <PackageReleaseNotes>v1.6.1 — Adjusted KR chart prices + t8407 fix. ls_get_chart (day/week/month/year) now requests adjusted prices (수정주가). Before this release LS's t8410 defaulted to unadjusted because the server never sent sujung, so splits and bonus issues showed as price cliffs and skewed indicators. Behaviour change: pre-corporate-action KR candles now differ from 1.6.0. New optional `adjusted` parameter on ls_get_chart (default true, matching ls_get_overseas_chart); follow-up ls_add_indicator / ls_reframe_chart inherit it from the dataset. ls_get_multi_quote and portfolio price enrichment now send t8407's real count field (nrec), so LS stops padding responses to 50 rows. Surface unchanged (50 standard / 53 all). Lockstep with RedoxNet.LsOpenApi.Core 1.6.1. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Mcp.md.</PackageReleaseNotes>
+    <PackageReleaseNotes>v1.6.2 — KR year charts work. ls_get_chart period_type="year" returned 0 candles in every earlier build, because LS's t8410 answers gubun=5 with '해당자료가 없습니다' and no rows. Year frames now come from t8451 ((통합) 주식차트) pinned to exchgubun=K, so they share the KRX market of the t8410 day/week/month frames. The 1.6.1 adjusted parameter (수정주가) applies; multi-timeframe and ls_reframe_chart / ls_add_indicator follow-ups work on year frames. Year frame tr_cd now reads t8451. Surface unchanged (50 standard / 53 all). Lockstep with RedoxNet.LsOpenApi.Core 1.6.2. See https://github.com/redoxnet/mcp-lsopenapi/blob/main/RELEASENOTES.Mcp.md.</PackageReleaseNotes>
 
     <PackageType>McpServer</PackageType>
     <PackAsTool>true</PackAsTool>

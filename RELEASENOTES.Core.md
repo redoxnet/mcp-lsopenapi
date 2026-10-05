@@ -1,5 +1,19 @@
 ﻿# Release Notes — RedoxNet.LsOpenApi.Core
 
+## v1.6.2 (2026-10-05)
+
+**Lockstep release with `RedoxNet.Mcp.LsOpenApi` 1.6.2 — one catalog
+addition.** The embedded `TrCatalog.json` gains `t8451` ((통합) 주식차트
+일주월년 API용; 76 → 77 TRs).
+- Its InBlock is `t8410`'s plus `exchgubun` (K:KRX / N:NXT / U:통합), and
+  its OutBlocks have the same shape.
+- Continuation is body-based on `cts_date`.
+- It is the only working source of KR year bars, because `t8410` returns
+  no rows for `gubun=5`.
+
+No API or behaviour changes in Core itself. Full context in
+[`RELEASENOTES.Mcp.md`](RELEASENOTES.Mcp.md) v1.6.2.
+
 ## v1.6.1 (2026-10-04)
 
 **Lockstep release with `RedoxNet.Mcp.LsOpenApi` 1.6.1 — catalog
